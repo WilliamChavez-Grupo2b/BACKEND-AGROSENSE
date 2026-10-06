@@ -13,16 +13,18 @@ import java.util.List;
 @Configuration
 public class CorsConfig {
 
-    @Value("${cors.allowed-origins}")
+    @Value("${cors.allowed-origins:}")
     private String corsOrigins;
 
     @Bean
     public CorsFilter corsFilter() {
         CorsConfiguration config = new CorsConfiguration();
 
-        List<String> origenes = Arrays.asList(
-                corsOrigins.split(","));
-        origenes.forEach(config::addAllowedOrigin);
+        List<String> origins = Arrays.stream(corsOrigins.split(","))
+                .map(String::trim)
+                .filter(origin -> !origin.isEmpty())
+                .toList();
+        origins.forEach(config::addAllowedOrigin);
 
         config.addAllowedMethod("*");
         config.addAllowedHeader("*");
