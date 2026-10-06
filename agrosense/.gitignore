@@ -31,3 +31,28 @@ build/
 
 ### VS Code ###
 .vscode/
+
+# Maven
+target/
+*.class
+*.jar
+*.war
+
+# IDE
+.idea/
+.vscode/
+*.iml
+.project
+.classpath
+
+# Sistema operativo
+.DS_Store
+Thumbs.db
+
+# Variables de entorno (NUNCA subir al repo)
+.env
+application-local.properties
+
+# Logs
+*.log
+logs/
