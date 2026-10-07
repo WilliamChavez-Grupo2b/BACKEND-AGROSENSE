@@ -29,8 +29,14 @@ public class IaClientService {
             Map<?, ?> result = client.post()
             .uri=//predecir riego 
             .bodyValue(Map.of(
-                ""
+                "id_crop", idcrop,
+                "soil moisture",   Datesensor.getOrDefault("humidy", 60),
+                "air temperature", Datesensor.getOrDefault("TEMPERATURE", 25)
+                "PH",              Datesensor.getOrDefault("ph", 6.5)
             ))
+            .retrieve()
+            .bodyToMono(Map.class)
+            .block();
         }
     }
 }
