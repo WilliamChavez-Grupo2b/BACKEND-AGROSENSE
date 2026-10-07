@@ -18,7 +18,7 @@ public class IaClientService {
     private String iaServiceUrl;
 
     @Async
-    public void solicitarPrediccion(Integer idCultivo, Map<String, Object> datosSensor){
+    public void askpetition(Integer idcrop, Map<String, Object> DateSensor){
         try {
             webClient client = webClientBuilder
             .baseURL(iaServiceUrl)
