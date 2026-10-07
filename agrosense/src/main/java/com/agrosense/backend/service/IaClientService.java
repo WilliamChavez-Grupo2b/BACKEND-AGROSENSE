@@ -37,6 +37,14 @@ public class IaClientService {
             .retrieve()
             .bodyToMono(Map.class)
             .block();
+
+            if (resultado != null){
+                log.info("IA gets predition {}"
+                resultado.get("recomendation"));
+            }
+        }catch (Exception e){
+            //Si no esta disponible el servicio, el backend funciona
+            log.info("Ia service not available", e.getMessage());
         }
     }
 }
