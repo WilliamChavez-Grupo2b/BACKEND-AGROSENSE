@@ -23,6 +23,14 @@ public class IaClientService {
             webClient client = webClientBuilder
             .baseURL(iaServiceUrl)
             .build();
+
+            //Post para agrosense
+            //URL 
+            Map<?, ?> result = client.post()
+            .uri=//predecir riego 
+            .bodyValue(Map.of(
+                ""
+            ))
         }
     }
 }
