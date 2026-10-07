@@ -12,5 +12,10 @@ import java.util.Map;
 @Service
 @RequiredArgsConstructor
 public class IaClientService {
-    
+    private final WebClient.Builder webClientBuilder;
+
+    @Value=//Enlace de la IA en la Nube 
+    private String iaServiceUrl;
+
+    @Async
 }
