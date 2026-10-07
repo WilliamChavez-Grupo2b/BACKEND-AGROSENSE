@@ -18,4 +18,11 @@ public class IaClientService {
     private String iaServiceUrl;
 
     @Async
+    public void solicitarPrediccion(Integer idCultivo, Map<String, Object> datosSensor){
+        try {
+            webClient client = webClientBuilder
+            .baseURL(iaServiceUrl)
+            .build();
+        }
+    }
 }
