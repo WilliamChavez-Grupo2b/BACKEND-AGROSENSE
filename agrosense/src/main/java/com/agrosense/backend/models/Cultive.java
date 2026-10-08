@@ -30,4 +30,28 @@ public class Cultive {
 
     @Column(name = "sowing_date")
     private LocalDate fechaSiembra;
+
+    @Enumerated(EnumType.STRING)
+    @Builder.Default
+    private StageCultivation stage = StageCultivation.Germination;
+
+    @Column(name= "humidity_min")
+    @Builder.Default
+    private BigDecimal humiditymin = new BigDecimal("40.0");
+
+    @Column(name= "humidity_max")
+    @Builder.Default
+    private BigDecimal humiditymin = new BigDecimal("80.0");
+
+    @Column(name= "temp_min")
+    @Builder.Default
+    private BigDecimal humiditymin = new BigDecimal("15.0");
+
+    @Column(name= "temp_max")
+    @Builder.Default
+    private BigDecimal humiditymin = new BigDecimal("35.0");
+
+    @Column(name= "humidity_min")
+    @Builder.Default
+    private BigDecimal humiditymin = new BigDecimal("40.0");
 }
