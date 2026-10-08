@@ -5,7 +5,7 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 @Entity
-@Table(name = "lecturas_sensores")
+@Table(name = "lecture_sensors")
 @Data
 @Builder
 @NoArgsConstructor
@@ -17,7 +17,7 @@ public class LectureSensor {
     private Integer Idlecture;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoininColumn(name  = "id_estate", nullable= false)
+    @JoininColumn(name  = "id_sensor", nullable= false)
     private Sensor sensor;
 
     @Column(nullable = false)

@@ -18,7 +18,7 @@ public class sensor {
     private Integer IdSensor;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoininColumn(name  = "id_estate", nullable= false)
+    @JoininColumn(name  = "id_sensor", nullable= false)
     private Cultive cultive;
 
     @Column(name="Sensor_Code", nullable=false, unique=true) 
