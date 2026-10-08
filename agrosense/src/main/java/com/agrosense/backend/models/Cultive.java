@@ -54,4 +54,8 @@ public class Cultive {
     @Column(name= "ph_min")
     @Builder.Default
     private BigDecimal phmin = new BigDecimal("5.5");
+
+    @Column(name= "ph_max")
+    @Builder.Default
+    private BigDecimal phmin = new BigDecimal("7.0");
 }
