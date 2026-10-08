@@ -22,4 +22,34 @@ public class Alert {
     @ManyToOne(fetch = FetchType.LAZY)
     @JoininColumn(name  = "id_cultive", nullable= false)
     private Cultive cultive; 
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "id_sensor")
+    private Sensor sensor;
+
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "type_alert", nullable = false)
+    private TypeAlert typeAlert;
+
+    @Enumerated(EnumType.STRING)
+    @Builder.Default
+    private Severity severity = Severity.MIDLOW;
+
+    @Column(nullable = false)
+    private String message;
+
+    @Column(name = "Value_Detected")
+    private BigDecimal ValueDetected;
+
+    @Builder.Default
+    private Boolean served = false;
+
+    @Column(name = "created_in")
+    private LocalDateTime CreatedIn;
+
+    @PrePersist
+    public void prePersist() {
+        this.createdIn = LocalDateTime.now();
+    }
 }
