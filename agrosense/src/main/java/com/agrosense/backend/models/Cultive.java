@@ -58,4 +58,18 @@ public class Cultive {
     @Column(name= "ph_max")
     @Builder.Default
     private BigDecimal phmin = new BigDecimal("7.0");
+
+    @Builder.Default
+    private Boolean active = true;
+
+    @OneToMany(mappedBy= "Cultive", cascade= CascadeType.ALL,
+    fetch= FetchType.LAZY)
+    private List<Sensor> sensors; 
+
+    @Column(name = "Created In")
+    private LocalDateTime CreatedIn;
+
+    @PrePersist(){
+        this.CreatedIn = LocalDateTime.now(); 
+    }
 }
