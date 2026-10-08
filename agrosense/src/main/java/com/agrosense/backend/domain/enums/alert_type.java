@@ -1,6 +1,6 @@
 package com.agrosense.backend.domain.enums;
 
-public enum alert_type{
+public enum Alert_type{
     Low_Humidity,
     High_Humidity,
     High_Temperature,
