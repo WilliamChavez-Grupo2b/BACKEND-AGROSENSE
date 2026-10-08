@@ -36,4 +36,14 @@ public class Estate {
     @Column(name= "area-ha", precision= 10, scale=2 )
     private BigDecimal areaHa;
 
+    @OneToMany(mappedBy = "Estate", cascade= CascadeType.ALL,
+    fetch= FetchType.LAZY)
+    private List<Cultive> cultives ; 
+
+    @Column(name = "Created In")
+    private LocalDateTime CreatedIn;
+
+    @PrePersist(){
+        this.CreatedIn = LocalDateTime.now(); 
+    }
 }
