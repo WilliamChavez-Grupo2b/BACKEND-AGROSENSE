@@ -1,5 +1,5 @@
 package com.agrosense.backend.domain.enums;
 
-public enum severity {
+public enum Severity {
     LOW, MIDLOW, HIGH, VERY_HIGH
 }
