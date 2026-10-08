@@ -7,7 +7,7 @@ import java.time.LocalDateTime;
 import java.util.List; 
 
 @Entify
-@Table(name="fincas")
+@Table(name="Estates")
 @Data
 @Builder
 @NoArgsConstructor

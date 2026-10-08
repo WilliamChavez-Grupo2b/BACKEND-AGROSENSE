@@ -29,7 +29,7 @@ public class Cultive {
     private String variety;
 
     @Column(name = "sowing_date")
-    private LocalDate fechaSiembra;
+    private LocalDate sowingdate;
 
     @Enumerated(EnumType.STRING)
     @Builder.Default
