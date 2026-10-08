@@ -41,17 +41,17 @@ public class Cultive {
 
     @Column(name= "humidity_max")
     @Builder.Default
-    private BigDecimal humiditymin = new BigDecimal("80.0");
+    private BigDecimal humiditymax = new BigDecimal("80.0");
 
     @Column(name= "temp_min")
     @Builder.Default
-    private BigDecimal humiditymin = new BigDecimal("15.0");
+    private BigDecimal tempmin = new BigDecimal("15.0");
 
     @Column(name= "temp_max")
     @Builder.Default
-    private BigDecimal humiditymin = new BigDecimal("35.0");
+    private BigDecimal tempmax = new BigDecimal("35.0");
 
-    @Column(name= "humidity_min")
+    @Column(name= "ph_min")
     @Builder.Default
-    private BigDecimal humiditymin = new BigDecimal("40.0");
+    private BigDecimal phmin = new BigDecimal("5.5");
 }
