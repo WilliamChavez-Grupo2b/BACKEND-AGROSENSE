@@ -32,7 +32,7 @@ public class LectureSensor {
 
         @PrePersist
     public void prePersist() {
-        if (this.tiempo == null) this.tiempo = LocalDateTime.now();
+        if (this.time == null) this.tiempo = LocalDateTime.now();
     } 
 
 }
