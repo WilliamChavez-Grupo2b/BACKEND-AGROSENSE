@@ -2,6 +2,7 @@ package com.agrosense.backend.exception;
 
 import com.agrosense.backend.dto.response.ErrorResponse;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -47,6 +48,16 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ErrorResponse> handleIllegalArgument(IllegalArgumentException exception) {
         log.warn("Solicitud rechazada por datos no válidos: {}", exception.getMessage());
         return respond(HttpStatus.BAD_REQUEST, "Los datos enviados no son válidos.");
+    }
+
+    /**
+     * The database refused the change, typically because two requests created the same thing at the same
+     * moment and the second one hit a unique constraint.
+     */
+    @ExceptionHandler(DataIntegrityViolationException.class)
+    public ResponseEntity<ErrorResponse> handleDataIntegrity(DataIntegrityViolationException exception) {
+        log.warn("Operación rechazada por la base de datos: {}", exception.getMostSpecificCause().getMessage());
+        return respond(HttpStatus.CONFLICT, "Los datos entran en conflicto con un registro existente.");
     }
 
     @ExceptionHandler(HttpMessageNotReadableException.class)
