@@ -2,6 +2,7 @@ package com.agrosense.backend.exception;
 
 import com.agrosense.backend.dto.response.ErrorResponse;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
@@ -57,6 +58,16 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(AuthenticationException.class)
     public ResponseEntity<ErrorResponse> handleAuthentication() {
         return respond(HttpStatus.UNAUTHORIZED, "Credenciales incorrectas.");
+    }
+
+    @ExceptionHandler(TooManyLoginAttemptsException.class)
+    public ResponseEntity<ErrorResponse> handleTooManyLoginAttempts(TooManyLoginAttemptsException exception) {
+        long seconds = Math.max(1, exception.getRetryAfter().toSeconds());
+        long minutes = (seconds + 59) / 60;
+        return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
+                .header(HttpHeaders.RETRY_AFTER, String.valueOf(seconds))
+                .body(new ErrorResponse("Demasiados intentos fallidos. Inténtalo de nuevo en " + minutes
+                        + (minutes == 1 ? " minuto." : " minutos.")));
     }
 
     @ExceptionHandler(AccessDeniedException.class)
