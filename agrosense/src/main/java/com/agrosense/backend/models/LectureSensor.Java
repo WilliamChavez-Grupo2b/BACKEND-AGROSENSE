@@ -21,7 +21,7 @@ public class LectureSensor {
     private Sensor sensor;
 
     @Column(nullable = false)
-    private BigDecimal valor; 
+    private BigDecimal value; 
     private String unity; 
 
     @Builder.Default
@@ -32,7 +32,7 @@ public class LectureSensor {
 
         @PrePersist
     public void prePersist() {
-        if (this.time == null) this.tiempo = LocalDateTime.now();
+        if (this.time == null) this.time = LocalDateTime.now();
     } 
 
 }

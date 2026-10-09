@@ -14,5 +14,5 @@ public class LectureRequest {
     @NotNull(message = "Value is obligatory")
     private BigDecimal value;
 
-    private String unique;
+    private String unity;
 }
