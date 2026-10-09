@@ -1,9 +1,11 @@
 package com.agrosense.backend.controller;
 
 import com.agrosense.backend.dto.response.PredictionResponse;
+import com.agrosense.backend.security.Roles;
 import com.agrosense.backend.service.PrediccionService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -19,6 +21,7 @@ import java.util.Map;
 @RestController
 @RequestMapping("/api/crops/{cropId}/predictions")
 @RequiredArgsConstructor
+@PreAuthorize(Roles.ANY)
 public class PrediccionController {
 
     private final PrediccionService prediccionService;
@@ -35,6 +38,7 @@ public class PrediccionController {
      */
     @PostMapping
     @ResponseStatus(HttpStatus.ACCEPTED)
+    @PreAuthorize(Roles.MANAGER)
     public void request(@PathVariable Integer cropId, Principal principal) {
         // Ownership is checked here, on the request thread, so a foreign crop gets a 404.
         Map<String, Object> conditions = prediccionService.currentConditions(principal.getName(), cropId);

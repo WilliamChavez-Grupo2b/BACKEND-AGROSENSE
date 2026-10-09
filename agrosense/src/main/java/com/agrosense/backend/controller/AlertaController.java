@@ -1,8 +1,10 @@
 package com.agrosense.backend.controller;
 
 import com.agrosense.backend.dto.response.AlertResponse;
+import com.agrosense.backend.security.Roles;
 import com.agrosense.backend.service.AlertService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -16,6 +18,7 @@ import java.util.List;
 @RestController
 @RequestMapping("/api")
 @RequiredArgsConstructor
+@PreAuthorize(Roles.ANY)
 public class AlertaController {
 
     private final AlertService alertService;
@@ -32,6 +35,7 @@ public class AlertaController {
     }
 
     @PatchMapping("/alerts/{alertId}/acknowledge")
+    @PreAuthorize(Roles.MANAGER)
     public AlertResponse acknowledge(@PathVariable Integer alertId, Principal principal) {
         return alertService.acknowledge(principal.getName(), alertId);
     }
