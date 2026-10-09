@@ -1,6 +1,6 @@
 package com.agrosense.backend.config;
 
-import com.agrosense.backend.security.JwtAuthenticationFilter;
+import com.agrosense.backend.security.JwtFilter;
 import com.agrosense.backend.security.TokenAuthenticator;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.context.annotation.Bean;
@@ -38,10 +38,10 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.POST, "/api/auth/login").permitAll()
                         // Browsers cannot send headers on the WebSocket handshake; the token is checked on
                         // the STOMP CONNECT frame instead (see StompAuthChannelInterceptor).
-                        .requestMatchers("/ws").permitAll()
+                        .requestMatchers("/ws/**").permitAll()
                         .anyRequest().authenticated())
                 .exceptionHandling(errors -> errors.authenticationEntryPoint(unauthorizedEntryPoint()))
-                .addFilterBefore(new JwtAuthenticationFilter(tokenAuthenticator),
+                .addFilterBefore(new JwtFilter(tokenAuthenticator),
                         UsernamePasswordAuthenticationFilter.class);
         return http.build();
     }

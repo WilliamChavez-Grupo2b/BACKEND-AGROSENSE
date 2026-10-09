@@ -14,7 +14,7 @@ import java.util.Arrays;
 
 /**
  * STOMP over WebSocket at /ws. Readings and alerts are pushed to per-user queues
- * (/user/queue/readings, /user/queue/alerts), so one user never receives another user's data.
+ * (/user/queue/sensores, /user/queue/alertas), so one user never receives another user's data.
  */
 @Configuration
 @EnableWebSocketMessageBroker

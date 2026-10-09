@@ -29,7 +29,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 		"spring.datasource.password=",
 		"spring.datasource.driver-class-name=org.h2.Driver",
 		"cors.allowed-origins=",
-		"jwt.secret=test-secret-that-is-at-least-32-bytes-long",
+		"jwt.secret=test-secret-that-is-at-least-64-bytes-long-for-hs512-signatures-0123456789",
 		"agrosense.seed.password=seed-password"
 })
 @ActiveProfiles("seed")

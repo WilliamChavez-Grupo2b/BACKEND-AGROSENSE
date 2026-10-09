@@ -13,6 +13,9 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 
+import java.util.LinkedHashMap;
+import java.util.Map;
+
 @Slf4j
 @RestControllerAdvice
 public class GlobalExceptionHandler {
@@ -29,11 +32,20 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<ErrorResponse> handleValidation(MethodArgumentNotValidException exception) {
-        String message = exception.getBindingResult().getFieldErrors().stream()
-                .map(FieldError::getDefaultMessage)
-                .findFirst()
-                .orElse("Los datos enviados no son válidos.");
-        return respond(HttpStatus.BAD_REQUEST, message);
+        // One message per field, in the order they were reported; the first one is also the summary.
+        Map<String, String> fields = new LinkedHashMap<>();
+        for (FieldError error : exception.getBindingResult().getFieldErrors()) {
+            fields.putIfAbsent(error.getField(), error.getDefaultMessage());
+        }
+        String message = fields.values().stream().findFirst().orElse("Los datos enviados no son válidos.");
+        return ResponseEntity.badRequest().body(new ErrorResponse(message, fields));
+    }
+
+    /** Arguments the business layer refuses. Its own message is for developers, so it is not sent. */
+    @ExceptionHandler(IllegalArgumentException.class)
+    public ResponseEntity<ErrorResponse> handleIllegalArgument(IllegalArgumentException exception) {
+        log.warn("Solicitud rechazada por datos no válidos: {}", exception.getMessage());
+        return respond(HttpStatus.BAD_REQUEST, "Los datos enviados no son válidos.");
     }
 
     @ExceptionHandler(HttpMessageNotReadableException.class)

@@ -57,6 +57,12 @@
 			<artifactId>spring-boot-starter-websocket</artifactId>
 		</dependency>
 
+		<!-- WebClient on Reactor Netty, for calls to the AI service -->
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-webclient</artifactId>
+		</dependency>
+
 		<!-- JSON Web Tokens for the stateless API login -->
 		<dependency>
 			<groupId>io.jsonwebtoken</groupId>

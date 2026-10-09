@@ -18,8 +18,8 @@ import org.springframework.transaction.event.TransactionalEventListener;
 @RequiredArgsConstructor
 public class SensorWebSocketHandler {
 
-    public static final String READINGS_QUEUE = "/queue/readings";
-    public static final String ALERTS_QUEUE = "/queue/alerts";
+    public static final String READINGS_QUEUE = "/queue/sensores";
+    public static final String ALERTS_QUEUE = "/queue/alertas";
 
     private final SimpMessagingTemplate messagingTemplate;
 
