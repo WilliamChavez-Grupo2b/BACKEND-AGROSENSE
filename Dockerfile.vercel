@@ -1,0 +1,35 @@
+# Image of the web frontend for Vercel, built from the workspace root because it needs database/.
+# Vercel runs it as a stateless function that scales to zero, so nothing may be kept in the container.
+
+# ── Stage 1: Build ────────────────────────────────────
+FROM eclipse-temurin:21-jdk-alpine AS builder
+WORKDIR /app
+COPY frontend/.mvn/ .mvn/
+COPY frontend/mvnw frontend/pom.xml ./
+# The wrapper may arrive with Windows line endings when deployed from a Windows checkout.
+RUN sed -i 's/\r$//' mvnw && chmod +x mvnw && ./mvnw dependency:go-offline -B
+COPY frontend/src/ src/
+RUN ./mvnw package -DskipTests -B
+
+# ── Stage 2: Run ──────────────────────────────────────
+FROM eclipse-temurin:21-jre-alpine
+WORKDIR /app
+RUN addgroup -S agrosense && adduser -S agrosense -G agrosense
+COPY --from=builder /app/target/*.jar app.jar
+# Connection settings, schema and sample data; application.properties imports them from DATABASE_DIR.
+COPY database/ /app/database/
+ENV DATABASE_DIR=/app/database
+# Vercel sends traffic to $PORT; the same value must be set as PORT in the project's environment.
+ENV PORT=8080
+# Requests arrive through Vercel's proxy: trust its headers so redirects keep https and the real host.
+ENV SERVER_FORWARD_HEADERS_STRATEGY=native
+# The schema script is idempotent; applying it at startup creates the tables on a new database.
+ENV SQL_INIT_MODE=always
+# Every instance opens its own pool, so each one stays small and gives connections back when idle.
+ENV SPRING_DATASOURCE_HIKARI_MAXIMUM_POOL_SIZE=3
+ENV SPRING_DATASOURCE_HIKARI_MINIMUM_IDLE=0
+USER agrosense
+EXPOSE 8080
+# The Postgres resource is connected to this project with the NEON_ prefix, which provides
+# NEON_PGHOST_UNPOOLED, NEON_PGDATABASE, NEON_PGUSER and NEON_PGPASSWORD; the datasource is built from them.
+ENTRYPOINT ["sh", "-c", "exec java -jar app.jar \"--spring.datasource.url=jdbc:postgresql://${NEON_PGHOST_UNPOOLED}/${NEON_PGDATABASE}?sslmode=require\" \"--spring.datasource.username=${NEON_PGUSER}\" \"--spring.datasource.password=${NEON_PGPASSWORD}\""]

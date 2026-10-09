@@ -1,0 +1,10 @@
+# The Vercel project deploys only the frontend (see Dockerfile.vercel), which needs frontend/ and database/.
+.git
+backend
+docs
+**/target
+**/node_modules
+**/.idea
+**/.vscode
+**/.env
+.env*.local
