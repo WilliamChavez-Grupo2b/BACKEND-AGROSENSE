@@ -16,6 +16,7 @@ import com.agrosense.backend.repository.AiPredictionRepository;
 import com.agrosense.backend.repository.CropRepository;
 import com.agrosense.backend.repository.SensorReadingRepository;
 import com.agrosense.backend.repository.SensorRepository;
+import com.agrosense.backend.security.LoginAttemptService;
 import com.agrosense.backend.service.AiClientService;
 import com.agrosense.backend.service.PrediccionService;
 import com.agrosense.backend.service.SensorService;
@@ -23,6 +24,11 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
 import java.math.BigDecimal;
+import java.time.Clock;
+import java.time.Duration;
+import java.time.Instant;
+import java.time.ZoneId;
+import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -130,6 +136,70 @@ class ServiceTests {
 		when(sensors.findByCropIdCropOrderBySensorCodeAsc(7)).thenReturn(List.of(
 				Sensor.builder().idSensor(1).sensorCode("AS-900").sensorType(SensorType.PH).crop(crop).build()));
 		assertThat(service.findByCrop(OWNER, 7)).extracting(SensorResponse::getSensorCode).containsExactly("AS-900");
+	}
+
+	@Test
+	void failedLoginsLockAnAccountOrAnAddressUntilTheLockExpires() {
+		Instant[] now = {Instant.parse("2026-01-01T00:00:00Z")};
+		Clock clock = new Clock() {
+			@Override
+			public ZoneId getZone() {
+				return ZoneOffset.UTC;
+			}
+
+			@Override
+			public Clock withZone(ZoneId zone) {
+				return this;
+			}
+
+			@Override
+			public Instant instant() {
+				return now[0];
+			}
+		};
+
+		// Per account: the third failure locks it, whatever address the next attempt comes from.
+		LoginAttemptService perAccount = new LoginAttemptService(3, 0, Duration.ofMinutes(15), clock);
+		perAccount.recordFailure("a@agrosense.test", "10.0.0.1");
+		perAccount.recordFailure("a@agrosense.test", "10.0.0.1");
+		assertThat(perAccount.remainingLock("a@agrosense.test", "10.0.0.1")).isEmpty();
+		perAccount.recordSuccess("a@agrosense.test");
+		perAccount.recordFailure("a@agrosense.test", "10.0.0.1");
+		perAccount.recordFailure("a@agrosense.test", "10.0.0.1");
+		assertThat(perAccount.remainingLock("a@agrosense.test", "10.0.0.1")).isEmpty();
+		perAccount.recordFailure("a@agrosense.test", "10.0.0.1");
+		assertThat(perAccount.remainingLock(" A@Agrosense.Test ", "10.9.9.9")).contains(Duration.ofMinutes(15));
+		assertThat(perAccount.remainingLock("b@agrosense.test", "10.0.0.1")).isEmpty();
+
+		now[0] = now[0].plus(Duration.ofMinutes(10));
+		assertThat(perAccount.remainingLock("a@agrosense.test", "10.0.0.1")).contains(Duration.ofMinutes(5));
+		now[0] = now[0].plus(Duration.ofMinutes(5));
+		assertThat(perAccount.remainingLock("a@agrosense.test", "10.0.0.1")).isEmpty();
+		// The lock is over and so is the count: it takes three new failures to lock again.
+		perAccount.recordFailure("a@agrosense.test", "10.0.0.1");
+		perAccount.recordFailure("a@agrosense.test", "10.0.0.1");
+		assertThat(perAccount.remainingLock("a@agrosense.test", "10.0.0.1")).isEmpty();
+
+		// Failures spread over more than the lock time never add up.
+		now[0] = now[0].plus(Duration.ofMinutes(16));
+		perAccount.recordFailure("a@agrosense.test", "10.0.0.1");
+		perAccount.recordFailure("a@agrosense.test", "10.0.0.1");
+		assertThat(perAccount.remainingLock("a@agrosense.test", "10.0.0.1")).isEmpty();
+		perAccount.purgeExpired();
+		assertThat(perAccount.remainingLock("a@agrosense.test", "10.0.0.1")).isEmpty();
+
+		// Per address: guessing across many accounts from one place locks that place only.
+		LoginAttemptService perAddress = new LoginAttemptService(0, 4, Duration.ofMinutes(15), clock);
+		for (int i = 0; i < 4; i++) {
+			perAddress.recordFailure("user" + i + "@agrosense.test", "10.0.0.2");
+		}
+		assertThat(perAddress.remainingLock("anyone@agrosense.test", "10.0.0.2")).isPresent();
+		assertThat(perAddress.remainingLock("user0@agrosense.test", "10.0.0.3")).isEmpty();
+
+		assertThatThrownBy(() -> new LoginAttemptService(-1, 0, Duration.ofMinutes(15), clock))
+				.isInstanceOf(IllegalStateException.class);
+		assertThatThrownBy(() -> new LoginAttemptService(5, 5, Duration.ZERO, clock))
+				.isInstanceOf(IllegalStateException.class);
 	}
 
 	private static Crop crop(int id) {

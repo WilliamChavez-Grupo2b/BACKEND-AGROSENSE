@@ -55,7 +55,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 		"spring.datasource.driver-class-name=org.h2.Driver",
 		"cors.allowed-origins=http://localhost:5173",
 		"jwt.secret=test-secret-that-is-at-least-64-bytes-long-for-hs512-signatures-0123456789",
-		"agrosense.seed.password=seed-password"
+		"agrosense.seed.password=seed-password",
+		// Every test logs in from the same address; only the per-account limit is exercised here.
+		"login.max-attempts-per-address=0"
 })
 @ActiveProfiles("seed")
 class ApiIntegrationTests {
@@ -397,6 +399,31 @@ class ApiIntegrationTests {
 
 		// The sample user is a farmer and keeps full access to its own data.
 		assertThat(send("POST", "/api/fincas", "Bearer " + token(), "{\"name\":\"\"}").statusCode()).isEqualTo(400);
+	}
+
+	@Test
+	void repeatedFailedLoginsLockTheAccountForAWhile() throws Exception {
+		createOtherUser("locked@agrosense.test");
+		for (int attempt = 1; attempt <= 5; attempt++) {
+			assertThat(login("locked@agrosense.test", "wrong").statusCode()).as("attempt %d", attempt).isEqualTo(401);
+		}
+
+		// Locked now: even the right password is refused, and the answer says for how long.
+		HttpResponse<String> locked = login("LOCKED@agrosense.test", "other-password");
+		assertThat(locked.statusCode()).isEqualTo(429);
+		assertThat(locked.body()).contains("Demasiados intentos fallidos. Inténtalo de nuevo en 15 minutos.");
+		assertThat(locked.headers().firstValueAsLong("Retry-After")).isPresent();
+		assertThat(locked.headers().firstValueAsLong("Retry-After").getAsLong()).isBetween(1L, 900L);
+
+		// Other accounts are not affected, and a success in between keeps an account from locking.
+		assertThat(login(EMAIL, PASSWORD).statusCode()).isEqualTo(200);
+		createOtherUser("careless@agrosense.test");
+		for (int round = 0; round < 3; round++) {
+			for (int attempt = 0; attempt < 4; attempt++) {
+				assertThat(login("careless@agrosense.test", "wrong").statusCode()).isEqualTo(401);
+			}
+			assertThat(login("careless@agrosense.test", "other-password").statusCode()).isEqualTo(200);
+		}
 	}
 
 	@Test
