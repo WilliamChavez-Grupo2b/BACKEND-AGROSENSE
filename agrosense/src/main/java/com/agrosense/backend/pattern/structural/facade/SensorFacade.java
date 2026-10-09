@@ -21,6 +21,7 @@ import com.agrosense.backend.pattern.structural.decorator.SensorReadingProcessor
 import com.agrosense.backend.pattern.structural.decorator.ValidationDecorator;
 import com.agrosense.backend.repository.AiPredictionRepository;
 import com.agrosense.backend.repository.AlertRepository;
+import com.agrosense.backend.repository.CropRepository;
 import com.agrosense.backend.repository.SensorReadingRepository;
 import com.agrosense.backend.repository.SensorRepository;
 import lombok.RequiredArgsConstructor;
@@ -47,6 +48,7 @@ public class SensorFacade {
     private final SensorReadingRepository readingRepository;
     private final AlertRepository alertRepository;
     private final AiPredictionRepository predictionRepository;
+    private final CropRepository cropRepository;
     private final SensorReadingPrototype readingPrototype;
     private final SensorReadingProcessor readingProcessor;
     private final ApplicationEventPublisher events;
@@ -99,9 +101,13 @@ public class SensorFacade {
                     ? AlertType.PH_OUT_OF_RANGE : null;
             default -> null;
         };
-        // One open alert per crop and type is enough; more would only repeat the same warning.
-        if (type == null
-                || alertRepository.existsByCropIdCropAndAlertTypeAndAcknowledgedFalse(crop.getIdCrop(), type)) {
+        if (type == null) {
+            return;
+        }
+        // One open alert per crop and type is enough; more would only repeat the same warning. The crop
+        // row is locked first, so two readings arriving together cannot both find "no open alert".
+        cropRepository.findByIdForUpdate(crop.getIdCrop());
+        if (alertRepository.existsByCropIdCropAndAlertTypeAndAcknowledgedFalse(crop.getIdCrop(), type)) {
             return;
         }
         Alert alert = alertRepository.save(AlertBuilder.forCrop(crop)
