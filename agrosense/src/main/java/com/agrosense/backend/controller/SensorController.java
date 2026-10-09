@@ -4,10 +4,12 @@ import com.agrosense.backend.dto.request.SensorReadingRequest;
 import com.agrosense.backend.dto.request.SensorRequest;
 import com.agrosense.backend.dto.response.SensorReadingResponse;
 import com.agrosense.backend.dto.response.SensorResponse;
+import com.agrosense.backend.security.Roles;
 import com.agrosense.backend.service.SensorService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -23,6 +25,7 @@ import java.util.List;
 @RestController
 @RequestMapping("/api")
 @RequiredArgsConstructor
+@PreAuthorize(Roles.ANY)
 public class SensorController {
 
     private final SensorService sensorService;
