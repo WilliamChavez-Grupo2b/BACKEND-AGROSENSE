@@ -31,6 +31,7 @@ import javax.sql.DataSource;
 import java.math.BigDecimal;
 import java.sql.Connection;
 import java.sql.DriverManager;
+import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.ArrayList;
@@ -67,6 +68,7 @@ import static org.assertj.core.api.Assertions.assertThatCode;
 class PostgresCompatibilityTests {
 
 	private static final String SCHEMA = "agrosense_test_" + Long.toHexString(System.nanoTime());
+	private static final String SELECT_SCHEMA = "SET search_path TO " + SCHEMA;
 
 	@Autowired
 	private DataSource dataSource;
@@ -92,7 +94,11 @@ class PostgresCompatibilityTests {
 	static void useAPrivateSchema(DynamicPropertyRegistry registry) throws SQLException {
 		String url = System.getenv("POSTGRES_TEST_URL");
 		execute("CREATE SCHEMA " + SCHEMA);
-		registry.add("spring.datasource.url", () -> url + (url.contains("?") ? "&" : "?") + "currentSchema=" + SCHEMA);
+		requireThePrivateSchema();
+		registry.add("spring.datasource.url", () -> url);
+		// Every pooled connection selects the schema itself. The currentSchema URL parameter is not enough:
+		// hosted PostgreSQL behind a proxy (Neon) ignores it and the run would write into public.
+		registry.add("spring.datasource.hikari.connection-init-sql", () -> SELECT_SCHEMA);
 		registry.add("spring.datasource.username", PostgresCompatibilityTests::username);
 		registry.add("spring.datasource.password", PostgresCompatibilityTests::password);
 		registry.add("spring.datasource.driver-class-name", () -> "org.postgresql.Driver");
@@ -105,7 +111,10 @@ class PostgresCompatibilityTests {
 
 	/** Starting the context already applied schema.sql and seed_demo.sql and validated every entity. */
 	@Test
-	void schemaSampleDataAndEntitiesAgreeOnPostgres() {
+	void schemaSampleDataAndEntitiesAgreeOnPostgres() throws SQLException {
+		try (Connection connection = dataSource.getConnection()) {
+			assertThat(connection.getSchema()).isEqualTo(SCHEMA);
+		}
 		assertThat(userRepository.findByEmail("demo@agrosense.co")).isPresent();
 		assertThat(sensorRepository.findBySensorCode("AS-001")).isPresent();
 		// Applying the script again, as a restart with SQL_INIT_MODE=always does, changes nothing.
@@ -154,6 +163,22 @@ class PostgresCompatibilityTests {
 		}
 
 		assertThat(alertRepository.findByCropIdCropAndAcknowledgedFalse(crop.getIdCrop())).hasSize(1);
+	}
+
+	/** Stops the run before the application starts unless the server really switches to the private schema. */
+	private static void requireThePrivateSchema() throws SQLException {
+		try (Connection connection = DriverManager.getConnection(
+				System.getenv("POSTGRES_TEST_URL"), username(), password());
+				Statement statement = connection.createStatement()) {
+			statement.execute(SELECT_SCHEMA);
+			try (ResultSet current = statement.executeQuery("select current_schema()")) {
+				current.next();
+				if (!SCHEMA.equals(current.getString(1))) {
+					throw new IllegalStateException("Expected schema " + SCHEMA + " but the connection uses "
+							+ current.getString(1) + "; refusing to run against it");
+				}
+			}
+		}
 	}
 
 	private static void execute(String sql) throws SQLException {
