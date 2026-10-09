@@ -333,6 +333,39 @@ class ApiIntegrationTests {
 	}
 
 	@Test
+	void irrigationsAreRegisteredAndListedOnlyOnTheOwnersCrops() throws Exception {
+		String auth = "Bearer " + token();
+		Integer cropId = sensorRepository.findBySensorCode("AS-001").orElseThrow().getCrop().getIdCrop();
+		Integer foreignCropId = createOtherUsersSensor("other-water@agrosense.test", "OTHER-WATER").getCrop()
+				.getIdCrop();
+		String irrigation = "{\"cropId\":%d,\"waterLiters\":120.5,\"durationMinutes\":30,\"reason\":\" Suelo seco \"}";
+
+		HttpResponse<String> registered = send("POST", "/api/riego", auth, irrigation.formatted(cropId));
+		assertThat(registered.statusCode()).isEqualTo(201);
+		assertThat(registered.body()).contains("\"type\":\"MANUAL\"").contains("\"reason\":\"Suelo seco\"")
+				.contains("\"durationMin\":30").contains("\"waterLiters\":120.5").contains("\"endedAt\":\"");
+
+		HttpResponse<String> history = send("GET", "/api/riego/cultivo/" + cropId, auth, null);
+		assertThat(history.statusCode()).isEqualTo(200);
+		// Newest first: the cycle just registered comes before the sample ones.
+		assertThat(history.body()).startsWith("[{").contains("Suelo seco").contains("\"type\":\"AUTOMATIC\"");
+		assertThat(history.body().indexOf("Suelo seco")).isLessThan(history.body().indexOf("AUTOMATIC"));
+		assertThat(send("GET", "/api/riego/cultivo/" + cropId + "?limit=1", auth, null).body()
+				.split("\"idIrrigation\"")).hasSize(2);
+
+		HttpResponse<String> incomplete = send("POST", "/api/riego", auth, "{\"cropId\":" + cropId + "}");
+		assertThat(incomplete.statusCode()).isEqualTo(400);
+		assertThat(incomplete.body()).contains("La cantidad de agua es obligatoria.")
+				.contains("La duración es obligatoria.").contains("El motivo es obligatorio.");
+		assertThat(send("POST", "/api/riego", auth, "{\"cropId\":" + cropId + ",\"waterLiters\":0,"
+				+ "\"durationMinutes\":30,\"reason\":\"x\"}").statusCode()).isEqualTo(400);
+
+		assertThat(send("POST", "/api/riego", auth, irrigation.formatted(foreignCropId)).statusCode()).isEqualTo(404);
+		assertThat(send("GET", "/api/riego/cultivo/" + foreignCropId, auth, null).statusCode()).isEqualTo(404);
+		assertThat(send("GET", "/api/riego/cultivo/" + cropId, null, null).statusCode()).isEqualTo(401);
+	}
+
+	@Test
 	void rolesDecideWhichOperationsAUserMayPerform() throws Exception {
 		createUser("tech@agrosense.test", "technician");
 		createUser("guest@agrosense.test", "guest");
@@ -340,6 +373,7 @@ class ApiIntegrationTests {
 		String guest = "Bearer " + extract(login("guest@agrosense.test", "other-password").body(), "token");
 		Integer cropId = sensorRepository.findBySensorCode("AS-001").orElseThrow().getCrop().getIdCrop();
 		String estate = "{\"name\":\"Finca técnica\",\"location\":\"Pasto\",\"areaHa\":1}";
+		String irrigation = "{\"cropId\":" + cropId + ",\"waterLiters\":10,\"durationMinutes\":5,\"reason\":\"Prueba\"}";
 
 		// A technician reads and works with sensors, but does not run the estate.
 		assertThat(send("GET", "/api/fincas", technician, null).statusCode()).isEqualTo(200);
@@ -348,12 +382,14 @@ class ApiIntegrationTests {
 		HttpResponse<String> denied = send("POST", "/api/fincas", technician, estate);
 		assertThat(denied.statusCode()).isEqualTo(403);
 		assertThat(denied.body()).contains("No tienes permiso para realizar esta acción.");
+		assertThat(send("POST", "/api/riego", technician, irrigation).statusCode()).isEqualTo(403);
 		assertThat(send("POST", "/api/crops/" + cropId + "/predictions", technician, null).statusCode()).isEqualTo(403);
 		assertThat(send("PATCH", "/api/alerts/1/acknowledge", technician, null).statusCode()).isEqualTo(403);
 		assertThat(send("GET", "/api/fincas", technician, null).body()).isEqualTo("[]");
 
 		// A role the application does not know gets nothing beyond logging in.
-		for (String path : List.of("/api/dashboard", "/api/fincas", "/api/cultivos", "/api/alerts", "/api/crops/" + cropId + "/sensors")) {
+		for (String path : List.of("/api/dashboard", "/api/fincas", "/api/cultivos", "/api/alerts",
+				"/api/riego/cultivo/" + cropId, "/api/crops/" + cropId + "/sensors")) {
 			assertThat(send("GET", path, guest, null).statusCode()).as(path).isEqualTo(403);
 		}
 		assertThat(send("POST", "/api/readings", guest, "{\"sensorCode\":\"AS-001\",\"value\":50}").statusCode())
