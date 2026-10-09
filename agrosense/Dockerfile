@@ -1,13 +1,13 @@
 # The image needs the workspace's database/ folder, so build it from the workspace root:
-#   docker build -f backend/agrosense/Dockerfile -t agrosense-backend .
+#   docker build -f agrosense/Dockerfile -t agrosense-backend .
 
 # ── Stage 1: Build ────────────────────────────────────
 FROM eclipse-temurin:17-jdk-alpine AS builder
 WORKDIR /app
-COPY backend/agrosense/.mvn/ .mvn/
-COPY backend/agrosense/mvnw backend/agrosense/pom.xml ./
+COPY agrosense/.mvn/ .mvn/
+COPY agrosense/mvnw agrosense/pom.xml ./
 RUN chmod +x mvnw && ./mvnw dependency:go-offline -B
-COPY backend/agrosense/src/ src/
+COPY agrosense/src/ src/
 RUN ./mvnw package -DskipTests -B
 
 # ── Stage 2: Run ──────────────────────────────────────

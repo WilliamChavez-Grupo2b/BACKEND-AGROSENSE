@@ -18,7 +18,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 		"spring.datasource.password=",
 		"spring.datasource.driver-class-name=org.h2.Driver",
 		"spring.sql.init.mode=always",
-		"spring.sql.init.schema-locations=file:../../database/schema.sql",
+		"spring.sql.init.schema-locations=file:../database/schema.sql",
 		"spring.jpa.hibernate.ddl-auto=validate",
 		"cors.allowed-origins=",
 		"jwt.secret=test-secret-that-is-at-least-64-bytes-long-for-hs512-signatures-0123456789"
