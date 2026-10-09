@@ -58,6 +58,11 @@ public class SensorFacade {
         if (!Boolean.TRUE.equals(sensor.getActive())) {
             throw new BusinessRuleException("El sensor está inactivo y no puede registrar lecturas.");
         }
+        // A sensor only counts while it hangs from a crop in use and from an account that is enabled.
+        if (!Boolean.TRUE.equals(sensor.getCrop().getActive())
+                || !Boolean.TRUE.equals(sensor.getCrop().getEstate().getUser().getActive())) {
+            throw new BusinessRuleException("El sensor pertenece a un cultivo o a una cuenta inactivos.");
+        }
 
         SensorReading reading = readingPrototype.cloneFor(sensor, data.getValue());
         if (data.getUnit() != null) {
@@ -67,7 +72,10 @@ public class SensorFacade {
             reading.setRecordedAt(data.getRecordedAt());
         }
         reading = readingRepository.save(readingProcessor.process(reading));
-        sensor.setLastReadingAt(reading.getRecordedAt());
+        // MQTT messages can arrive late; an older reading must not move the sensor's last reading back.
+        if (sensor.getLastReadingAt() == null || reading.getRecordedAt().isAfter(sensor.getLastReadingAt())) {
+            sensor.setLastReadingAt(reading.getRecordedAt());
+        }
 
         String ownerEmail = sensor.getCrop().getEstate().getUser().getEmail();
         events.publishEvent(new SensorReadingRecordedEvent(ownerEmail, SensorReadingResponse.from(reading)));
