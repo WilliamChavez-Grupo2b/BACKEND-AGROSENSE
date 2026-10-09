@@ -1,7 +1,8 @@
 # The Vercel project deploys only the frontend (see Dockerfile.vercel), which needs frontend/ and database/.
+# The leading slash keeps these to the workspace root: the frontend has a Java package named "backend".
 .git
-backend
-docs
+/backend
+/docs
 **/target
 **/node_modules
 **/.idea
