@@ -4,7 +4,7 @@ import com.agrosense.backend.dto.request.LoginRequest;
 import com.agrosense.backend.dto.response.LoginResponse;
 import com.agrosense.backend.models.User;
 import com.agrosense.backend.repository.UserRepository;
-import com.agrosense.backend.security.JwtService;
+import com.agrosense.backend.security.JwtUtil;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.BadCredentialsException;
@@ -21,7 +21,7 @@ public class AuthService {
 
     private final AuthenticationManager authenticationManager;
     private final UserRepository userRepository;
-    private final JwtService jwtService;
+    private final JwtUtil jwtUtil;
 
     /**
      * Checks the credentials and issues a token.
@@ -39,7 +39,7 @@ public class AuthService {
                 .orElseThrow(() -> new BadCredentialsException("User disappeared during login"));
         user.setLastAccessAt(LocalDateTime.now());
         return new LoginResponse(
-                jwtService.generateToken(user.getEmail(), user.getRole()),
+                jwtUtil.generateToken(user.getEmail(), user.getRole()),
                 user.getName(),
                 user.getRole(),
                 user.getIdUser());

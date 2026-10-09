@@ -14,18 +14,24 @@ import java.security.Principal;
 import java.util.List;
 
 @RestController
-@RequestMapping("/api/alerts")
+@RequestMapping("/api")
 @RequiredArgsConstructor
-public class AlertController {
+public class AlertaController {
 
     private final AlertService alertService;
 
-    @GetMapping
+    @GetMapping("/alerts")
     public List<AlertResponse> open(@RequestParam(defaultValue = "50") int limit, Principal principal) {
         return alertService.findOpen(principal.getName(), limit);
     }
 
-    @PatchMapping("/{alertId}/acknowledge")
+    @GetMapping("/crops/{cropId}/alerts")
+    public List<AlertResponse> openByCrop(@PathVariable Integer cropId,
+            @RequestParam(defaultValue = "50") int limit, Principal principal) {
+        return alertService.findOpenByCrop(principal.getName(), cropId, limit);
+    }
+
+    @PatchMapping("/alerts/{alertId}/acknowledge")
     public AlertResponse acknowledge(@PathVariable Integer alertId, Principal principal) {
         return alertService.acknowledge(principal.getName(), alertId);
     }

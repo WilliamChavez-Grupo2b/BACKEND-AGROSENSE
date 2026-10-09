@@ -1,8 +1,10 @@
 package com.agrosense.backend.controller;
 
 import com.agrosense.backend.dto.request.SensorReadingRequest;
+import com.agrosense.backend.dto.request.SensorRequest;
 import com.agrosense.backend.dto.response.SensorReadingResponse;
-import com.agrosense.backend.service.SensorReadingService;
+import com.agrosense.backend.dto.response.SensorResponse;
+import com.agrosense.backend.service.SensorService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -21,19 +23,31 @@ import java.util.List;
 @RestController
 @RequestMapping("/api")
 @RequiredArgsConstructor
-public class SensorReadingController {
+public class SensorController {
 
-    private final SensorReadingService readingService;
+    private final SensorService sensorService;
 
     @PostMapping("/readings")
     @ResponseStatus(HttpStatus.CREATED)
     public SensorReadingResponse record(@Valid @RequestBody SensorReadingRequest request, Principal principal) {
-        return readingService.record(principal.getName(), request);
+        return sensorService.record(principal.getName(), request);
     }
 
     @GetMapping("/sensors/{sensorId}/readings")
     public List<SensorReadingResponse> latest(@PathVariable Integer sensorId,
             @RequestParam(defaultValue = "50") int limit, Principal principal) {
-        return readingService.findLatest(principal.getName(), sensorId, limit);
+        return sensorService.findLatest(principal.getName(), sensorId, limit);
+    }
+
+    @GetMapping("/crops/{cropId}/sensors")
+    public List<SensorResponse> byCrop(@PathVariable Integer cropId, Principal principal) {
+        return sensorService.findByCrop(principal.getName(), cropId);
+    }
+
+    @PostMapping("/sensors")
+    @ResponseStatus(HttpStatus.CREATED)
+    public SensorResponse create(@Valid @RequestBody SensorRequest request, Principal principal) {
+        return sensorService.create(principal.getName(), request.getCropId(), request.getSensorType(),
+                request.getSensorCode(), request.getLocation());
     }
 }

@@ -1,10 +1,17 @@
 package com.agrosense.backend.service;
 
+import com.agrosense.backend.domain.enums.SensorType;
 import com.agrosense.backend.dto.request.SensorReadingRequest;
 import com.agrosense.backend.dto.response.SensorReadingResponse;
+import com.agrosense.backend.dto.response.SensorResponse;
+import com.agrosense.backend.exception.BusinessRuleException;
 import com.agrosense.backend.exception.ResourceNotFoundException;
+import com.agrosense.backend.models.Crop;
+import com.agrosense.backend.models.Sensor;
+import com.agrosense.backend.pattern.creational.factory.SensorFactory;
 import com.agrosense.backend.pattern.structural.adapter.SensorReadingData;
 import com.agrosense.backend.pattern.structural.facade.SensorFacade;
+import com.agrosense.backend.repository.CropRepository;
 import com.agrosense.backend.repository.SensorReadingRepository;
 import com.agrosense.backend.repository.SensorRepository;
 import lombok.RequiredArgsConstructor;
@@ -17,13 +24,15 @@ import java.util.Locale;
 
 @Service
 @RequiredArgsConstructor
-public class SensorReadingService {
+public class SensorService {
 
     private static final int MAX_READINGS = 500;
 
     private final SensorFacade sensorFacade;
+    private final SensorFactory sensorFactory;
     private final SensorRepository sensorRepository;
     private final SensorReadingRepository readingRepository;
+    private final CropRepository cropRepository;
 
     /** Records a reading sent over REST. The sensor must belong to the authenticated user. */
     @Transactional
@@ -49,5 +58,31 @@ public class SensorReadingService {
                 .stream()
                 .map(SensorReadingResponse::from)
                 .toList();
+    }
+
+    /** Registers a sensor on one of the user's crops. Sensor codes are unique across the system. */
+    @Transactional
+    public SensorResponse create(String email, Integer cropId, SensorType type, String sensorCode,
+            String location) {
+        Sensor sensor = sensorFactory.create(type, sensorCode, location, ownedCrop(email, cropId));
+        if (sensorRepository.existsBySensorCode(sensor.getSensorCode())) {
+            throw new BusinessRuleException("Ya existe un sensor con ese código.");
+        }
+        return SensorResponse.from(sensorRepository.save(sensor));
+    }
+
+    /** Every sensor of one of the user's crops, ordered by code. */
+    @Transactional(readOnly = true)
+    public List<SensorResponse> findByCrop(String email, Integer cropId) {
+        ownedCrop(email, cropId);
+        return sensorRepository.findByCropIdCropOrderBySensorCodeAsc(cropId).stream()
+                .map(SensorResponse::from)
+                .toList();
+    }
+
+    /** Another user's crop is reported as missing, so its existence is not revealed. */
+    private Crop ownedCrop(String email, Integer cropId) {
+        return cropRepository.findByIdCropAndEstateUserEmail(cropId, email)
+                .orElseThrow(() -> new ResourceNotFoundException("Crop not found"));
     }
 }
