@@ -66,12 +66,11 @@ tomadas y qué partes de la interfaz usan datos reales, parciales o no disponibl
     muestra una vista esquemática con el aviso «Sin coordenadas registradas». El script valida que
     Leaflet esté cargado y que cada coordenada sea un número dentro de rango; ante cualquier fallo cambia
     a esa misma vista en lugar de lanzar un error.
-$114. **Corrección de «Access blocked» en el mapa.** OpenStreetMap devuelve una imagen de bloqueo a las
-    peticiones sin cabecera `Referer`, y la aplicación la eliminaba con `Referrer-Policy: same-origin`.
-    La política pasa a `strict-origin-when-cross-origin`, que envía solo el origen, y las teselas vuelven
-    a cargar (comprobado: la misma tesela pesa 6,9 kB sin `Referer` y 20 kB con él). Se probó CARTO
-    Voyager como alternativa, pero hoy entrega las teselas con la marca «API KEY REQUIRED», así que se
-    mantiene OpenStreetMap en `tile.openstreetmap.org`, único origen de imágenes externas en la CSP.
+$1$115. **Gestión de parcelas, cultivos y sensores.** `CatalogService` concentra altas, ediciones y bajas,
+    siempre limitadas al dueño. Al eliminar una parcela o un cultivo se borran antes, en la misma
+    transacción, sus lecturas, alertas y riegos, porque esas tablas no tienen cascada. Al eliminar un
+    sensor se borran sus lecturas y sus alertas se conservan sin la referencia al sensor. El código de
+    sensor es único en todo el sistema y se guarda en mayúsculas.
 
 ## 3. Estructura del frontend
 
@@ -113,8 +112,8 @@ parte.
 | Inicio · gráfica de lecturas    | `GET /api/ui/sensors/{id}/readings`                    | Real            |
 | Inicio · agua por día           | `GET /api/ui/water-usage`                              | Real            |
 | Inicio · alertas recientes      | `AlertService`                                         | Real            |
-| Parcelas                        | `EstateService`                                        | Real (solo lectura) |
-| Sensores                        | `SensorService`                                        | Real (solo lectura) |
+| Parcelas                        | `EstateService` (lectura), `CatalogService` (alta, edición, baja de parcelas y cultivos) | Real |
+| Sensores                        | `SensorService` (lectura), `CatalogService` (alta y baja) | Parcial (sin edición; las lecturas dependen de un servicio de ingesta que no existe) |
 | Riego                           | `IrrigationService`                                    | Parcial (los riegos manuales no registran litros) |
 | Dispositivos                    | —                                                      | No disponible   |
 | Alertas                         | `AlertService` (listar, paginar, marcar como atendida) | Real            |
@@ -140,7 +139,7 @@ datos contiene datos de ejemplo.
 
 ## 6. Verificación realizada
 
-- `mvnw clean verify` en `frontend/`: 36 pruebas (JUnit 5, Mockito, MockMvc), todas correctas.
+- `mvnw clean verify` en `frontend/`: 40 pruebas (JUnit 5, Mockito, MockMvc), todas correctas.
 - `mvnw package` en `backend/agrosense`: 5 pruebas, todas correctas.
 - Recorrido en Edge sin interfaz con el perfil `demo`: registro → login → inicio → cada opción del menú
   → configuración → cerrar sesión → ruta protegida redirige a login → login → eliminar cuenta (contraseña
@@ -152,7 +151,8 @@ datos contiene datos de ejemplo.
 
 - Definir el esquema real en `database/` y alinear las entidades de backend y frontend.
 - API REST en el backend; después, decidir si el frontend sigue con JPA o pasa a consumirla.
-- Altas y edición de fincas, cultivos y sensores: una cuenta nueva no puede crear datos desde la interfaz.
+- Ingesta de lecturas: los sensores se pueden registrar, pero nada recibe datos de los dispositivos.
+- Edición de sensores (hoy solo alta y baja).
 - Edición del perfil, cambio de contraseña, verificación de correo y límite de intentos de acceso.
 - Integración con dispositivos (bombas), servicio de clima y exportación de reportes.
 - No se ha probado contra PostgreSQL: las pruebas y la demo usan H2.
