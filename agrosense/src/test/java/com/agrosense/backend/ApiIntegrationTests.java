@@ -279,6 +279,60 @@ class ApiIntegrationTests {
 	}
 
 	@Test
+	void estatesAndCropsAreCreatedAndListedOnlyForTheirOwner() throws Exception {
+		// A separate user, so the sample user's totals stay as other tests expect them.
+		createOtherUser("grower@agrosense.test");
+		String auth = "Bearer " + extract(login("grower@agrosense.test", "other-password").body(), "token");
+		String demoAuth = "Bearer " + token();
+		Integer demoEstateId = sensorRepository.findBySensorCode("AS-001").orElseThrow().getCrop().getEstate()
+				.getIdEstate();
+
+		assertThat(send("GET", "/api/fincas", auth, null).body()).isEqualTo("[]");
+		HttpResponse<String> estate = send("POST", "/api/fincas", auth, "{\"name\":\" Los Arrayanes \","
+				+ "\"location\":\"Pasto\",\"latitude\":1.2136,\"longitude\":-77.2811,\"areaHa\":12.5}");
+		assertThat(estate.statusCode()).isEqualTo(201);
+		assertThat(estate.body()).contains("\"name\":\"Los Arrayanes\"").contains("\"areaHa\":12.5");
+		String estateId = extractNumber(estate.body(), "idEstate");
+
+		HttpResponse<String> blank = send("POST", "/api/fincas", auth, "{\"name\":\"\",\"location\":\"Pasto\"}");
+		assertThat(blank.statusCode()).isEqualTo(400);
+		assertThat(blank.body()).contains("\"name\":\"El nombre de la finca es obligatorio.\"")
+				.contains("\"areaHa\":\"El área es obligatoria.\"");
+		assertThat(send("POST", "/api/fincas", auth, "{\"name\":\"X\",\"location\":\"Pasto\",\"areaHa\":1,"
+				+ "\"latitude\":1.2}").body()).contains("La latitud y la longitud deben enviarse juntas.");
+		assertThat(send("GET", "/api/fincas", auth, null).body()).contains("Los Arrayanes");
+		assertThat(send("GET", "/api/fincas", demoAuth, null).body()).doesNotContain("Los Arrayanes");
+
+		// Ranges left out take the defaults; a range sent is stored as sent.
+		HttpResponse<String> crop = send("POST", "/api/cultivos", auth, "{\"estateId\":" + estateId
+				+ ",\"name\":\"Lulo\",\"variety\":\"La Selva\",\"sowingDate\":\"2026-03-01\",\"phMin\":5,\"phMax\":6.2}");
+		assertThat(crop.statusCode()).isEqualTo(201);
+		assertThat(crop.body()).contains("\"name\":\"Lulo\"").contains("\"sowingDate\":\"2026-03-01\"")
+				.contains("\"stage\":\"GERMINATION\"").contains("\"humidityMin\":40").contains("\"phMax\":6.2")
+				.contains("\"active\":true");
+		String cropId = extractNumber(crop.body(), "idCrop");
+
+		assertThat(send("POST", "/api/cultivos", auth, "{\"estateId\":" + estateId + ",\"name\":\"Maíz\","
+				+ "\"tempMin\":30,\"tempMax\":20}").body()).contains("El rango de temperatura");
+		assertThat(send("POST", "/api/cultivos", auth, "{\"estateId\":" + estateId + ",\"name\":\"Maíz\","
+				+ "\"humidityMin\":30}").statusCode()).isEqualTo(400);
+		assertThat(send("POST", "/api/cultivos", auth, "{\"estateId\":" + estateId + "}").statusCode()).isEqualTo(400);
+		assertThat(send("POST", "/api/cultivos", auth, "{\"estateId\":" + demoEstateId + ",\"name\":\"Maíz\"}")
+				.statusCode()).isEqualTo(404);
+
+		assertThat(send("GET", "/api/cultivos?estateId=" + estateId, auth, null).body()).contains("Lulo");
+		assertThat(send("GET", "/api/cultivos", auth, null).body()).contains("Lulo").doesNotContain("Maíz");
+		assertThat(send("GET", "/api/cultivos?estateId=" + demoEstateId, auth, null).statusCode()).isEqualTo(404);
+		assertThat(send("GET", "/api/cultivos?estateId=" + estateId, demoAuth, null).statusCode()).isEqualTo(404);
+		assertThat(send("GET", "/api/cultivos", demoAuth, null).body()).doesNotContain("Lulo");
+		assertThat(send("GET", "/api/cultivos", null, null).statusCode()).isEqualTo(401);
+
+		// The new crop id works with the per-crop endpoints.
+		assertThat(send("GET", "/api/dashboard/" + cropId, auth, null).statusCode()).isEqualTo(200);
+		assertThat(send("GET", "/api/dashboard/" + cropId, demoAuth, null).statusCode()).isEqualTo(404);
+	}
+
+	@Test
 	void webSocketRequiresATokenAndDeliversReadingsOnlyToTheirOwner() throws Exception {
 		String token = token();
 		createOtherUsersSensor("other-ws@agrosense.test", "OTHER-WS");
