@@ -20,7 +20,8 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 		"spring.sql.init.mode=always",
 		"spring.sql.init.schema-locations=file:../../database/schema.sql",
 		"spring.jpa.hibernate.ddl-auto=validate",
-		"cors.allowed-origins="
+		"cors.allowed-origins=",
+		"jwt.secret=test-secret-that-is-at-least-32-bytes-long"
 })
 class DatabaseSchemaTests {
 
