@@ -8,6 +8,7 @@ import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.stereotype.Component;
 
+import java.time.Instant;
 import java.util.Optional;
 
 /**
@@ -32,6 +33,19 @@ public class TokenAuthenticator {
         return jwtUtil.extractEmail(authorizationHeader.substring(BEARER_PREFIX.length()).trim())
                 .flatMap(this::loadEnabledUser)
                 .map(user -> UsernamePasswordAuthenticationToken.authenticated(user, null, user.getAuthorities()));
+    }
+
+    /** When the token in the header stops being valid; empty when the header carries no valid token. */
+    public Optional<Instant> expiration(String authorizationHeader) {
+        if (authorizationHeader == null || !authorizationHeader.startsWith(BEARER_PREFIX)) {
+            return Optional.empty();
+        }
+        return jwtUtil.extractExpiration(authorizationHeader.substring(BEARER_PREFIX.length()).trim());
+    }
+
+    /** Whether the account still exists and is enabled. */
+    public boolean isActive(String email) {
+        return loadEnabledUser(email).isPresent();
     }
 
     private Optional<UserDetails> loadEnabledUser(String email) {
