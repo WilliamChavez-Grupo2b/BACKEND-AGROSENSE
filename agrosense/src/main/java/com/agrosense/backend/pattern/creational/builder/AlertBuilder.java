@@ -1,4 +1,4 @@
-package com.agrosense.backend.pattern.creacional.builder;
+package com.agrosense.backend.pattern.creational.builder;
 
 import com.agrosense.backend.domain.enums.Severity;
 import com.agrosense.backend.domain.enums.Alert_type;
