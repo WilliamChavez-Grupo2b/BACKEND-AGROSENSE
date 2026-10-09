@@ -1,6 +1,6 @@
 package com.agrosense.backend.repository;
 
-import com.agrosense.backend.domain.model.Sensor;
+import com.agrosense.backend.domain.models.Sensor;
 import com.agrosense.backend.domain.enums.Sensor_Type;
 import org.springframework.data.jpa.repository.JpaRepository;
 import java.util.List;
