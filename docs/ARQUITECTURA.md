@@ -66,7 +66,15 @@ tomadas y qué partes de la interfaz usan datos reales, parciales o no disponibl
     muestra una vista esquemática con el aviso «Sin coordenadas registradas». El script valida que
     Leaflet esté cargado y que cada coordenada sea un número dentro de rango; ante cualquier fallo cambia
     a esa misma vista en lugar de lanzar un error.
-$1$115. **Gestión de parcelas, cultivos y sensores.** `CatalogService` concentra altas, ediciones y bajas,
+13. **Preferencias en el navegador.** No existe una tabla de preferencias, así que la única disponible
+    (menú lateral contraído) se guarda en `localStorage` y la página lo indica.
+14. **Corrección de «Access blocked» en el mapa.** OpenStreetMap devuelve una imagen de bloqueo a las
+    peticiones sin cabecera `Referer`, y la aplicación la eliminaba con `Referrer-Policy: same-origin`.
+    La política pasa a `strict-origin-when-cross-origin`, que envía solo el origen, y las teselas vuelven
+    a cargar (comprobado: la misma tesela pesa 6,9 kB sin `Referer` y 20 kB con él). Se probó CARTO
+    Voyager como alternativa, pero hoy entrega las teselas con la marca «API KEY REQUIRED», así que se
+    mantiene OpenStreetMap en `tile.openstreetmap.org`, único origen de imágenes externas en la CSP.
+15. **Gestión de parcelas, cultivos y sensores.** `CatalogService` concentra altas, ediciones y bajas,
     siempre limitadas al dueño. Al eliminar una parcela o un cultivo se borran antes, en la misma
     transacción, sus lecturas, alertas y riegos, porque esas tablas no tienen cascada. Al eliminar un
     sensor se borran sus lecturas y sus alertas se conservan sin la referencia al sensor. El código de
