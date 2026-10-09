@@ -18,12 +18,14 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class JwtAndMqttTests {
 
 	private static final String SECRET = "unit-test-secret-of-at-least-64-bytes-for-hs512-signatures-0123456789";
+	private static final String TOPIC = "agrosense/sensors/A/readings";
 
 	@Test
 	void tokensRoundTripAndAreRejectedWhenForgedOrMalformed() {
@@ -57,7 +59,7 @@ class JwtAndMqttTests {
 	@Test
 	void mqttMessagesAreAdaptedAndRecorded() {
 		SensorFacade facade = mock(SensorFacade.class);
-		MqttMessageHandler handler = new MqttMessageHandler(JsonMapper.builder().build(), new MqttAdapter(), facade);
+		MqttMessageHandler handler = new MqttMessageHandler(JsonMapper.builder().build(), new MqttAdapter(), facade, "agrosense/sensors/+/readings");
 
 		handler.handle("agrosense/sensors/as-001/readings",
 				"{\"code\":\"as-001\",\"value\":52.3,\"unit\":\"%\",\"extra\":true}".getBytes(StandardCharsets.UTF_8));
@@ -67,20 +69,28 @@ class JwtAndMqttTests {
 		assertThat(recorded.getValue().getSensorCode()).isEqualTo("AS-001");
 		assertThat(recorded.getValue().getValue()).isEqualByComparingTo("52.3");
 		assertThat(recorded.getValue().getUnit()).isEqualTo("%");
+
+		// A device cannot report for another sensor, nor from a topic outside the subscription.
+		byte[] spoofed = "{\"code\":\"as-001\",\"value\":1}".getBytes(StandardCharsets.UTF_8);
+		handler.handle("agrosense/sensors/as-002/readings", spoofed);
+		handler.handle("agrosense/sensors/as-001/readings/extra", spoofed);
+		handler.handle("other/sensors/as-001/readings", spoofed);
+		handler.handle("agrosense/sensors//readings", spoofed);
+		verify(facade, times(1)).recordReading(any());
 	}
 
 	@Test
 	void badMqttMessagesAreDroppedWithoutBreakingTheListener() {
 		SensorFacade facade = mock(SensorFacade.class);
-		MqttMessageHandler handler = new MqttMessageHandler(JsonMapper.builder().build(), new MqttAdapter(), facade);
+		MqttMessageHandler handler = new MqttMessageHandler(JsonMapper.builder().build(), new MqttAdapter(), facade, "agrosense/sensors/+/readings");
 
 		assertThatCode(() -> {
-			handler.handle("t", null);
-			handler.handle("t", new byte[0]);
-			handler.handle("t", "not json".getBytes(StandardCharsets.UTF_8));
-			handler.handle("t", "{\"value\":1}".getBytes(StandardCharsets.UTF_8));
-			handler.handle("t", "{\"code\":\"A\"}".getBytes(StandardCharsets.UTF_8));
-			handler.handle("t", ("{\"code\":\"" + "A".repeat(4000) + "\",\"value\":1}").getBytes(StandardCharsets.UTF_8));
+			handler.handle(TOPIC, null);
+			handler.handle(TOPIC, new byte[0]);
+			handler.handle(TOPIC, "not json".getBytes(StandardCharsets.UTF_8));
+			handler.handle(TOPIC, "{\"value\":1}".getBytes(StandardCharsets.UTF_8));
+			handler.handle(TOPIC, "{\"code\":\"A\"}".getBytes(StandardCharsets.UTF_8));
+			handler.handle(TOPIC, ("{\"code\":\"" + "A".repeat(4000) + "\",\"value\":1}").getBytes(StandardCharsets.UTF_8));
 		}).doesNotThrowAnyException();
 		verify(facade, never()).recordReading(any());
 
@@ -89,8 +99,8 @@ class JwtAndMqttTests {
 				.thenThrow(new IllegalStateException("database down"));
 		byte[] valid = "{\"code\":\"A\",\"value\":1}".getBytes(StandardCharsets.UTF_8);
 		assertThatCode(() -> {
-			handler.handle("t", valid);
-			handler.handle("t", valid);
+			handler.handle(TOPIC, valid);
+			handler.handle(TOPIC, valid);
 		}).doesNotThrowAnyException();
 	}
 }

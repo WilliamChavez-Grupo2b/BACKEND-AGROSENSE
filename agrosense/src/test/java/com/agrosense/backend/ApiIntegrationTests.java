@@ -7,6 +7,7 @@ import com.agrosense.backend.models.Crop;
 import com.agrosense.backend.models.Estate;
 import com.agrosense.backend.models.Sensor;
 import com.agrosense.backend.models.User;
+import com.agrosense.backend.mqtt.MqttMessageHandler;
 import com.agrosense.backend.repository.AlertRepository;
 import com.agrosense.backend.repository.CropRepository;
 import com.agrosense.backend.repository.EstateRepository;
@@ -83,6 +84,8 @@ class ApiIntegrationTests {
 	private SensorReadingRepository readingRepository;
 	@Autowired
 	private AlertRepository alertRepository;
+	@Autowired
+	private MqttMessageHandler mqttMessageHandler;
 	@Autowired
 	private WebSocketSessionRegistry sessionRegistry;
 	@Autowired
@@ -407,6 +410,24 @@ class ApiIntegrationTests {
 	}
 
 	@Test
+	void lateMqttMessagesAreStoredWithoutMovingTheLastReadingBack() throws Exception {
+		assertThat(send("POST", "/api/readings", "Bearer " + token(), "{\"sensorCode\":\"AS-001\",\"value\":55}")
+				.statusCode()).isEqualTo(201);
+		var lastReading = sensorRepository.findBySensorCode("AS-001").orElseThrow().getLastReadingAt();
+		long before = readingRepository.count();
+		long anHourAgo = System.currentTimeMillis() - 3_600_000;
+
+		mqttMessageHandler.handle("agrosense/sensors/AS-001/readings",
+				("{\"code\":\"AS-001\",\"value\":54,\"timestamp\":" + anHourAgo + "}").getBytes(StandardCharsets.UTF_8));
+		// Beyond what the column can hold: dropped, like any other unusable message.
+		mqttMessageHandler.handle("agrosense/sensors/AS-001/readings",
+				"{\"code\":\"AS-001\",\"value\":1e20}".getBytes(StandardCharsets.UTF_8));
+
+		assertThat(readingRepository.count()).isEqualTo(before + 1);
+		assertThat(sensorRepository.findBySensorCode("AS-001").orElseThrow().getLastReadingAt()).isEqualTo(lastReading);
+	}
+
+	@Test
 	void repeatedFailedLoginsLockTheAccountForAWhile() throws Exception {
 		createOtherUser("locked@agrosense.test");
 		for (int attempt = 1; attempt <= 5; attempt++) {
@@ -429,6 +450,31 @@ class ApiIntegrationTests {
 			}
 			assertThat(login("careless@agrosense.test", "other-password").statusCode()).isEqualTo(200);
 		}
+	}
+
+	@Test
+	void mqttReadingsAreAcceptedOnlyFromRegisteredSensorsOfActiveAccounts() {
+		createOtherUsersSensor("mqtt-owner@agrosense.test", "MQTT-1");
+		long before = readingRepository.count();
+		byte[] own = "{\"code\":\"MQTT-1\",\"value\":50}".getBytes(StandardCharsets.UTF_8);
+
+		mqttMessageHandler.handle("agrosense/sensors/MQTT-1/readings", own);
+		assertThat(readingRepository.count()).isEqualTo(before + 1);
+
+		// Speaking for another sensor, an unregistered sensor, or from outside the subscription.
+		mqttMessageHandler.handle("agrosense/sensors/MQTT-1/readings",
+				"{\"code\":\"AS-001\",\"value\":50}".getBytes(StandardCharsets.UTF_8));
+		mqttMessageHandler.handle("agrosense/sensors/GHOST/readings",
+				"{\"code\":\"GHOST\",\"value\":50}".getBytes(StandardCharsets.UTF_8));
+		mqttMessageHandler.handle("elsewhere/MQTT-1", own);
+		assertThat(readingRepository.count()).isEqualTo(before + 1);
+
+		// Once the owner's account is disabled, its devices are no longer listened to.
+		User owner = userRepository.findByEmail("mqtt-owner@agrosense.test").orElseThrow();
+		owner.setActive(false);
+		userRepository.save(owner);
+		mqttMessageHandler.handle("agrosense/sensors/MQTT-1/readings", own);
+		assertThat(readingRepository.count()).isEqualTo(before + 1);
 	}
 
 	@Test
