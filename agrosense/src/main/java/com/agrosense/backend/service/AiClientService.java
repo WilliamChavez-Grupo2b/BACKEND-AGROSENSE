@@ -1,5 +1,6 @@
 package com.agrosense.backend.service;
 
+import com.agrosense.backend.pattern.creational.singleton.AiConfigManager;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
@@ -13,20 +14,24 @@ import java.util.Map;
 @Slf4j
 @Service
 public class AiClientService {
+    // NOTE: requests are sent once; AiConfigManager#getMaxAttempts is available for a retry policy.
 
     private final RestClient restClient;
     private final String irrigationPath;
-    private final boolean enabled;
+    private final AiConfigManager config = AiConfigManager.getInstance();
 
     public AiClientService(
             @Value("${ai.service.url:}") String aiServiceUrl,
             @Value("${ai.service.irrigation-path:/predict/irrigation}") String irrigationPath,
-            @Value("${ai.service.timeout-ms:5000}") int timeoutMs) {
+            @Value("${ai.service.timeout-ms:5000}") int timeoutMs,
+            @Value("${ai.service.max-attempts:1}") int maxAttempts) {
+        // The singleton holds the AI settings for the whole application; this is where they are loaded.
+        config.configure(aiServiceUrl, timeoutMs, !aiServiceUrl.isBlank(), maxAttempts);
+
         SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
         requestFactory.setConnectTimeout(Duration.ofMillis(timeoutMs));
         requestFactory.setReadTimeout(Duration.ofMillis(timeoutMs));
 
-        this.enabled = !aiServiceUrl.isBlank();
         this.irrigationPath = irrigationPath;
         this.restClient = RestClient.builder()
                 .baseUrl(aiServiceUrl)
@@ -36,7 +41,7 @@ public class AiClientService {
 
     @Async
     public void requestIrrigationPrediction(Integer cropId, Map<String, Object> sensorData) {
-        if (!enabled) {
+        if (!config.isEnabled()) {
             log.debug("AI service URL is not configured, skipping prediction for crop {}", cropId);
             return;
         }
