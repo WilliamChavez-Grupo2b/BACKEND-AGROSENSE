@@ -333,6 +333,37 @@ class ApiIntegrationTests {
 	}
 
 	@Test
+	void rolesDecideWhichOperationsAUserMayPerform() throws Exception {
+		createUser("tech@agrosense.test", "technician");
+		createUser("guest@agrosense.test", "guest");
+		String technician = "Bearer " + extract(login("tech@agrosense.test", "other-password").body(), "token");
+		String guest = "Bearer " + extract(login("guest@agrosense.test", "other-password").body(), "token");
+		Integer cropId = sensorRepository.findBySensorCode("AS-001").orElseThrow().getCrop().getIdCrop();
+		String estate = "{\"name\":\"Finca técnica\",\"location\":\"Pasto\",\"areaHa\":1}";
+
+		// A technician reads and works with sensors, but does not run the estate.
+		assertThat(send("GET", "/api/fincas", technician, null).statusCode()).isEqualTo(200);
+		assertThat(send("GET", "/api/dashboard", technician, null).statusCode()).isEqualTo(200);
+		assertThat(send("GET", "/api/alerts", technician, null).statusCode()).isEqualTo(200);
+		HttpResponse<String> denied = send("POST", "/api/fincas", technician, estate);
+		assertThat(denied.statusCode()).isEqualTo(403);
+		assertThat(denied.body()).contains("No tienes permiso para realizar esta acción.");
+		assertThat(send("POST", "/api/crops/" + cropId + "/predictions", technician, null).statusCode()).isEqualTo(403);
+		assertThat(send("PATCH", "/api/alerts/1/acknowledge", technician, null).statusCode()).isEqualTo(403);
+		assertThat(send("GET", "/api/fincas", technician, null).body()).isEqualTo("[]");
+
+		// A role the application does not know gets nothing beyond logging in.
+		for (String path : List.of("/api/dashboard", "/api/fincas", "/api/cultivos", "/api/alerts", "/api/crops/" + cropId + "/sensors")) {
+			assertThat(send("GET", path, guest, null).statusCode()).as(path).isEqualTo(403);
+		}
+		assertThat(send("POST", "/api/readings", guest, "{\"sensorCode\":\"AS-001\",\"value\":50}").statusCode())
+				.isEqualTo(403);
+
+		// The sample user is a farmer and keeps full access to its own data.
+		assertThat(send("POST", "/api/fincas", "Bearer " + token(), "{\"name\":\"\"}").statusCode()).isEqualTo(400);
+	}
+
+	@Test
 	void webSocketRequiresATokenAndDeliversReadingsOnlyToTheirOwner() throws Exception {
 		String token = token();
 		createOtherUsersSensor("other-ws@agrosense.test", "OTHER-WS");
@@ -436,12 +467,16 @@ class ApiIntegrationTests {
 	}
 
 	private User createOtherUser(String email) {
+		return createUser(email, "farmer");
+	}
+
+	private User createUser(String email, String role) {
 		return userRepository.save(User.builder()
 				.name("Other")
 				.lastName("Farmer")
 				.email(email)
 				.passwordHash(passwordEncoder.encode("other-password"))
-				.role("farmer")
+				.role(role)
 				.build());
 	}
 
