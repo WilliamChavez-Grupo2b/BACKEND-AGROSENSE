@@ -9,31 +9,33 @@ import com.agrosense.backend.repository.IrrigationRepository;
 import com.agrosense.backend.repository.SensorReadingRepository;
 import com.agrosense.backend.repository.SensorRepository;
 import com.agrosense.backend.repository.UserRepository;
-import com.agrosense.backend.seed.DataSeeder;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.DefaultApplicationArguments;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.core.io.FileSystemResource;
+import org.springframework.jdbc.datasource.init.ResourceDatabasePopulator;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.context.ActiveProfiles;
 
+import javax.sql.DataSource;
+import java.time.LocalDateTime;
+
 import static org.assertj.core.api.Assertions.assertThat;
 
+/** Starts like a real "seed" run: tables and rows come from /database, entities are only validated. */
 @SpringBootTest(properties = {
-		// Same path as a real "seed" start: tables from database/schema.sql, entities only validated.
 		"spring.datasource.url=jdbc:h2:mem:agrosense-seed;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;DEFAULT_NULL_ORDERING=HIGH;DB_CLOSE_DELAY=-1",
 		"spring.datasource.username=sa",
 		"spring.datasource.password=",
 		"spring.datasource.driver-class-name=org.h2.Driver",
 		"cors.allowed-origins=",
-		"agrosense.seed.email=seed@agrosense.test",
 		"agrosense.seed.password=seed-password"
 })
 @ActiveProfiles("seed")
 class DataSeederTests {
 
 	@Autowired
-	private DataSeeder seeder;
+	private DataSource dataSource;
 	@Autowired
 	private UserRepository userRepository;
 	@Autowired
@@ -54,18 +56,25 @@ class DataSeederTests {
 	private PasswordEncoder passwordEncoder;
 
 	@Test
-	void seedsEveryEntityOnceAndHashesThePassword() {
+	void seedScriptLoadsEveryEntityOnceAndTheDemoPasswordIsSetByTheApplication() {
 		assertSeededCounts();
 
-		User user = userRepository.findByEmail("seed@agrosense.test").orElseThrow();
-		assertThat(user.getPasswordHash()).isNotEqualTo("seed-password");
+		User user = userRepository.findByEmail("demo@agrosense.co").orElseThrow();
 		assertThat(passwordEncoder.matches("seed-password", user.getPasswordHash())).isTrue();
-		assertThat(alertRepository.findAll()).anyMatch(alert -> alert.getCreatedAt().isBefore(
-				java.time.LocalDateTime.now().minusHours(20)));
+		assertThat(alertRepository.findAll())
+				.anyMatch(alert -> alert.getCreatedAt().isBefore(LocalDateTime.now().minusHours(20)))
+				.anyMatch(alert -> alert.getSensor() == null);
+		assertThat(cropRepository.findAll()).allMatch(crop -> crop.getHumidityMin() != null && crop.getPhMax() != null);
+		assertThat(readingRepository.findAll())
+				.allMatch(reading -> !reading.getRecordedAt().isAfter(LocalDateTime.now().plusMinutes(1)));
 
-		// Running it again must not duplicate anything.
-		seeder.run(new DefaultApplicationArguments());
+		// Applying both scripts again must not duplicate or change anything.
+		new ResourceDatabasePopulator(
+				new FileSystemResource("../../database/schema.sql"),
+				new FileSystemResource("../../database/seed_demo.sql")).execute(dataSource);
 		assertSeededCounts();
+		assertThat(passwordEncoder.matches("seed-password",
+				userRepository.findByEmail("demo@agrosense.co").orElseThrow().getPasswordHash())).isTrue();
 	}
 
 	private void assertSeededCounts() {
