@@ -10,6 +10,6 @@ public interface SensorRepository
 
 extends JpaRepository <Sensor, Integer>{
     Optional<Sensor> findByCodigoSensor(String Sensorcode);
-    List<Sensor> findByCultivo_IdCultivoAndActivoTrue(Integer idCultivate);
+    List<Sensor> findByCultivo_IdCultivoAndActivoTrue(Integer idCultive);
     List<Sensor> findByTipoSensor(TipoSensor typesensor);   
 }
