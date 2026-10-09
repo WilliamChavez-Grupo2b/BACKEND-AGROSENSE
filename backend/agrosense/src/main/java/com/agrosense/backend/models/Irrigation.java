@@ -44,6 +44,9 @@ public class Irrigation {
     @Builder.Default
     private IrrigationType type = IrrigationType.AUTOMATIC;
 
+    /** Why a user started it; empty for automatic cycles. */
+    private String reason;
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "activated_by")
     private User activatedBy;
