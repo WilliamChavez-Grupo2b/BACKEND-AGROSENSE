@@ -62,6 +62,11 @@ public class JwtUtil {
         return parseClaims(token).map(claims -> claims.get(ROLE_CLAIM, String.class));
     }
 
+    /** The moment the token stops being valid, or empty when it is malformed, tampered with or expired. */
+    public Optional<Instant> extractExpiration(String token) {
+        return parseClaims(token).map(Claims::getExpiration).map(Date::toInstant);
+    }
+
     /** Whether the token carries a valid signature, has not expired and names a user. */
     public boolean isTokenValid(String token) {
         return extractEmail(token).isPresent();

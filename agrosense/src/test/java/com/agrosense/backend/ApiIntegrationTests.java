@@ -13,6 +13,7 @@ import com.agrosense.backend.repository.EstateRepository;
 import com.agrosense.backend.repository.SensorReadingRepository;
 import com.agrosense.backend.repository.SensorRepository;
 import com.agrosense.backend.repository.UserRepository;
+import com.agrosense.backend.websocket.WebSocketSessionRegistry;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -35,6 +36,8 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.Base64;
 import java.util.List;
 import java.util.concurrent.BlockingQueue;
@@ -80,6 +83,8 @@ class ApiIntegrationTests {
 	private SensorReadingRepository readingRepository;
 	@Autowired
 	private AlertRepository alertRepository;
+	@Autowired
+	private WebSocketSessionRegistry sessionRegistry;
 	@Autowired
 	private PasswordEncoder passwordEncoder;
 
@@ -427,6 +432,28 @@ class ApiIntegrationTests {
 	}
 
 	@Test
+	void webSocketSessionsAreClosedWhenTheAccountIsDisabledOrTheTokenExpires() throws Exception {
+		User user = createOtherUser("ws-closed@agrosense.test");
+		StompSession disabled = connect("Bearer " + extract(login(user.getEmail(), "other-password").body(), "token"));
+		StompSession current = connect("Bearer " + token());
+
+		sessionRegistry.closeInvalidSessions(Instant.now());
+		Thread.sleep(300);
+		assertThat(disabled.isConnected()).isTrue();
+		assertThat(current.isConnected()).isTrue();
+
+		user.setActive(false);
+		userRepository.save(user);
+		sessionRegistry.closeInvalidSessions(Instant.now());
+		assertThat(becomesDisconnected(disabled)).isTrue();
+		assertThat(current.isConnected()).isTrue();
+
+		// Seen from two hours ahead, the one-hour token of the remaining session has expired.
+		sessionRegistry.closeInvalidSessions(Instant.now().plus(Duration.ofHours(2)));
+		assertThat(becomesDisconnected(current)).isTrue();
+	}
+
+	@Test
 	void webSocketRequiresATokenAndDeliversReadingsOnlyToTheirOwner() throws Exception {
 		String token = token();
 		createOtherUsersSensor("other-ws@agrosense.test", "OTHER-WS");
@@ -527,6 +554,13 @@ class ApiIntegrationTests {
 			}
 		});
 		return messages;
+	}
+
+	private static boolean becomesDisconnected(StompSession session) throws InterruptedException {
+		for (int waited = 0; waited < 5000 && session.isConnected(); waited += 50) {
+			Thread.sleep(50);
+		}
+		return !session.isConnected();
 	}
 
 	private User createOtherUser(String email) {
