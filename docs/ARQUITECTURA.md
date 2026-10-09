@@ -183,10 +183,11 @@ datos contiene datos de ejemplo.
 
 ## 7. Pendiente
 
-- Ejecutar `database/schema.sql` contra un PostgreSQL real (ver decisión 17).
 - API REST en el backend; después, decidir si el frontend sigue con JPA o pasa a consumirla.
 - Ingesta de lecturas: los sensores se pueden registrar, pero nada recibe datos de los dispositivos.
 - Edición de sensores (hoy solo alta y baja).
 - Edición del perfil, cambio de contraseña, verificación de correo y límite de intentos de acceso.
 - Integración con dispositivos (bombas), servicio de clima y exportación de reportes.
-- No se ha probado contra PostgreSQL: las pruebas y la demo usan H2.
+- El PostgreSQL local sigue bloqueado (decisión 17). El esquema, los datos de ejemplo, las entidades y
+  las sesiones sí se probaron contra PostgreSQL 18 en Neon con `PostgresCompatibilityTests`; el resto de
+  las pruebas y la demo usan H2 (ver `database/README.md`).

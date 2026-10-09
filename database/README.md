@@ -126,8 +126,30 @@ variable `DATABASE_DIR`.
   y vuelve a ejecutar los dos scripts para confirmar que no duplican nada.
 - La demo del frontend y sus 35 pruebas web usan estos mismos dos archivos.
 
-Estas pruebas corren sobre H2 en modo de compatibilidad con PostgreSQL. **Falta ejecutarlo contra un
-servidor PostgreSQL real.**
+- `SessionStorageTests` (frontend) inicia sesión pasando por el filtro de Spring Session y comprueba que
+  la sesión se guarda en `spring_session`, se lee de ahí y desaparece al cerrar sesión.
+
+Estas pruebas corren sobre H2 en modo de compatibilidad con PostgreSQL.
+
+### Contra un PostgreSQL real
+
+`PostgresCompatibilityTests` (backend y frontend) repite lo esencial en un servidor PostgreSQL: aplica
+`schema.sql` y `seed_demo.sql`, valida las entidades, vuelve a aplicar el esquema y, según el proyecto,
+prueba el bloqueo de filas al crear alertas o el guardado de sesiones. Solo corre si se definen
+`POSTGRES_TEST_URL`, `POSTGRES_TEST_USERNAME` y `POSTGRES_TEST_PASSWORD`:
+
+```powershell
+$env:POSTGRES_TEST_URL = 'jdbc:postgresql://<host>/<base>?sslmode=require'
+$env:POSTGRES_TEST_USERNAME = '<usuario>'
+$env:POSTGRES_TEST_PASSWORD = '<contraseña>'
+.\mvnw.cmd test "-Dtest=PostgresCompatibilityTests"
+```
+
+Trabaja en un esquema `agrosense_test_…` que crea y borra, y se detiene antes de arrancar la aplicación
+si el servidor no cambia a ese esquema, así que no toca las tablas de `public`. Con Neon hay que usar el
+host directo (sin `-pooler`).
+
+Ejecutado el 9 de octubre de 2026 contra Neon (PostgreSQL 18.6): todas pasan en los dos proyectos.
 
 ## Estado del PostgreSQL local de este equipo
 
