@@ -9,7 +9,7 @@ tomadas y qué partes de la interfaz usan datos reales, parciales o no disponibl
 |-------------|--------------------------------------------------------------------------------------------|
 | `backend/`  | Proyecto Spring Boot de William Chávez (`BACKEND-AGROSENSE`), auditado y corregido.         |
 | `frontend/` | Aplicación web Spring Boot + Thymeleaf (este documento la describe en detalle).             |
-| `database/` | Todo lo de base de datos: `schema.sql`, `seed_demo.sql`, `reset.sql`, `.env.example` y `README.md`. |
+| `database/` | Todo lo de base de datos: `schema.sql`, `seed_demo.sql`, `reset.sql`, `datasource.properties`, `.env.example` y `README.md`. |
 
 ### Backend (`backend/agrosense`)
 
@@ -95,6 +95,12 @@ tomadas y qué partes de la interfaz usan datos reales, parciales o no disponibl
     usuario de ejemplo con un hash que no corresponde a ninguna contraseña; cada aplicación le asigna la
     suya al arrancar (`SeedAccountInitializer` con `SEED_USER_PASSWORD`, `DemoAccountInitializer` con
     `DEMO_PASSWORD`). Ningún archivo SQL guarda una contraseña ni un hash utilizable.
+19. **La configuración de base de datos también vive en `database/`.** `datasource.properties` reúne
+    la conexión, `ddl-auto=validate`, la ejecución de los scripts y los perfiles `seed` y `demo`.
+    Backend y frontend lo cargan con `spring.config.import` y solo declaran la ruta de la carpeta
+    (`DATABASE_DIR` la cambia). Una prueba en cada proyecto comprueba lo que resuelve el archivo con y
+    sin perfil. En los proyectos Java quedan únicamente las entidades y los repositorios, que siguen
+    duplicados entre backend y frontend.
 
 ## 3. Estructura del frontend
 
@@ -163,8 +169,8 @@ datos contiene datos de ejemplo.
 
 ## 6. Verificación realizada
 
-- `mvnw clean verify` en `frontend/`: 41 pruebas (JUnit 5, Mockito, MockMvc), todas correctas.
-- `mvnw clean verify` en `backend/agrosense`: 8 pruebas, todas correctas.
+- `mvnw clean verify` en `frontend/`: 43 pruebas (JUnit 5, Mockito, MockMvc), todas correctas.
+- `mvnw clean verify` en `backend/agrosense`: 10 pruebas, todas correctas.
 - Recorrido en Edge sin interfaz con el perfil `demo`: registro → login → inicio → cada opción del menú
   → configuración → cerrar sesión → ruta protegida redirige a login → login → eliminar cuenta (contraseña
   incorrecta y correcta) → la cuenta eliminada ya no puede entrar. Sin errores de consola ni bloqueos de
