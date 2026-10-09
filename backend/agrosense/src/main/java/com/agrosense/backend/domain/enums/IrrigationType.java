@@ -1,6 +1,6 @@
 package com.agrosense.backend.domain.enums;
 
-public enum Type_irrigation {
-    AUTOMATIC, 
+public enum IrrigationType {
+    AUTOMATIC,
     MANUAL
 }
