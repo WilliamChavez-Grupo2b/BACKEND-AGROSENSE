@@ -18,7 +18,11 @@ public interface SensorRepository extends JpaRepository<Sensor, Integer> {
 
     Optional<Sensor> findByIdSensorAndCropEstateUserEmail(Integer idSensor, String email);
 
+    boolean existsBySensorCode(String sensorCode);
+
     List<Sensor> findByCropIdCropAndActiveTrue(Integer idCrop);
+
+    List<Sensor> findByCropIdCropOrderBySensorCodeAsc(Integer idCrop);
 
     List<Sensor> findBySensorType(SensorType sensorType);
 

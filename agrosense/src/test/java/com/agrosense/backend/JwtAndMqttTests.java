@@ -5,7 +5,7 @@ import com.agrosense.backend.mqtt.MqttMessageHandler;
 import com.agrosense.backend.pattern.structural.adapter.MqttAdapter;
 import com.agrosense.backend.pattern.structural.adapter.SensorReadingData;
 import com.agrosense.backend.pattern.structural.facade.SensorFacade;
-import com.agrosense.backend.security.JwtService;
+import com.agrosense.backend.security.JwtUtil;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import tools.jackson.databind.json.JsonMapper;
@@ -23,19 +23,22 @@ import static org.mockito.Mockito.when;
 
 class JwtAndMqttTests {
 
-	private static final String SECRET = "unit-test-secret-of-at-least-32-bytes!";
+	private static final String SECRET = "unit-test-secret-of-at-least-64-bytes-for-hs512-signatures-0123456789";
 
 	@Test
 	void tokensRoundTripAndAreRejectedWhenForgedOrMalformed() {
-		JwtService jwt = new JwtService(SECRET, 60);
+		JwtUtil jwt = new JwtUtil(SECRET, 60);
 		String token = jwt.generateToken("farmer@agrosense.test", "farmer");
 
 		assertThat(jwt.extractEmail(token)).contains("farmer@agrosense.test");
+		assertThat(jwt.extractRole(token)).contains("farmer");
+		assertThat(jwt.isTokenValid(token)).isTrue();
+		assertThat(jwt.isTokenValid(token + "x")).isFalse();
 		assertThat(jwt.extractEmail(token + "x")).isEmpty();
 		assertThat(jwt.extractEmail("")).isEmpty();
 		assertThat(jwt.extractEmail("a.b.c")).isEmpty();
 		// Signed with a different key: a forged token.
-		assertThat(new JwtService("another-secret-of-at-least-32-bytes!!", 60).extractEmail(token)).isEmpty();
+		assertThat(new JwtUtil("another-secret-of-at-least-64-bytes-for-hs512-signatures-0123456789", 60).extractEmail(token)).isEmpty();
 		// Unsigned token with "alg":"none".
 		String unsigned = "eyJhbGciOiJub25lIn0.eyJzdWIiOiJmYXJtZXJAYWdyb3NlbnNlLnRlc3QifQ.";
 		assertThat(jwt.extractEmail(unsigned)).isEmpty();
@@ -43,9 +46,12 @@ class JwtAndMqttTests {
 
 	@Test
 	void weakOrMissingSecretsStopTheApplicationFromStarting() {
-		assertThatThrownBy(() -> new JwtService("", 60)).isInstanceOf(IllegalStateException.class);
-		assertThatThrownBy(() -> new JwtService("too-short", 60)).isInstanceOf(IllegalStateException.class);
-		assertThatThrownBy(() -> new JwtService(SECRET, 0)).isInstanceOf(IllegalStateException.class);
+		assertThatThrownBy(() -> new JwtUtil("", 60)).isInstanceOf(IllegalStateException.class);
+		assertThatThrownBy(() -> new JwtUtil("too-short", 60)).isInstanceOf(IllegalStateException.class);
+		// Long enough for HS256 but not for HS512.
+		assertThatThrownBy(() -> new JwtUtil("a-secret-of-thirty-two-bytes-only", 60))
+				.isInstanceOf(IllegalStateException.class);
+		assertThatThrownBy(() -> new JwtUtil(SECRET, 0)).isInstanceOf(IllegalStateException.class);
 	}
 
 	@Test

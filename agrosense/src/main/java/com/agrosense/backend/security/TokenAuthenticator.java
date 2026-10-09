@@ -21,7 +21,7 @@ public class TokenAuthenticator {
 
     private static final String BEARER_PREFIX = "Bearer ";
 
-    private final JwtService jwtService;
+    private final JwtUtil jwtUtil;
     private final UserDetailsService userDetailsService;
 
     /** @param authorizationHeader the raw header value, for example {@code "Bearer eyJ..."} */
@@ -29,7 +29,7 @@ public class TokenAuthenticator {
         if (authorizationHeader == null || !authorizationHeader.startsWith(BEARER_PREFIX)) {
             return Optional.empty();
         }
-        return jwtService.extractEmail(authorizationHeader.substring(BEARER_PREFIX.length()).trim())
+        return jwtUtil.extractEmail(authorizationHeader.substring(BEARER_PREFIX.length()).trim())
                 .flatMap(this::loadEnabledUser)
                 .map(user -> UsernamePasswordAuthenticationToken.authenticated(user, null, user.getAuthorities()));
     }

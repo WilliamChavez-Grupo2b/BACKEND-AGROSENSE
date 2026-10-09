@@ -18,6 +18,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.messaging.converter.ByteArrayMessageConverter;
+import org.springframework.messaging.MessageHeaders;
 import org.springframework.messaging.simp.stomp.StompFrameHandler;
 import org.springframework.messaging.simp.stomp.StompHeaders;
 import org.springframework.messaging.simp.stomp.StompSession;
@@ -35,6 +36,7 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
+import java.util.List;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.LinkedBlockingQueue;
@@ -52,7 +54,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 		"spring.datasource.password=",
 		"spring.datasource.driver-class-name=org.h2.Driver",
 		"cors.allowed-origins=http://localhost:5173",
-		"jwt.secret=test-secret-that-is-at-least-32-bytes-long",
+		"jwt.secret=test-secret-that-is-at-least-64-bytes-long-for-hs512-signatures-0123456789",
 		"agrosense.seed.password=seed-password"
 })
 @ActiveProfiles("seed")
@@ -191,6 +193,13 @@ class ApiIntegrationTests {
 		long before = readingRepository.count();
 
 		assertThat(send("POST", "/api/readings", auth, "{\"sensorCode\":\"\",\"value\":1}").statusCode()).isEqualTo(400);
+		HttpResponse<String> invalid = send("POST", "/api/readings", auth, "{\"sensorCode\":\"\"}");
+		assertThat(invalid.statusCode()).isEqualTo(400);
+		assertThat(invalid.body()).contains("\"message\":\"").contains("\"fields\":{")
+				.contains("\"sensorCode\":\"El código del sensor es obligatorio.\"")
+				.contains("\"value\":\"El valor es obligatorio.\"");
+		assertThat(send("GET", "/api/alerts", auth, null).body()).doesNotContain("\"fields\"");
+		assertThat(send("GET", "/api/sensors/999999/readings", auth, null).body()).doesNotContain("\"fields\"");
 		assertThat(send("POST", "/api/readings", auth, "{\"sensorCode\":\"AS-001\"}").statusCode()).isEqualTo(400);
 		assertThat(send("POST", "/api/readings", auth, "{not json").statusCode()).isEqualTo(400);
 		assertThat(send("POST", "/api/readings", auth, "{\"sensorCode\":\"NOPE\",\"value\":1}").statusCode()).isEqualTo(404);
@@ -227,6 +236,49 @@ class ApiIntegrationTests {
 	}
 
 	@Test
+	void cropEndpointsServeOnlyTheOwnersCrops() throws Exception {
+		String auth = "Bearer " + token();
+		Integer cropId = sensorRepository.findBySensorCode("AS-001").orElseThrow().getCrop().getIdCrop();
+		Integer foreignCropId = createOtherUsersSensor("other-crop@agrosense.test", "OTHER-CROP").getCrop().getIdCrop();
+		String newSensor = "{\"cropId\":%d,\"sensorType\":\"PH\",\"sensorCode\":\"as-new-1\",\"location\":\"Lote norte\"}";
+
+		HttpResponse<String> created = send("POST", "/api/sensors", auth, newSensor.formatted(cropId));
+		assertThat(created.statusCode()).isEqualTo(201);
+		assertThat(created.body()).contains("\"sensorCode\":\"AS-NEW-1\"").contains("\"sensorType\":\"PH\"");
+		assertThat(send("POST", "/api/sensors", auth, newSensor.formatted(cropId)).statusCode()).isEqualTo(409);
+		assertThat(send("POST", "/api/sensors", auth, newSensor.formatted(foreignCropId)).statusCode()).isEqualTo(404);
+		assertThat(send("POST", "/api/sensors", auth, "{\"cropId\":" + cropId + ",\"sensorType\":\"NOPE\","
+				+ "\"sensorCode\":\"AS-NEW-2\"}").statusCode()).isEqualTo(400);
+		assertThat(send("POST", "/api/sensors", auth, "{\"cropId\":" + cropId + ",\"sensorType\":\"PH\"}").statusCode())
+				.isEqualTo(400);
+
+		HttpResponse<String> sensors = send("GET", "/api/crops/" + cropId + "/sensors", auth, null);
+		assertThat(sensors.statusCode()).isEqualTo(200);
+		assertThat(sensors.body()).contains("AS-001").contains("AS-NEW-1").doesNotContain("OTHER-CROP");
+
+		HttpResponse<String> dashboard = send("GET", "/api/dashboard/" + cropId, auth, null);
+		assertThat(dashboard.statusCode()).isEqualTo(200);
+		assertThat(dashboard.body()).contains("\"totalCrops\":1").contains("\"latestReadings\":[")
+				.contains("\"activeAlerts\":[");
+
+		assertThat(send("GET", "/api/crops/" + cropId + "/alerts", auth, null).statusCode()).isEqualTo(200);
+		HttpResponse<String> predictions = send("GET", "/api/crops/" + cropId + "/predictions", auth, null);
+		assertThat(predictions.statusCode()).isEqualTo(200);
+		// No AI service is configured in tests: the request is accepted and nothing is stored.
+		assertThat(send("POST", "/api/crops/" + cropId + "/predictions", auth, null).statusCode()).isEqualTo(202);
+
+		for (String path : List.of("/sensors", "/alerts", "/predictions")) {
+			assertThat(send("GET", "/api/crops/" + foreignCropId + path, auth, null).statusCode()).isEqualTo(404);
+		}
+		assertThat(send("GET", "/api/dashboard/" + foreignCropId, auth, null).statusCode()).isEqualTo(404);
+		assertThat(send("POST", "/api/crops/" + foreignCropId + "/predictions", auth, null).statusCode()).isEqualTo(404);
+		assertThat(send("GET", "/api/crops/" + cropId + "/sensors", null, null).statusCode()).isEqualTo(401);
+
+		// Other tests count the sample user's sensors.
+		sensorRepository.delete(sensorRepository.findBySensorCode("AS-NEW-1").orElseThrow());
+	}
+
+	@Test
 	void webSocketRequiresATokenAndDeliversReadingsOnlyToTheirOwner() throws Exception {
 		String token = token();
 		createOtherUsersSensor("other-ws@agrosense.test", "OTHER-WS");
@@ -235,8 +287,8 @@ class ApiIntegrationTests {
 		assertThatThrownBy(() -> connect(null)).isInstanceOf(ExecutionException.class);
 		assertThatThrownBy(() -> connect("Bearer not-a-token")).isInstanceOf(ExecutionException.class);
 
-		BlockingQueue<String> ownerMessages = subscribe(connect("Bearer " + token), "/user/queue/readings");
-		BlockingQueue<String> otherMessages = subscribe(connect("Bearer " + otherToken), "/user/queue/readings");
+		BlockingQueue<String> ownerMessages = subscribe(connect("Bearer " + token), "/user/queue/sensores");
+		BlockingQueue<String> otherMessages = subscribe(connect("Bearer " + otherToken), "/user/queue/sensores");
 		Thread.sleep(500);
 
 		send("POST", "/api/readings", "Bearer " + token, "{\"sensorCode\":\"AS-004\",\"value\":61.5}");
@@ -249,7 +301,7 @@ class ApiIntegrationTests {
 	@Test
 	void webSocketClientsCannotSubscribeToSharedTopicsOrPublish() throws Exception {
 		StompSession session = connect("Bearer " + token());
-		BlockingQueue<String> shared = subscribe(session, "/queue/readings");
+		BlockingQueue<String> shared = subscribe(session, "/queue/sensores");
 		Thread.sleep(300);
 
 		send("POST", "/api/readings", "Bearer " + token(), "{\"sensorCode\":\"AS-005\",\"value\":1.2}");
@@ -298,7 +350,12 @@ class ApiIntegrationTests {
 	private StompSession connect(String authorization) throws Exception {
 		WebSocketStompClient stompClient = new WebSocketStompClient(new StandardWebSocketClient());
 		// The server sends JSON; reading the raw bytes avoids depending on a JSON converter here.
-		stompClient.setMessageConverter(new ByteArrayMessageConverter());
+		stompClient.setMessageConverter(new ByteArrayMessageConverter() {
+			@Override
+			protected boolean supportsMimeType(MessageHeaders headers) {
+				return true;
+			}
+		});
 		StompHeaders connectHeaders = new StompHeaders();
 		if (authorization != null) {
 			connectHeaders.add("Authorization", authorization);

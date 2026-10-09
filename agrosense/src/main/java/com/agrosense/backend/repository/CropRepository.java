@@ -4,12 +4,15 @@ import com.agrosense.backend.models.Crop;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 import java.util.List;
+import java.util.Optional;
 
 public interface CropRepository extends JpaRepository<Crop, Integer> {
 
     List<Crop> findByActiveTrue();
 
     List<Crop> findByEstateIdEstate(Integer idEstate);
+
+    Optional<Crop> findByIdCropAndEstateUserEmail(Integer idCrop, String email);
 
     long countByEstateUserEmailAndActiveTrue(String email);
 }

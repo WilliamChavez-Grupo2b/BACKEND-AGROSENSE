@@ -1,12 +1,15 @@
 package com.agrosense.backend.pattern.structural.facade;
 
 import com.agrosense.backend.domain.enums.AlertType;
+import com.agrosense.backend.domain.enums.SensorType;
 import com.agrosense.backend.dto.response.AlertResponse;
+import com.agrosense.backend.dto.response.DashboardResponse;
 import com.agrosense.backend.dto.response.SensorReadingResponse;
 import com.agrosense.backend.event.AlertRaisedEvent;
 import com.agrosense.backend.event.SensorReadingRecordedEvent;
 import com.agrosense.backend.exception.BusinessRuleException;
 import com.agrosense.backend.exception.ResourceNotFoundException;
+import com.agrosense.backend.models.AiPrediction;
 import com.agrosense.backend.models.Alert;
 import com.agrosense.backend.models.Crop;
 import com.agrosense.backend.models.Sensor;
@@ -16,11 +19,13 @@ import com.agrosense.backend.pattern.creational.prototype.SensorReadingPrototype
 import com.agrosense.backend.pattern.structural.adapter.SensorReadingData;
 import com.agrosense.backend.pattern.structural.decorator.SensorReadingProcessor;
 import com.agrosense.backend.pattern.structural.decorator.ValidationDecorator;
+import com.agrosense.backend.repository.AiPredictionRepository;
 import com.agrosense.backend.repository.AlertRepository;
 import com.agrosense.backend.repository.SensorReadingRepository;
 import com.agrosense.backend.repository.SensorRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -35,9 +40,13 @@ import java.math.BigDecimal;
 @RequiredArgsConstructor
 public class SensorFacade {
 
+    private static final int SUMMARY_READINGS = 10;
+    private static final int SUMMARY_ALERTS = 5;
+
     private final SensorRepository sensorRepository;
     private final SensorReadingRepository readingRepository;
     private final AlertRepository alertRepository;
+    private final AiPredictionRepository predictionRepository;
     private final SensorReadingPrototype readingPrototype;
     private final SensorReadingProcessor readingProcessor;
     private final ApplicationEventPublisher events;
@@ -95,6 +104,43 @@ public class SensorFacade {
                 .automaticSeverity()
                 .build());
         events.publishEvent(new AlertRaisedEvent(ownerEmail, AlertResponse.from(alert)));
+    }
+
+    /**
+     * Everything the dashboard shows about one crop, gathered from the repositories behind the facade.
+     * The caller is responsible for checking that the crop belongs to the user.
+     */
+    @Transactional(readOnly = true)
+    public DashboardResponse summarizeCrop(Integer cropId) {
+        return DashboardResponse.builder()
+                .totalCrops(1)
+                .totalSensors(sensorRepository.findByCropIdCropAndActiveTrue(cropId).size())
+                .pendingAlerts((int) alertRepository.countByCropIdCropAndAcknowledgedFalse(cropId))
+                .lastHumidity(latestValue(cropId, SensorType.SOIL_MOISTURE))
+                .lastTemperature(latestValue(cropId, SensorType.AIR_TEMPERATURE))
+                .lastPh(latestValue(cropId, SensorType.PH))
+                .aiRecommendation(predictionRepository
+                        .findByCropIdCropOrderByCreatedAtDesc(cropId, PageRequest.of(0, 1)).stream()
+                        .map(AiPrediction::getRecommendation)
+                        .findFirst()
+                        .orElse(null))
+                .latestReadings(readingRepository.findLatestByCrop(cropId, PageRequest.of(0, SUMMARY_READINGS))
+                        .stream()
+                        .map(SensorReadingResponse::from)
+                        .toList())
+                .activeAlerts(alertRepository
+                        .findByCropIdCropAndAcknowledgedFalseOrderByCreatedAtDesc(cropId,
+                                PageRequest.of(0, SUMMARY_ALERTS))
+                        .stream()
+                        .map(AlertResponse::from)
+                        .toList())
+                .build();
+    }
+
+    private BigDecimal latestValue(Integer cropId, SensorType type) {
+        return readingRepository.findFirstBySensorCropIdCropAndSensorSensorTypeOrderByRecordedAtDesc(cropId, type)
+                .map(SensorReading::getValue)
+                .orElse(null);
     }
 
     private static String describe(AlertType type, SensorReading reading) {

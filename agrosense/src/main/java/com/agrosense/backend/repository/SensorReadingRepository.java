@@ -30,4 +30,7 @@ public interface SensorReadingRepository extends JpaRepository<SensorReading, Lo
 
     Optional<SensorReading> findFirstBySensorCropEstateUserEmailAndSensorSensorTypeOrderByRecordedAtDesc(
             String email, SensorType sensorType);
+
+    Optional<SensorReading> findFirstBySensorCropIdCropAndSensorSensorTypeOrderByRecordedAtDesc(
+            Integer idCrop, SensorType sensorType);
 }

@@ -26,5 +26,10 @@ public interface AlertRepository extends JpaRepository<Alert, Integer> {
     long countByCropEstateUserEmailAndAcknowledgedFalse(String email);
 
     @EntityGraph(attributePaths = "crop")
+    List<Alert> findByCropIdCropAndAcknowledgedFalseOrderByCreatedAtDesc(Integer idCrop, Pageable pageable);
+
+    long countByCropIdCropAndAcknowledgedFalse(Integer idCrop);
+
+    @EntityGraph(attributePaths = "crop")
     Optional<Alert> findByIdAlertAndCropEstateUserEmail(Integer idAlert, String email);
 }
