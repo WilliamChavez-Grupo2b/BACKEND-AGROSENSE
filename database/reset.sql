@@ -1,6 +1,8 @@
 -- DESTRUCTIVE: drops every AgroSense table and all the data in them.
 -- Only for development databases. Run schema.sql afterwards to recreate the empty tables.
 
+DROP TABLE IF EXISTS spring_session_attributes;
+DROP TABLE IF EXISTS spring_session;
 DROP TABLE IF EXISTS ai_predictions;
 DROP TABLE IF EXISTS irrigations;
 DROP TABLE IF EXISTS alerts;

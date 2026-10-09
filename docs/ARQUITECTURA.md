@@ -101,6 +101,10 @@ tomadas y qué partes de la interfaz usan datos reales, parciales o no disponibl
     (`DATABASE_DIR` la cambia). Una prueba en cada proyecto comprueba lo que resuelve el archivo con y
     sin perfil. En los proyectos Java quedan únicamente las entidades y los repositorios, que siguen
     duplicados entre backend y frontend.
+20. **Las sesiones del frontend se guardan en la base de datos.** Con Spring Session JDBC un inicio de
+    sesión sobrevive a un reinicio y funciona con varias instancias, que es como lo ejecuta un servicio
+    que apaga las instancias inactivas. Las tablas `spring_session` y `spring_session_attributes` están en
+    `database/schema.sql` como las demás y la biblioteca no las crea (`initialize-schema=never`).
 
 ## 3. Estructura del frontend
 

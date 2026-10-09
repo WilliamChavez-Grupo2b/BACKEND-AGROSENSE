@@ -50,6 +50,12 @@ users ─┬─< estates ─< crops ─┬─< sensors ─< sensor_readings
 | `alerts`          | Alertas de un cultivo, con severidad y estado de atención.             |
 | `irrigations`     | Riegos automáticos y manuales.                                         |
 | `ai_predictions`  | Predicciones del servicio de IA (solo las usa el backend).             |
+| `spring_session`, `spring_session_attributes` | Sesiones de inicio de sesión del frontend (solo las usa el frontend). |
+
+Las dos tablas de sesiones las lee y escribe la biblioteca Spring Session, no una entidad: sus columnas
+son las de su script `schema-postgresql.sql` y no se deben renombrar. El frontend arranca con
+`spring.session.jdbc.initialize-schema=never`, así que tampoco estas tablas se crean fuera de `schema.sql`.
+Si se actualiza Spring Session, hay que comparar su script con el de esta carpeta.
 
 - Borrar un usuario, una finca, un cultivo o un sensor borra en cascada lo que depende de él.
 - Borrar un sensor conserva sus alertas sin la referencia (`ON DELETE SET NULL`); igual con el usuario que
@@ -114,7 +120,8 @@ variable `DATABASE_DIR`.
 - `DatabaseConfigTests` (backend y frontend) comprueba qué resuelve `datasource.properties` con y sin
   perfil: PostgreSQL y `validate` por defecto, y los scripts de esta carpeta con `seed` y `demo`.
 - `DatabaseSchemaTests` (backend y frontend) ejecuta `schema.sql` y hace que Hibernate valide todas las
-  entidades contra él; también comprueba que las restricciones rechazan datos inválidos.
+  entidades contra él; también comprueba que las restricciones rechazan datos inválidos. La del frontend
+  comprueba además que las tablas de sesiones salen de ese script.
 - `DataSeederTests` (backend) arranca con el perfil `seed`, cuenta las filas cargadas por `seed_demo.sql`
   y vuelve a ejecutar los dos scripts para confirmar que no duplican nada.
 - La demo del frontend y sus 35 pruebas web usan estos mismos dos archivos.
