@@ -1,0 +1,37 @@
+# Image of the backend API for Vercel (project agrosense-backend), built from a folder that holds
+# backend/agrosense/ and database/ with this file copied to its root as Dockerfile.vercel. The workspace
+# root cannot be used directly: its own Dockerfile.vercel belongs to the frontend project.
+# Vercel runs it as a stateless function that scales to zero, so nothing may be kept in the container.
+
+# ── Stage 1: Build ────────────────────────────────────
+FROM eclipse-temurin:17-jdk-alpine AS builder
+WORKDIR /app
+COPY backend/agrosense/.mvn/ .mvn/
+COPY backend/agrosense/mvnw backend/agrosense/pom.xml ./
+# The wrapper may arrive with Windows line endings when deployed from a Windows checkout.
+RUN sed -i 's/\r$//' mvnw && chmod +x mvnw && ./mvnw dependency:go-offline -B
+COPY backend/agrosense/src/ src/
+RUN ./mvnw package -DskipTests -B
+
+# ── Stage 2: Run ──────────────────────────────────────
+FROM eclipse-temurin:17-jre-alpine
+WORKDIR /app
+RUN addgroup -S agrosense && adduser -S agrosense -G agrosense
+COPY --from=builder /app/target/*.jar app.jar
+# Connection settings, schema and sample data; application.properties imports them from DATABASE_DIR.
+COPY database/ /app/database/
+ENV DATABASE_DIR=/app/database
+# Vercel sends traffic to $PORT.
+ENV PORT=9000
+# Requests arrive through Vercel's proxy: trust its headers so the login limit sees the real address.
+ENV SERVER_FORWARD_HEADERS_STRATEGY=native
+# Every instance opens its own pool, so each one stays small and gives connections back when idle.
+ENV SPRING_DATASOURCE_HIKARI_MAXIMUM_POOL_SIZE=3
+ENV SPRING_DATASOURCE_HIKARI_MINIMUM_IDLE=0
+USER agrosense
+EXPOSE 9000
+# The Postgres resource is connected to this project without a prefix, which provides PGHOST_UNPOOLED,
+# PGDATABASE, PGUSER and PGPASSWORD; the datasource is built from them. Its DATABASE_URL is not a JDBC
+# URL, so it must not reach datasource.properties: the arguments below take precedence over it.
+# JWT_SECRET (at least 64 bytes) must be set in the project's environment.
+ENTRYPOINT ["sh", "-c", "exec java -jar app.jar \"--spring.datasource.url=jdbc:postgresql://${PGHOST_UNPOOLED}/${PGDATABASE}?sslmode=require\" \"--spring.datasource.username=${PGUSER}\" \"--spring.datasource.password=${PGPASSWORD}\""]
