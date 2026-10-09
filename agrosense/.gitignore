@@ -45,11 +45,11 @@ target/
 .project
 .classpath
 
-# Sistema operativo
+# Operating system
 .DS_Store
 Thumbs.db
 
-# Variables de entorno (NUNCA subir al repo)
+# Environment variables (NEVER commit them)
 .env
 application-local.properties
 
