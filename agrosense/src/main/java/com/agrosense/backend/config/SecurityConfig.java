@@ -1,37 +1,48 @@
 package com.agrosense.backend.config;
 
-import com.agrosense.backend.repository.UserRepository;
+import com.agrosense.backend.security.JwtAuthenticationFilter;
+import com.agrosense.backend.security.TokenAuthenticator;
+import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
+import org.springframework.http.MediaType;
+import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.config.Customizer;
+import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.config.http.SessionCreationPolicy;
-import org.springframework.security.core.userdetails.User;
-import org.springframework.security.core.userdetails.UserDetailsService;
-import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.security.web.AuthenticationEntryPoint;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 
-import java.util.Locale;
+import java.nio.charset.StandardCharsets;
 
 @Configuration
 public class SecurityConfig {
 
     @Bean
-    public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
+    public SecurityFilterChain securityFilterChain(HttpSecurity http, TokenAuthenticator tokenAuthenticator)
+            throws Exception {
         http
-                // The API is stateless and does not use cookies, so CSRF tokens are not needed.
+                // The API is stateless and authenticates with a header, never a cookie, so CSRF does not apply.
                 .csrf(AbstractHttpConfigurer::disable)
                 .cors(Customizer.withDefaults())
                 .sessionManagement(session ->
                         session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(HttpMethod.GET, "/api/health").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/api/auth/login").permitAll()
+                        // Browsers cannot send headers on the WebSocket handshake; the token is checked on
+                        // the STOMP CONNECT frame instead (see StompAuthChannelInterceptor).
+                        .requestMatchers("/ws").permitAll()
                         .anyRequest().authenticated())
-                .httpBasic(Customizer.withDefaults());
+                .exceptionHandling(errors -> errors.authenticationEntryPoint(unauthorizedEntryPoint()))
+                .addFilterBefore(new JwtAuthenticationFilter(tokenAuthenticator),
+                        UsernamePasswordAuthenticationFilter.class);
         return http.build();
     }
 
@@ -40,14 +51,18 @@ public class SecurityConfig {
         return new BCryptPasswordEncoder();
     }
 
+    /** Used by the login endpoint; built from the UserDetailsService and PasswordEncoder beans. */
     @Bean
-    public UserDetailsService userDetailsService(UserRepository userRepository) {
-        return email -> userRepository.findByEmail(email)
-                .map(user -> User.withUsername(user.getEmail())
-                        .password(user.getPasswordHash())
-                        .authorities("ROLE_" + user.getRole().toUpperCase(Locale.ROOT))
-                        .disabled(!Boolean.TRUE.equals(user.getActive()))
-                        .build())
-                .orElseThrow(() -> new UsernameNotFoundException("User not found"));
+    public AuthenticationManager authenticationManager(AuthenticationConfiguration configuration) throws Exception {
+        return configuration.getAuthenticationManager();
+    }
+
+    private static AuthenticationEntryPoint unauthorizedEntryPoint() {
+        return (request, response, exception) -> {
+            response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+            response.setContentType(MediaType.APPLICATION_JSON_VALUE);
+            response.setCharacterEncoding(StandardCharsets.UTF_8.name());
+            response.getWriter().write("{\"message\":\"Debes iniciar sesión para acceder a este recurso.\"}");
+        };
     }
 }
