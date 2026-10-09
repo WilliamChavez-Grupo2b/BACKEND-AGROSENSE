@@ -1,4 +1,4 @@
-package com.agrosense.backend.pattern.creacional.singleton;
+package com.agrosense.backend.pattern.creational.singleton;
 
 
 public class IaConfigManager {
