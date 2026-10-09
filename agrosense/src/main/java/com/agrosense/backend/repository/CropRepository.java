@@ -14,5 +14,9 @@ public interface CropRepository extends JpaRepository<Crop, Integer> {
 
     Optional<Crop> findByIdCropAndEstateUserEmail(Integer idCrop, String email);
 
+    List<Crop> findByEstateIdEstateAndActiveTrueOrderByNameAsc(Integer idEstate);
+
+    List<Crop> findByEstateUserEmailAndActiveTrueOrderByNameAsc(String email);
+
     long countByEstateUserEmailAndActiveTrue(String email);
 }
