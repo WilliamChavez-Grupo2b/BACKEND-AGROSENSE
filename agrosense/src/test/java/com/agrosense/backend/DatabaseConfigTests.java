@@ -18,7 +18,7 @@ class DatabaseConfigTests {
 		assertThat(environment.getProperty("spring.jpa.hibernate.ddl-auto")).isEqualTo("validate");
 		assertThat(environment.getProperty("spring.sql.init.mode")).isEqualTo("never");
 		assertThat(environment.getProperty("spring.sql.init.schema-locations"))
-				.isEqualTo("file:../../database/schema.sql");
+				.isEqualTo("file:../database/schema.sql");
 		assertThat(environment.getProperty("spring.sql.init.data-locations")).isNull();
 	}
 
@@ -29,7 +29,7 @@ class DatabaseConfigTests {
 		assertThat(environment.getProperty("spring.datasource.url")).startsWith("jdbc:postgresql://");
 		assertThat(environment.getProperty("spring.sql.init.mode")).isEqualTo("always");
 		assertThat(environment.getProperty("spring.sql.init.data-locations"))
-				.isEqualTo("file:../../database/seed_demo.sql");
+				.isEqualTo("file:../database/seed_demo.sql");
 	}
 
 	private static StandardEnvironment load(String... profiles) {

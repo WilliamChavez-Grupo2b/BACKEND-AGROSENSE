@@ -8,4 +8,4 @@
 **/*.log
 frontend/
 docs/
-backend/agrosense/skills/
+agrosense/skills/

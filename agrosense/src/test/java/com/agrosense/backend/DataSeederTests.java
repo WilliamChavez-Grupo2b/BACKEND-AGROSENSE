@@ -71,8 +71,8 @@ class DataSeederTests {
 
 		// Applying both scripts again must not duplicate or change anything.
 		new ResourceDatabasePopulator(
-				new FileSystemResource("../../database/schema.sql"),
-				new FileSystemResource("../../database/seed_demo.sql")).execute(dataSource);
+				new FileSystemResource("../database/schema.sql"),
+				new FileSystemResource("../database/seed_demo.sql")).execute(dataSource);
 		assertSeededCounts();
 		assertThat(passwordEncoder.matches("seed-password",
 				userRepository.findByEmail("demo@agrosense.co").orElseThrow().getPasswordHash())).isTrue();
