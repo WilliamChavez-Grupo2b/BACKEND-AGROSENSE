@@ -1,45 +1,49 @@
-package com.agrosense.backend.models; 
+package com.agrosense.backend.models;
 
-import com.agrosense.backend.domain.enums.Sensor_Type; 
-import jakarta.persistance.*;
+import com.agrosense.backend.domain.enums.SensorType;
+import jakarta.persistence.*;
 import lombok.*;
 import java.time.LocalDateTime;
 
-@Entify
-@Table(name= "sensors")
-@Data
+@Entity
+@Table(name = "sensors")
+@Getter
+@Setter
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class sensor {
+public class Sensor {
 
     @Id
-    @GeneratedValue(strategy = GenerationType.IDENTIFY)
-    private Integer IdSensor;
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Column(name = "id_sensor")
+    private Integer idSensor;
 
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoininColumn(name  = "id_sensor", nullable= false)
-    private Cultive cultive;
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "id_crop", nullable = false)
+    private Crop crop;
 
-    @Column(name="Sensor_Code", nullable=false, unique=true) 
-    private String Sensorcode;
+    @Column(name = "sensor_code", nullable = false, unique = true)
+    private String sensorCode;
 
     @Enumerated(EnumType.STRING)
-    @Column(name= "Type_sensor", nullable= false)
-    private Typesensor typesensor; 
+    @Column(name = "sensor_type", nullable = false)
+    private SensorType sensorType;
 
-    private String Location;
+    private String location;
 
+    @Column(nullable = false)
     @Builder.Default
-    private Boolean activo = true;
+    private Boolean active = true;
 
-    @Column(name = "Last lecture")
-    private LocalDateTime Lastlecture;
+    @Column(name = "last_reading_at")
+    private LocalDateTime lastReadingAt;
 
-    @Column(name = "Created In")
-    private LocalDateTime CreatedIn;
+    @Column(name = "created_at", nullable = false, updatable = false)
+    private LocalDateTime createdAt;
 
-    @PrePersist(){
-        this.CreatedIn = LocalDateTime.now(); 
+    @PrePersist
+    public void prePersist() {
+        this.createdAt = LocalDateTime.now();
     }
 }

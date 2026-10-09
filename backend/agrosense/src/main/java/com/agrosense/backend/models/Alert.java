@@ -1,55 +1,60 @@
-package com.agrosense.backend.models; 
+package com.agrosense.backend.models;
 
-import com.agrosense.backend.domain.enums.StageCultivation; 
-import jakarta.persistance.*;
+import com.agrosense.backend.domain.enums.AlertType;
+import com.agrosense.backend.domain.enums.Severity;
+import jakarta.persistence.*;
 import lombok.*;
 import java.math.BigDecimal;
-import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.util.List; 
 
-@Entify
-@Table(name= "alerts")
-@Data
+@Entity
+@Table(name = "alerts", indexes = {
+        @Index(name = "idx_alerts_crop_created_at", columnList = "id_crop, created_at")
+})
+@Getter
+@Setter
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
 public class Alert {
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTIFY)
-    private Integer idAlert
 
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoininColumn(name  = "id_cultive", nullable= false)
-    private Cultive cultive; 
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Column(name = "id_alert")
+    private Integer idAlert;
+
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "id_crop", nullable = false)
+    private Crop crop;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "id_sensor")
     private Sensor sensor;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "alert_type", nullable = false)
+    private AlertType alertType;
 
     @Enumerated(EnumType.STRING)
-    @Column(name = "type_alert", nullable = false)
-    private TypeAlert typeAlert;
-
-    @Enumerated(EnumType.STRING)
+    @Column(nullable = false)
     @Builder.Default
-    private Severity severity = Severity.MIDLOW;
+    private Severity severity = Severity.MEDIUM;
 
     @Column(nullable = false)
     private String message;
 
-    @Column(name = "Value_Detected")
-    private BigDecimal ValueDetected;
+    @Column(name = "detected_value", precision = 12, scale = 4)
+    private BigDecimal detectedValue;
 
+    @Column(nullable = false)
     @Builder.Default
-    private Boolean served = false;
+    private Boolean acknowledged = false;
 
-    @Column(name = "created_in")
-    private LocalDateTime CreatedIn;
+    @Column(name = "created_at", nullable = false, updatable = false)
+    private LocalDateTime createdAt;
 
     @PrePersist
     public void prePersist() {
-        this.createdIn = LocalDateTime.now();
+        this.createdAt = LocalDateTime.now();
     }
 }
