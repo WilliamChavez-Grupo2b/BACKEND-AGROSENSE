@@ -9,7 +9,7 @@ tomadas y qué partes de la interfaz usan datos reales, parciales o no disponibl
 |-------------|--------------------------------------------------------------------------------------------|
 | `backend/`  | Proyecto Spring Boot de William Chávez (`BACKEND-AGROSENSE`), auditado y corregido.         |
 | `frontend/` | Aplicación web Spring Boot + Thymeleaf (este documento la describe en detalle).             |
-| `database/` | Vacía. El repositorio `BASE-DE-DATOS-AGROSENSE` no tiene ningún archivo todavía.            |
+| `database/` | `schema.sql` (esquema PostgreSQL, fuente de verdad de las tablas) y su `README.md`.         |
 
 ### Backend (`backend/agrosense`)
 
@@ -79,6 +79,17 @@ tomadas y qué partes de la interfaz usan datos reales, parciales o no disponibl
     transacción, sus lecturas, alertas y riegos, porque esas tablas no tienen cascada. Al eliminar un
     sensor se borran sus lecturas y sus alertas se conservan sin la referencia al sensor. El código de
     sensor es único en todo el sistema y se guarda en mayúsculas.
+16. **El esquema vive en `database/schema.sql`.** Es la única fuente de verdad de las tablas: backend y
+    frontend usan `ddl-auto=validate` y nunca crean ni alteran tablas. El script es idempotente y se
+    aplica desde la propia aplicación con `SQL_INIT_MODE=always` (el perfil `seed` del backend y el
+    perfil `demo` del frontend lo hacen), de modo que no hace falta `psql`. Incluye claves foráneas con
+    borrado en cascada, restricciones `CHECK` e índices en todas las claves foráneas. Esto sustituye a la
+    decisión 2: los nombres de tablas ya no son una propuesta implícita en las entidades.
+17. **PostgreSQL local bloqueado por Windows.** En este equipo el servidor PostgreSQL 18 arranca pero
+    rechaza cada conexión con «no se pudo lanzar el nuevo proceso para la conexión». El registro de
+    Integridad de código de Windows (eventos 3033 y 3077) muestra que la directiva de Control de
+    aplicaciones impide a `postgres.exe` lanzar sus procesos hijo. No es un fallo del proyecto y no se
+    ha eludido. Hasta que se resuelva, el esquema se verifica con H2 en modo PostgreSQL.
 
 ## 3. Estructura del frontend
 
@@ -147,8 +158,8 @@ datos contiene datos de ejemplo.
 
 ## 6. Verificación realizada
 
-- `mvnw clean verify` en `frontend/`: 40 pruebas (JUnit 5, Mockito, MockMvc), todas correctas.
-- `mvnw package` en `backend/agrosense`: 5 pruebas, todas correctas.
+- `mvnw clean verify` en `frontend/`: 41 pruebas (JUnit 5, Mockito, MockMvc), todas correctas.
+- `mvnw clean verify` en `backend/agrosense`: 8 pruebas, todas correctas.
 - Recorrido en Edge sin interfaz con el perfil `demo`: registro → login → inicio → cada opción del menú
   → configuración → cerrar sesión → ruta protegida redirige a login → login → eliminar cuenta (contraseña
   incorrecta y correcta) → la cuenta eliminada ya no puede entrar. Sin errores de consola ni bloqueos de
@@ -157,7 +168,7 @@ datos contiene datos de ejemplo.
 
 ## 7. Pendiente
 
-- Definir el esquema real en `database/` y alinear las entidades de backend y frontend.
+- Ejecutar `database/schema.sql` contra un PostgreSQL real (ver decisión 17).
 - API REST en el backend; después, decidir si el frontend sigue con JPA o pasa a consumirla.
 - Ingesta de lecturas: los sensores se pueden registrar, pero nada recibe datos de los dispositivos.
 - Edición de sensores (hoy solo alta y baja).
