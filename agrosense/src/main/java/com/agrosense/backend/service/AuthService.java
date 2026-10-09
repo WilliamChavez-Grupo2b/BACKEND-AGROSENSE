@@ -63,4 +63,9 @@ public class AuthService {
                 user.getRole(),
                 user.getIdUser());
     }
+
+    @Transactional(readOnly = true)
+    public boolean isEmailAvailable(String email) {
+        return !userRepository.existsByEmail(email.trim().toLowerCase(Locale.ROOT));
+    }
 }
