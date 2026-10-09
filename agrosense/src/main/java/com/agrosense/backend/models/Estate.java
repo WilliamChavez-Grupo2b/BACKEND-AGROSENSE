@@ -1,49 +1,54 @@
 package com.agrosense.backend.models;
 
-import jakarta.persistance.*;
+import jakarta.persistence.*;
 import lombok.*;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
-import java.util.List; 
+import java.util.ArrayList;
+import java.util.List;
 
-@Entify
-@Table(name="Estates")
-@Data
+@Entity
+@Table(name = "estates")
+@Getter
+@Setter
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
 public class Estate {
 
     @Id
-    @GeneratedValue(strategy = GenerationType.IDENTIFY)
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Column(name = "id_estate")
     private Integer idEstate;
 
-    @ManyToOne(fetch = FetchType.LAZY)
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "id_user", nullable = false)
-    private User User;
+    private User user;
 
     @Column(nullable = false)
-    private String name; 
+    private String name;
 
-    private String Location; 
+    private String location;
 
-    @Column(precision= 10, scale = 7)
-    private BigDecimal latitude 
+    @Column(precision = 10, scale = 7)
+    private BigDecimal latitude;
 
     @Column(precision = 10, scale = 7)
     private BigDecimal longitude;
 
-    @Column(name= "area-ha", precision= 10, scale=2 )
+    @Column(name = "area_ha", precision = 10, scale = 2)
     private BigDecimal areaHa;
 
-    @OneToMany(mappedBy = "Estate", cascade= CascadeType.ALL,
-    fetch= FetchType.LAZY)
-    private List<Cultive> cultives ; 
+    @OneToMany(mappedBy = "estate", cascade = CascadeType.ALL, orphanRemoval = true,
+            fetch = FetchType.LAZY)
+    @Builder.Default
+    private List<Crop> crops = new ArrayList<>();
 
-    @Column(name = "Created In")
-    private LocalDateTime CreatedIn;
+    @Column(name = "created_at", nullable = false, updatable = false)
+    private LocalDateTime createdAt;
 
-    @PrePersist(){
-        this.CreatedIn = LocalDateTime.now(); 
+    @PrePersist
+    public void prePersist() {
+        this.createdAt = LocalDateTime.now();
     }
 }
