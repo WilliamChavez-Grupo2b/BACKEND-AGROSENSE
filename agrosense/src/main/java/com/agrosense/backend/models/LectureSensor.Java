@@ -14,7 +14,7 @@ public class LectureSensor {
     
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTIFY)
-    private Integer Idlecture;
+    private Integer idLecture;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoininColumn(name  = "id_sensor", nullable= false)
