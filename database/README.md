@@ -12,7 +12,21 @@ modifican tablas ni contienen datos de ejemplo: leen estos archivos y solo valid
 | `schema.sql`    | Tablas, claves, restricciones e índices. Fuente de verdad del esquema.               |
 | `seed_demo.sql` | Datos de ejemplo: 1 usuario, 2 fincas, 3 cultivos, 6 sensores, 120 lecturas, 4 alertas, 4 riegos y 2 predicciones. |
 | `reset.sql`     | **Destructivo.** Borra todas las tablas y sus datos. Solo para desarrollo.           |
-| `.env.example`  | Variables de conexión que leen el backend y el frontend.                             |
+| `datasource.properties` | Configuración de base de datos que cargan el backend y el frontend: conexión, validación del esquema, ejecución de los scripts y perfiles `seed` y `demo`. |
+| `.env.example`  | Variables de entorno que usa `datasource.properties`.                                |
+
+## Qué queda fuera de esta carpeta
+
+En `backend/` y `frontend/` solo queda lo que es código Java y no puede vivir fuera de cada aplicación:
+
+- Las clases de entidades y los repositorios (el mapeo de estas tablas a objetos).
+- Dos líneas en cada `application.properties`: la ruta de esta carpeta y la orden de cargar
+  `datasource.properties`.
+- La clase que asigna la contraseña al usuario de ejemplo (`SeedAccountInitializer`,
+  `DemoAccountInitializer`).
+
+Las entidades están duplicadas entre backend y frontend. Unificarlas en un módulo Java compartido dentro
+de esta carpeta es posible, pero cambia cómo se compilan los dos proyectos y está pendiente de decidir.
 
 `schema.sql` y `seed_demo.sql` son idempotentes: se pueden ejecutar varias veces sin duplicar nada.
 
@@ -82,9 +96,9 @@ Así este archivo no guarda ninguna contraseña ni un hash utilizable.
 
 3. Para empezar de cero en desarrollo: `reset.sql` y de nuevo `schema.sql`.
 
-Las aplicaciones buscan estos archivos con rutas relativas a su carpeta (`../database` desde `frontend`,
-`../../database` desde `backend/agrosense`). Si las ejecutas desde otro lugar, indica las rutas con
-`SCHEMA_LOCATION` y `SEED_LOCATION`.
+Las aplicaciones buscan esta carpeta con una ruta relativa a la suya (`../database` desde `frontend`,
+`../../database` desde `backend/agrosense`). Si las ejecutas desde otro lugar, indica dónde está con la
+variable `DATABASE_DIR`.
 
 ## Variables de conexión
 
@@ -97,6 +111,8 @@ Las aplicaciones buscan estos archivos con rutas relativas a su carpeta (`../dat
 
 ## Verificación
 
+- `DatabaseConfigTests` (backend y frontend) comprueba qué resuelve `datasource.properties` con y sin
+  perfil: PostgreSQL y `validate` por defecto, y los scripts de esta carpeta con `seed` y `demo`.
 - `DatabaseSchemaTests` (backend y frontend) ejecuta `schema.sql` y hace que Hibernate valide todas las
   entidades contra él; también comprueba que las restricciones rechazan datos inválidos.
 - `DataSeederTests` (backend) arranca con el perfil `seed`, cuenta las filas cargadas por `seed_demo.sql`
