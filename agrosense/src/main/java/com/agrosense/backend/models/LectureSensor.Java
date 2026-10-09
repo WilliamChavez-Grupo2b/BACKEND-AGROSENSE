@@ -14,14 +14,14 @@ public class LectureSensor {
     
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTIFY)
-    private Integer idLecture;
+    private Integer Idlecture;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoininColumn(name  = "id_sensor", nullable= false)
     private Sensor sensor;
 
     @Column(nullable = false)
-    private BigDecimal value; 
+    private BigDecimal valor; 
     private String unity; 
 
     @Builder.Default
@@ -32,7 +32,7 @@ public class LectureSensor {
 
         @PrePersist
     public void prePersist() {
-        if (this.time == null) this.time = LocalDateTime.now();
+        if (this.time == null) this.tiempo = LocalDateTime.now();
     } 
 
 }
