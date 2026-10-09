@@ -105,6 +105,19 @@ tomadas y qué partes de la interfaz usan datos reales, parciales o no disponibl
     sesión sobrevive a un reinicio y funciona con varias instancias, que es como lo ejecuta un servicio
     que apaga las instancias inactivas. Las tablas `spring_session` y `spring_session_attributes` están en
     `database/schema.sql` como las demás y la biblioteca no las crea (`initialize-schema=never`).
+21. **El frontend usa la API del backend para lo que la API ofrece.** `BackendClient` llama al backend
+    para marcar alertas como atendidas, registrar sensores, registrar riegos manuales y leer la serie de
+    lecturas de un sensor. Todo lo demás sigue leyendo la base de datos con JPA, porque la API no tiene
+    registro de usuarios, edición ni eliminación, ni devuelve los datos que muestran los listados.
+    - Cada llamada lleva un token HS512 de dos minutos firmado con el secreto que comparten las dos
+      aplicaciones (`BACKEND_JWT_SECRET` = `JWT_SECRET` del backend). El frontend ya lee la misma base
+      de datos, así que el secreto no le da ningún permiso nuevo.
+    - El backend puede estar dormido (el alojamiento gratuito lo apaga y tarda minutos en arrancar). Antes
+      de cada operación se consulta `/api/health` con un tiempo de espera corto; si no responde, la
+      operación se hace contra la base de datos y esa misma consulta empieza a despertarlo.
+    - Las lecturas y el marcado de alertas vuelven a la base de datos si la llamada falla. El alta de
+      sensores y de riegos no: el backend puede haberla registrado, y repetirla la duplicaría.
+    - Sin `BACKEND_URL` y `BACKEND_JWT_SECRET` la conexión queda desactivada, como en el perfil `demo`.
 
 ## 3. Estructura del frontend
 
@@ -148,7 +161,7 @@ parte.
 | Inicio · alertas recientes      | `AlertService`                                         | Real            |
 | Parcelas                        | `EstateService` (lectura), `CatalogService` (alta, edición, baja de parcelas y cultivos) | Real |
 | Sensores                        | `SensorService` (lectura), `CatalogService` (alta y baja) | Parcial (sin edición; las lecturas dependen de un servicio de ingesta que no existe) |
-| Riego                           | `IrrigationService`                                    | Parcial (los riegos manuales no registran litros) |
+| Riego                           | `IrrigationService`                                    | Parcial (registra el riego con sus litros; no acciona la bomba) |
 | Dispositivos                    | —                                                      | No disponible   |
 | Alertas                         | `AlertService` (listar, paginar, marcar como atendida) | Real            |
 | Reportes                        | `IrrigationService.waterReport`                        | Parcial (sin exportación) |
@@ -183,7 +196,8 @@ datos contiene datos de ejemplo.
 
 ## 7. Pendiente
 
-- API REST en el backend; después, decidir si el frontend sigue con JPA o pasa a consumirla.
+- Ampliar la API del backend (registro, edición, eliminación, listados completos) para que el frontend
+  pueda dejar de leer la base de datos directamente (ver decisión 21).
 - Ingesta de lecturas: los sensores se pueden registrar, pero nada recibe datos de los dispositivos.
 - Edición de sensores (hoy solo alta y baja).
 - Edición del perfil, cambio de contraseña, verificación de correo y límite de intentos de acceso.
