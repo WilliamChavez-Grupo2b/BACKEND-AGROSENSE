@@ -1,50 +1,58 @@
-package com.agrosense.backend.models; 
+package com.agrosense.backend.models;
 
-import com.agrosense.backend.domain.enums.StageCultivation; 
-import jakarta.persistance.*;
+import com.agrosense.backend.domain.enums.IrrigationType;
+import jakarta.persistence.*;
 import lombok.*;
 import java.math.BigDecimal;
-import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.util.List; 
 
-@Entify
-@Table(name= "Irrigation")
-@Data
+@Entity
+@Table(name = "irrigations", indexes = {
+        @Index(name = "idx_irrigations_crop_started_at", columnList = "id_crop, started_at")
+})
+@Getter
+@Setter
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
 public class Irrigation {
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Column(name = "id_irrigation")
     private Integer idIrrigation;
 
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "id_cultive")
-    private Cultive cultive;
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "id_crop", nullable = false)
+    private Crop crop;
 
-    private LocalDateTime start;
-    private LocalDateTime end; 
+    // "start" and "end" are reserved words in SQL, so the columns use explicit names.
+    @Column(name = "started_at")
+    private LocalDateTime startedAt;
+
+    @Column(name = "ended_at")
+    private LocalDateTime endedAt;
 
     @Column(name = "duration_min")
     private Integer durationMin;
 
-    @Column(name = "liters_water")
-    private BigDecimal literswater;
+    @Column(name = "water_liters", precision = 10, scale = 2)
+    private BigDecimal waterLiters;
 
     @Enumerated(EnumType.STRING)
+    @Column(name = "irrigation_type", nullable = false)
     @Builder.Default
-    private TypeIrrigation type = Type_irrigation.AUTOMATIC;
+    private IrrigationType type = IrrigationType.AUTOMATIC;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "activate_for")
-    private Usuario activatefor;
+    @JoinColumn(name = "activated_by")
+    private User activatedBy;
 
-    @Column(name = "create_in")
-    private LocalDateTime CreateIn;
+    @Column(name = "created_at", nullable = false, updatable = false)
+    private LocalDateTime createdAt;
 
     @PrePersist
     public void prePersist() {
-        this.CreateIn = LocalDateTime.now();
+        this.createdAt = LocalDateTime.now();
     }
 }
