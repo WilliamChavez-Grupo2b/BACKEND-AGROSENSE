@@ -5,7 +5,7 @@ import com.agrosense.backend.domain.enums.Severity;
 import org.springframework.data.jpa.repository.JpaRepository;
 import java.util.List;
 
-public interface AlertaRepository
+public interface AlertRepository
         extends JpaRepository<Alert, Integer> {
 
     List<Alert> findByAtendidaFalseOrderByCreadoEnDesc();
