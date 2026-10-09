@@ -9,7 +9,7 @@ tomadas y qué partes de la interfaz usan datos reales, parciales o no disponibl
 |-------------|--------------------------------------------------------------------------------------------|
 | `backend/`  | Proyecto Spring Boot de William Chávez (`BACKEND-AGROSENSE`), auditado y corregido.         |
 | `frontend/` | Aplicación web Spring Boot + Thymeleaf (este documento la describe en detalle).             |
-| `database/` | `schema.sql` (esquema PostgreSQL, fuente de verdad de las tablas) y su `README.md`.         |
+| `database/` | Todo lo de base de datos: `schema.sql`, `seed_demo.sql`, `reset.sql`, `.env.example` y `README.md`. |
 
 ### Backend (`backend/agrosense`)
 
@@ -40,7 +40,7 @@ tomadas y qué partes de la interfaz usan datos reales, parciales o no disponibl
 2. **El esquema de tablas es una propuesta.** Los nombres de tablas y columnas (`crops`,
    `sensor_readings`, `created_at`…) salen de las entidades; no existe un script SQL contra el que
    validarlos. En producción se usa `ddl-auto=validate`, así que la base de datos real debe coincidir.
-3. **Perfil `demo`.** Arranca con H2 en memoria y datos de ejemplo (`DemoDataLoader`). La interfaz lo
+3. **Perfil `demo`.** Arranca con H2 en memoria (modo PostgreSQL) y carga `database/schema.sql` y `database/seed_demo.sql`. La interfaz lo
    indica con la etiqueta «Vista de demostración». Sin ese perfil se conecta a PostgreSQL mediante
    `DATABASE_URL`, `DATABASE_USERNAME` y `DATABASE_PASSWORD`.
 4. **Cada consulta se filtra por el usuario autenticado.** Los repositorios buscan siempre por el correo
@@ -90,12 +90,17 @@ tomadas y qué partes de la interfaz usan datos reales, parciales o no disponibl
     Integridad de código de Windows (eventos 3033 y 3077) muestra que la directiva de Control de
     aplicaciones impide a `postgres.exe` lanzar sus procesos hijo. No es un fallo del proyecto y no se
     ha eludido. Hasta que se resuelva, el esquema se verifica con H2 en modo PostgreSQL.
+18. **Los datos de ejemplo también viven en `database/`.** `seed_demo.sql` sustituye a los cargadores
+    Java que había en backend y frontend, de modo que hay una sola copia de los datos. El script crea el
+    usuario de ejemplo con un hash que no corresponde a ninguna contraseña; cada aplicación le asigna la
+    suya al arrancar (`SeedAccountInitializer` con `SEED_USER_PASSWORD`, `DemoAccountInitializer` con
+    `DEMO_PASSWORD`). Ningún archivo SQL guarda una contraseña ni un hash utilizable.
 
 ## 3. Estructura del frontend
 
 ```
 frontend/src/main/java/com/agrosense/frontend/
-  config/       SecurityConfig, DemoDataLoader (perfil demo)
+  config/       SecurityConfig, DemoAccountInitializer (perfil demo)
   controller/   PageController, IrrigationController, AlertController, UiApiController,
                 GlobalModelAttributes
   service/      DashboardService, EstateService, SensorService, AlertService, IrrigationService
