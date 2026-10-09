@@ -8,6 +8,8 @@ import com.agrosense.backend.models.Estate;
 import com.agrosense.backend.models.Sensor;
 import com.agrosense.backend.models.User;
 import com.agrosense.backend.mqtt.MqttMessageHandler;
+import com.agrosense.backend.pattern.structural.adapter.SensorReadingData;
+import com.agrosense.backend.pattern.structural.facade.SensorFacade;
 import com.agrosense.backend.repository.AlertRepository;
 import com.agrosense.backend.repository.CropRepository;
 import com.agrosense.backend.repository.EstateRepository;
@@ -32,6 +34,7 @@ import org.springframework.web.socket.client.standard.StandardWebSocketClient;
 import org.springframework.web.socket.messaging.WebSocketStompClient;
 
 import java.lang.reflect.Type;
+import java.math.BigDecimal;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -39,10 +42,15 @@ import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
 import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
@@ -86,6 +94,8 @@ class ApiIntegrationTests {
 	private AlertRepository alertRepository;
 	@Autowired
 	private MqttMessageHandler mqttMessageHandler;
+	@Autowired
+	private SensorFacade sensorFacade;
 	@Autowired
 	private WebSocketSessionRegistry sessionRegistry;
 	@Autowired
@@ -220,6 +230,11 @@ class ApiIntegrationTests {
 		assertThat(inactive.body()).contains("inactivo");
 		assertThat(send("GET", "/api/sensors/" + foreign.getIdSensor() + "/readings", auth, null).statusCode())
 				.isEqualTo(404);
+
+		// Larger than the column can hold: refused as invalid instead of failing in the database.
+		HttpResponse<String> huge = send("POST", "/api/readings", auth, "{\"sensorCode\":\"AS-001\",\"value\":1e20}");
+		assertThat(huge.statusCode()).isEqualTo(400);
+		assertThat(huge.body()).contains("El valor está fuera del rango admitido.");
 
 		assertThat(readingRepository.count()).isEqualTo(before);
 	}
@@ -475,6 +490,33 @@ class ApiIntegrationTests {
 		userRepository.save(owner);
 		mqttMessageHandler.handle("agrosense/sensors/MQTT-1/readings", own);
 		assertThat(readingRepository.count()).isEqualTo(before + 1);
+	}
+
+	@Test
+	void readingsArrivingTogetherRaiseASingleAlert() throws Exception {
+		Sensor sensor = createOtherUsersSensor("race@agrosense.test", "RACE-1");
+		int simultaneous = 8;
+		ExecutorService pool = Executors.newFixedThreadPool(simultaneous);
+		CountDownLatch start = new CountDownLatch(1);
+		List<Future<?>> results = new ArrayList<>();
+		try {
+			for (int i = 0; i < simultaneous; i++) {
+				results.add(pool.submit(() -> {
+					start.await();
+					// Below the crop's minimum humidity (40): every one of them wants to raise the alert.
+					return sensorFacade.recordReading(SensorReadingData.builder()
+							.sensorCode("RACE-1").value(new BigDecimal("10")).build());
+				}));
+			}
+			start.countDown();
+			for (Future<?> result : results) {
+				result.get(30, TimeUnit.SECONDS);
+			}
+		} finally {
+			pool.shutdownNow();
+		}
+
+		assertThat(alertRepository.findByCropIdCropAndAcknowledgedFalse(sensor.getCrop().getIdCrop())).hasSize(1);
 	}
 
 	@Test

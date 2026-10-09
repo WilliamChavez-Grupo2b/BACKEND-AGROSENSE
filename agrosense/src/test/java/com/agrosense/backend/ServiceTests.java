@@ -3,6 +3,7 @@ package com.agrosense.backend;
 import com.agrosense.backend.domain.enums.SensorType;
 import com.agrosense.backend.dto.response.SensorResponse;
 import com.agrosense.backend.exception.BusinessRuleException;
+import com.agrosense.backend.exception.GlobalExceptionHandler;
 import com.agrosense.backend.exception.ResourceNotFoundException;
 import com.agrosense.backend.models.AiPrediction;
 import com.agrosense.backend.models.Crop;
@@ -22,6 +23,7 @@ import com.agrosense.backend.service.PrediccionService;
 import com.agrosense.backend.service.SensorService;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.springframework.dao.DataIntegrityViolationException;
 
 import java.math.BigDecimal;
 import java.time.Clock;
@@ -136,6 +138,16 @@ class ServiceTests {
 		when(sensors.findByCropIdCropOrderBySensorCodeAsc(7)).thenReturn(List.of(
 				Sensor.builder().idSensor(1).sensorCode("AS-900").sensorType(SensorType.PH).crop(crop).build()));
 		assertThat(service.findByCrop(OWNER, 7)).extracting(SensorResponse::getSensorCode).containsExactly("AS-900");
+	}
+
+	@Test
+	void aConstraintBrokenByAConcurrentRequestIsAConflictNotAServerError() {
+		var response = new GlobalExceptionHandler().handleDataIntegrity(
+				new DataIntegrityViolationException("duplicate key", new IllegalStateException("uq_sensors_code")));
+
+		assertThat(response.getStatusCode().value()).isEqualTo(409);
+		assertThat(response.getBody().message()).isEqualTo("Los datos entran en conflicto con un registro existente.");
+		assertThat(response.getBody().fields()).isNull();
 	}
 
 	@Test
