@@ -66,8 +66,12 @@ tomadas y qué partes de la interfaz usan datos reales, parciales o no disponibl
     muestra una vista esquemática con el aviso «Sin coordenadas registradas». El script valida que
     Leaflet esté cargado y que cada coordenada sea un número dentro de rango; ante cualquier fallo cambia
     a esa misma vista en lugar de lanzar un error.
-13. **Preferencias en el navegador.** No existe una tabla de preferencias, así que la única disponible
-    (menú lateral contraído) se guarda en `localStorage` y la página lo indica.
+$114. **Corrección de «Access blocked» en el mapa.** OpenStreetMap devuelve una imagen de bloqueo a las
+    peticiones sin cabecera `Referer`, y la aplicación la eliminaba con `Referrer-Policy: same-origin`.
+    La política pasa a `strict-origin-when-cross-origin`, que envía solo el origen, y las teselas vuelven
+    a cargar (comprobado: la misma tesela pesa 6,9 kB sin `Referer` y 20 kB con él). Se probó CARTO
+    Voyager como alternativa, pero hoy entrega las teselas con la marca «API KEY REQUIRED», así que se
+    mantiene OpenStreetMap en `tile.openstreetmap.org`, único origen de imágenes externas en la CSP.
 
 ## 3. Estructura del frontend
 
@@ -129,7 +133,7 @@ datos contiene datos de ejemplo.
 - Todas las rutas requieren autenticación excepto `/login`, los recursos estáticos y `/error`.
 - CSRF activo en formularios y en las peticiones `fetch` (cabecera leída de las etiquetas `<meta>`).
 - Cookie de sesión `HttpOnly`, `SameSite=Lax` y `Secure` (desactivado solo en el perfil `demo`).
-- Cabecera `Content-Security-Policy` restrictiva y `Referrer-Policy: same-origin`.
+- Cabecera `Content-Security-Policy` restrictiva y `Referrer-Policy: strict-origin-when-cross-origin`.
 - Thymeleaf escapa todo el contenido (`th:text`); el JavaScript usa `textContent`, nunca `innerHTML`.
 - Validación con Bean Validation en `IrrigationForm`, tanto en el formulario como en el JSON.
 - El mensaje de error del login es el mismo para usuario inexistente y contraseña incorrecta.
