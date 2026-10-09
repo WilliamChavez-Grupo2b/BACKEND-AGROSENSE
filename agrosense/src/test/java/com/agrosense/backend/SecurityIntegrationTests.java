@@ -62,6 +62,15 @@ class SecurityIntegrationTests {
 	}
 
 	@Test
+	void healthEndpointIsPublic() throws Exception {
+		HttpResponse<String> response = client.send(
+				HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/api/health")).build(),
+				HttpResponse.BodyHandlers.ofString());
+		assertEquals(200, response.statusCode());
+		assertEquals("{\"status\":\"UP\"}", response.body());
+	}
+
+	@Test
 	void rejectsWrongPassword() throws Exception {
 		assertEquals(401, get(basic(EMAIL, "wrong-password"), null).statusCode());
 	}
