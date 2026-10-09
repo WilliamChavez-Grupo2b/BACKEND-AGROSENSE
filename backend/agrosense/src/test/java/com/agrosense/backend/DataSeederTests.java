@@ -20,11 +20,11 @@ import org.springframework.test.context.ActiveProfiles;
 import static org.assertj.core.api.Assertions.assertThat;
 
 @SpringBootTest(properties = {
-		"spring.datasource.url=jdbc:h2:mem:agrosense-seed;DB_CLOSE_DELAY=-1",
+		// Same path as a real "seed" start: tables from database/schema.sql, entities only validated.
+		"spring.datasource.url=jdbc:h2:mem:agrosense-seed;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;DEFAULT_NULL_ORDERING=HIGH;DB_CLOSE_DELAY=-1",
 		"spring.datasource.username=sa",
 		"spring.datasource.password=",
 		"spring.datasource.driver-class-name=org.h2.Driver",
-		"spring.jpa.hibernate.ddl-auto=create-drop",
 		"cors.allowed-origins=",
 		"agrosense.seed.email=seed@agrosense.test",
 		"agrosense.seed.password=seed-password"
