@@ -18,6 +18,8 @@ public class MqttAdapter {
 
     private static final int MAX_CODE_LENGTH = 255;
     private static final int MAX_UNIT_LENGTH = 20;
+    /** The readings column holds eight integer digits. */
+    private static final double MAX_ABSOLUTE_VALUE = 99_999_999;
     /** Clocks on field devices drift; anything further ahead than this is treated as "now". */
     private static final long MAX_FUTURE_SKEW_MINUTES = 5;
 
@@ -31,6 +33,9 @@ public class MqttAdapter {
         }
         if (message.getValue() == null || !Double.isFinite(message.getValue())) {
             throw new IllegalArgumentException("MQTT message without a finite value");
+        }
+        if (Math.abs(message.getValue()) > MAX_ABSOLUTE_VALUE) {
+            throw new IllegalArgumentException("MQTT message with a value too large to store");
         }
         return SensorReadingData.builder()
                 .sensorCode(message.getCode().trim().toUpperCase(Locale.ROOT))
