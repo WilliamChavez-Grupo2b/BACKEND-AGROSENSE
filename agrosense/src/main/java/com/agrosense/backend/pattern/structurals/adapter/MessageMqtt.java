@@ -7,7 +7,7 @@ import lombok.NoArgsConstructor;
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
-public class MensajeMqtt {
+public class MessageMqtt {
     private String code;
     private Double value;
     private String unity;
