@@ -20,5 +20,5 @@ COPY --from=builder /app/target/*.jar app.jar
 COPY database/ /app/database/
 ENV DATABASE_DIR=/app/database
 USER agrosense
-EXPOSE 5272
+EXPOSE 9000
 ENTRYPOINT ["java", "-jar", "app.jar"]
