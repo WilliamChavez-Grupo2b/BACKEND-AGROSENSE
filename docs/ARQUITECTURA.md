@@ -302,7 +302,7 @@ Del frontend (la del backend está en la sección 1):
 - `mvnw test` en `frontend/` (11 de octubre de 2026): 76 pruebas (JUnit 5, Mockito, MockMvc); 74
   correctas y 2 omitidas, que son las de PostgreSQL. Incluyen las del cliente del backend contra un
   servidor HTTP local.
-- `mvnw test` en `backend/agrosense` (11 de octubre de 2026): 64 pruebas; 61 correctas y 3 omitidas,
+- `mvnw test` en `backend/agrosense` (11 de octubre de 2026): 61 pruebas; 58 correctas y 3 omitidas,
   también las de PostgreSQL. La JVM de pruebas termina sola: cada prueba cierra las sesiones WebSocket
   que abre. Las del asistente usan un servidor local en el papel de Gemini.
 - Asistente de punta a punta en local (11 de octubre de 2026), backend y frontend sobre una base H2 nueva
