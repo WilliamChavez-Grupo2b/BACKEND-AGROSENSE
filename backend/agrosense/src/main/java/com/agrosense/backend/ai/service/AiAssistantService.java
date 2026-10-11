@@ -12,6 +12,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.client.reactive.ReactorClientHttpConnector;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
 import org.springframework.web.reactive.function.client.WebClientResponseException;
@@ -106,14 +107,40 @@ public class AiAssistantService {
     /** Answers a written question, taking the earlier turns of the conversation into account. */
     public AiResponseDto chat(String email, AiRequestDto request) {
         checkAvailable(email);
-        List<Map<String, Object>> contents = new ArrayList<>();
         List<AiRequestDto.Turn> history = request.getHistory() == null ? List.of() : request.getHistory();
+        return new AiResponseDto(textOf(generate(email, conversation(history, request.getMessage().trim()), false)));
+    }
+
+    /**
+     * The turns in the shape Gemini accepts: the first one is the user's and the two sides alternate. A
+     * conversation kept by a browser does not always look like that (a question left without an answer,
+     * or older turns dropped from the start), so answers with nothing before them are left out and turns
+     * in a row from the same side become one.
+     */
+    private static List<Map<String, Object>> conversation(List<AiRequestDto.Turn> history, String question) {
+        List<String> roles = new ArrayList<>();
+        List<StringBuilder> texts = new ArrayList<>();
         for (AiRequestDto.Turn turn : history) {
-            String role = AiRequestDto.Turn.ASSISTANT.equals(turn.getRole()) ? "model" : "user";
-            contents.add(content(role, Map.of("text", turn.getText())));
+            add(roles, texts, AiRequestDto.Turn.ASSISTANT.equals(turn.getRole()) ? "model" : "user", turn.getText());
         }
-        contents.add(content("user", Map.of("text", request.getMessage().trim())));
-        return new AiResponseDto(textOf(generate(email, contents, false)));
+        add(roles, texts, "user", question);
+        List<Map<String, Object>> contents = new ArrayList<>();
+        for (int index = 0; index < roles.size(); index++) {
+            contents.add(content(roles.get(index), Map.of("text", texts.get(index).toString())));
+        }
+        return contents;
+    }
+
+    private static void add(List<String> roles, List<StringBuilder> texts, String role, String text) {
+        if (roles.isEmpty() && "model".equals(role)) {
+            return;
+        }
+        if (!roles.isEmpty() && roles.get(roles.size() - 1).equals(role)) {
+            texts.get(texts.size() - 1).append('\n').append(text);
+            return;
+        }
+        roles.add(role);
+        texts.add(new StringBuilder(text));
     }
 
     /**
@@ -265,16 +292,44 @@ public class AiAssistantService {
             return;
         }
         Instant now = clock.instant();
-        Deque<Instant> requests = recentRequests.computeIfAbsent(email, key -> new ArrayDeque<>());
-        synchronized (requests) {
-            while (!requests.isEmpty() && !requests.peekFirst().isAfter(now.minus(RATE_WINDOW))) {
-                requests.pollFirst();
-            }
+        boolean[] refused = {false};
+        // compute runs once at a time per user, so two questions sent together are both counted.
+        recentRequests.compute(email, (key, known) -> {
+            Deque<Instant> requests = known == null ? new ArrayDeque<>() : known;
+            dropOlderThanTheWindow(requests, now);
             if (requests.size() >= requestsPerMinute) {
-                throw new AiException(HttpStatus.TOO_MANY_REQUESTS,
-                        "Has hecho muchas consultas seguidas. Espera un minuto antes de continuar.");
+                refused[0] = true;
+            } else {
+                requests.addLast(now);
             }
-            requests.addLast(now);
+            return requests;
+        });
+        if (refused[0]) {
+            throw new AiException(HttpStatus.TOO_MANY_REQUESTS,
+                    "Has hecho muchas consultas seguidas. Espera un minuto antes de continuar.");
+        }
+    }
+
+    /** Forgets the users who asked nothing in the last minute, so the map does not grow with every user. */
+    @Scheduled(fixedDelay = 60_000)
+    public void forgetIdleUsers() {
+        Instant now = clock.instant();
+        for (String email : recentRequests.keySet()) {
+            recentRequests.computeIfPresent(email, (key, requests) -> {
+                dropOlderThanTheWindow(requests, now);
+                return requests.isEmpty() ? null : requests;
+            });
+        }
+    }
+
+    /** How many users the limit is keeping count of. */
+    public int trackedUsers() {
+        return recentRequests.size();
+    }
+
+    private static void dropOlderThanTheWindow(Deque<Instant> requests, Instant now) {
+        while (!requests.isEmpty() && !requests.peekFirst().isAfter(now.minus(RATE_WINDOW))) {
+            requests.pollFirst();
         }
     }
 
