@@ -36,7 +36,9 @@ public class SecurityConfig {
                 .sessionManagement(session ->
                         session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers(HttpMethod.GET, "/api/health").permitAll()
+                        // Also with HEAD, which is what uptime monitors and some hosts send.
+                        .requestMatchers(HttpMethod.GET, "/", "/api/health").permitAll()
+                        .requestMatchers(HttpMethod.HEAD, "/", "/api/health").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/auth/login", "/api/auth/register").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/auth/check-user", "/api/auth/email-available")
                         .permitAll()
