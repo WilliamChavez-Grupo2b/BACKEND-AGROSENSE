@@ -1,5 +1,6 @@
 package com.agrosense.backend.exception;
 
+import com.agrosense.backend.ai.AiException;
 import com.agrosense.backend.dto.response.ErrorResponse;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -79,6 +80,12 @@ public class GlobalExceptionHandler {
                 .header(HttpHeaders.RETRY_AFTER, String.valueOf(seconds))
                 .body(new ErrorResponse("Demasiados intentos fallidos. Inténtalo de nuevo en " + minutes
                         + (minutes == 1 ? " minuto." : " minutos.")));
+    }
+
+    /** The assistant could not answer; the exception carries the status and a message for the user. */
+    @ExceptionHandler(AiException.class)
+    public ResponseEntity<ErrorResponse> handleAi(AiException exception) {
+        return respond(exception.getStatus(), exception.getMessage());
     }
 
     @ExceptionHandler(AccessDeniedException.class)
