@@ -292,7 +292,7 @@ Del frontend (la del backend está en la sección 1):
 |---------------|-----------------------------------------|------------------------------------------------|
 | Base de datos | Neon (PostgreSQL 18), recurso `agrosense-db` | La entrega Neon en las variables del proyecto |
 | Frontend      | Vercel, proyecto `agrosense-frontend`, contenedor | `https://agrosense-frontend-iota.vercel.app` |
-| Backend       | Render, servicio `BACKEND-AGROSENSE`, Docker, plan gratuito | `https://backend-agrosense-oyhq.onrender.com` |
+| Backend       | Render, servicio `BACKEND-AGROSENSE`, Docker, plan gratuito | `https://backend-agrosense-u5mz.onrender.com` |
 
 - **Base de datos.** Una sola para los dos componentes, con las tablas de `database/schema.sql` y los
   datos de `seed_demo.sql`. No hay base separada para pruebas: `PostgresCompatibilityTests` usa la misma,
