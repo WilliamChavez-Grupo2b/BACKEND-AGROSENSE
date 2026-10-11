@@ -1,6 +1,6 @@
 # Arquitectura de AgroSense
 
-Estado al 9 de octubre de 2026. Este documento recoge la inspección del repositorio, las decisiones
+Estado al 10 de octubre de 2026. Este documento recoge la inspección del repositorio, las decisiones
 tomadas, qué partes de la interfaz usan datos reales, parciales o no disponibles, y dónde está desplegado
 cada componente.
 
@@ -11,6 +11,23 @@ cada componente.
 | `backend/`  | Proyecto Spring Boot de William Chávez (`BACKEND-AGROSENSE`), auditado y corregido.         |
 | `frontend/` | Aplicación web Spring Boot + Thymeleaf (este documento la describe en detalle).             |
 | `database/` | Todo lo de base de datos: `schema.sql`, `seed_demo.sql`, `reset.sql`, `datasource.properties`, `.env.example` y `README.md`. |
+
+### Repositorios
+
+El workspace es un monorepo local de trabajo. Cada carpeta se publica en su propio repositorio, que
+tiene su propio historial y no comparte commits con el workspace:
+
+| Carpeta del workspace | Repositorio                              | Raíz en el repositorio                    |
+|-----------------------|------------------------------------------|-------------------------------------------|
+| `backend/`            | `WilliamChavez-Grupo2b/BACKEND-AGROSENSE` | `agrosense/`, `README.md`, `database/` vacía |
+| `frontend/`           | `ssantivr/FRONTEND-AGROSENSE`            | `src/`, `pom.xml`, `package.json`         |
+| `database/`           | `ssantivr/BASE-DE-DATOS-AGROSENSE`       | los seis archivos de la carpeta           |
+| `docs/`               | ninguno; solo existe en el workspace     |                                           |
+
+Una rama del workspace no se puede subir tal cual a ninguno de ellos. Para publicar, los commits de
+una carpeta se repiten sobre la rama del repositorio correspondiente sin el prefijo de la carpeta
+(`git format-patch --relative=<carpeta>` y `git am --3way` en un worktree creado desde la rama remota) y
+esa rama se sube con un `git push` normal, sin forzar.
 
 ### Backend (`backend/agrosense`)
 
@@ -247,11 +264,19 @@ Del frontend (la del backend está en la sección 1):
 
 ## 6. Verificación realizada
 
-- `mvnw test` en `frontend/`: 57 pruebas (JUnit 5, Mockito, MockMvc); 55 correctas y 2 omitidas, que son
-  las de PostgreSQL. Incluyen las del cliente del backend contra un servidor HTTP local.
-- `mvnw test` en `backend/agrosense`: 42 pruebas; 39 correctas y 3 omitidas, también las de PostgreSQL.
-- `PostgresCompatibilityTests` de los dos proyectos contra Neon (PostgreSQL 18.6): todas correctas, en
-  un esquema propio que se borra al terminar.
+- `mvnw test` en `frontend/` (10 de octubre de 2026): 73 pruebas (JUnit 5, Mockito, MockMvc); 71
+  correctas y 2 omitidas, que son las de PostgreSQL. Incluyen las del cliente del backend contra un
+  servidor HTTP local.
+- `mvnw test` en `backend/agrosense` (10 de octubre de 2026): 46 pruebas; 43 correctas y 3 omitidas,
+  también las de PostgreSQL. La JVM de pruebas termina sola: cada prueba cierra las sesiones WebSocket
+  que abre.
+- `PostgresCompatibilityTests` solo se ejecuta con `POSTGRES_TEST_URL`, `POSTGRES_TEST_USERNAME` y
+  `POSTGRES_TEST_PASSWORD` definidas. La última ejecución de los dos proyectos contra Neon
+  (PostgreSQL 18.6) fue correcta, en un esquema propio que se borra al terminar; no se repitió con los
+  cambios del 10 de octubre.
+- Backend y frontend juntos en local sobre una base H2 nueva (10 de octubre de 2026): registro de una
+  cuenta en el backend (201, y 409 al repetir el correo), comprobación del correo desde el frontend e
+  inicio de sesión en el frontend con esa cuenta, sin errores en los registros.
 - En producción, con la cuenta de ejemplo: inicio de sesión en el frontend y en el backend, lecturas de
   sensores, una alerta atendida y un riego manual registrados a través del backend. Los dos cambios se
   revirtieron después en la base de datos.
@@ -281,6 +306,10 @@ Del frontend (la del backend está en la sección 1):
   `DATABASE_PASSWORD`, `JWT_SECRET` y `SQL_INIT_MODE=never`. El plan gratuito apaga el servicio tras unos
   15 minutos sin uso y tarda cerca de 3 minutos en volver a arrancar; mientras tanto el frontend trabaja
   contra la base de datos.
+- **Orden al publicar un cambio.** Primero `database/` (a `main` de `BASE-DE-DATOS-AGROSENSE`), después
+  el backend y por último el frontend, porque los dos aplican o validan el esquema al arrancar. El
+  backend y el frontend entran por pull request de su rama hacia `main`; Render despliega el backend al
+  fusionar y el frontend se despliega a mano con `vercel deploy --prod`.
 - **Secreto compartido.** `BACKEND_JWT_SECRET` en Vercel y `JWT_SECRET` en Render deben tener el mismo
   valor; si se cambia uno hay que cambiar el otro y volver a desplegar.
 - **Acceso.** Vercel Authentication está activa en el proyecto del frontend: quien no tenga sesión en
