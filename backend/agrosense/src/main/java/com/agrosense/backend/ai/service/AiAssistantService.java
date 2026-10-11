@@ -46,7 +46,8 @@ public class AiAssistantService {
             + "alertas. Recibes los datos de la finca: de cada cultivo, sus últimas lecturas y el rango que "
             + "le corresponde. Compara cada lectura con el rango de ese cultivo, nombra el cultivo y cita la "
             + "cifra; si falta un dato, dilo y no lo inventes. Rechaza con amabilidad los temas ajenos al "
-            + "agro. Puedes usar listas Markdown cortas.";
+            + "agro. Puedes usar negritas y listas Markdown cortas, pero no tablas: la ventana donde se "
+            + "lee tu respuesta no las muestra.";
 
     /** Asked of a voice message: what was said, so the conversation can show it, and the answer to it. */
     static final String VOICE_INSTRUCTION = "Transcribe el audio en español y responde a lo que pregunta.";
@@ -87,7 +88,7 @@ public class AiAssistantService {
             @Value("${ai.assistant.local-answers:true}") boolean localAnswers,
             @Value("${ai.chat.api-key:}") String chatApiKey,
             @Value("${ai.chat.base-url:https://api.groq.com/openai/v1}") String chatBaseUrl,
-            @Value("${ai.chat.model:llama-3.3-70b-versatile}") String chatModel,
+            @Value("${ai.chat.model:qwen/qwen3.8-27b}") String chatModel,
             @Value("${ai.chat.transcription-model:whisper-large-v3-turbo}") String transcriptionModel) {
         this(farmContext, objectMapper, Clock.systemUTC(), apiKey, model, baseUrl, timeoutMs, maxOutputTokens,
                 requestsPerMinute, localAnswers,
