@@ -104,12 +104,13 @@ El asistente funciona con cualquiera de estos dos tipos de proveedor; ninguna ll
 |---|---|
 | `AI_CHAT_API_KEY` | Llave de un proveedor que hable la API de OpenAI (Groq, OpenRouter, Mistral, OpenAI…). Si está definida, responde ese proveedor y no Gemini |
 | `AI_CHAT_BASE_URL` | Dirección de ese proveedor (por defecto la de Groq, `https://api.groq.com/openai/v1`) |
-| `AI_CHAT_MODEL` | Modelo que responde las preguntas (por defecto `llama-3.3-70b-versatile`) |
+| `AI_CHAT_MODEL` | Modelo que responde las preguntas (por defecto `qwen/qwen3.8-27b`, elegido el 11 de octubre de 2026 entre los que Groq ofrecía: el más rápido y el que mejor seguía las instrucciones) |
 | `AI_TRANSCRIPTION_MODEL` | Modelo que convierte en texto los mensajes de voz (por defecto `whisper-large-v3-turbo`). Vacío si el proveedor no ofrece transcripción: la ventana pide entonces escribir la pregunta |
 
 Con este tipo de proveedor un mensaje de voz se resuelve en dos pasos (transcribir y responder); con
 Gemini, en uno. Los nombres de modelo cambian con el tiempo: la lista vigente de un proveedor está en su
-ruta `/models`.
+ruta `/models`. Un modelo que «razona» antes de responder gasta en eso el tamaño máximo de la respuesta
+y puede dejarla cortada; con esos conviene subir `GEMINI_MAX_OUTPUT_TOKENS`.
 
 | Variable | Descripción |
 |---|---|
