@@ -33,10 +33,14 @@ Create a **Web Service** from this repository and configure it to use Docker:
 | Dockerfile Path | `Dockerfile` |
 | Health Check Path | `/api/health` |
 
-Keep the repository root as the build context. A service created while the
-project was inside `agrosense/` still has `agrosense/Dockerfile` as its
-Dockerfile Path: change it to `Dockerfile`, or the build fails. Render builds
-the Dockerfile directly; it does not use the local `compose.yaml`.
+Keep the repository root as the build context. Render builds the Dockerfile
+directly; it does not use the local `compose.yaml`.
+
+> **When this layout is merged into `main`:** the existing Render service was
+> created while the project was inside `agrosense/`, so its **Dockerfile Path**
+> is still `agrosense/Dockerfile`. Change it to `Dockerfile` in the service's
+> **Settings → Build & Deploy** before or right after merging; until then every
+> deploy from `main` fails because that file no longer exists.
 
 ### Configure the service
 
