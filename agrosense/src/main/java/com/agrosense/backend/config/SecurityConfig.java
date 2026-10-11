@@ -37,8 +37,9 @@ public class SecurityConfig {
                         session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(HttpMethod.GET, "/api/health").permitAll()
-                        .requestMatchers(HttpMethod.POST, "/api/auth/login").permitAll()
-                        .requestMatchers(HttpMethod.GET, "/api/auth/email-available").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/api/auth/login", "/api/auth/register").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/auth/check-user", "/api/auth/email-available")
+                        .permitAll()
                         // Browsers cannot send headers on the WebSocket handshake; the token is checked on
                         // the STOMP CONNECT frame instead (see StompAuthChannelInterceptor).
                         .requestMatchers("/ws/**").permitAll()
