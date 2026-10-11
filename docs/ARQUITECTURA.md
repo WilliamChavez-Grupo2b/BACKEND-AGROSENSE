@@ -1,6 +1,6 @@
 # Arquitectura de AgroSense
 
-Estado al 10 de octubre de 2026. Este documento recoge la inspección del repositorio, las decisiones
+Estado al 11 de octubre de 2026. Este documento recoge la inspección del repositorio, las decisiones
 tomadas, qué partes de la interfaz usan datos reales, parciales o no disponibles, y dónde está desplegado
 cada componente.
 
@@ -19,7 +19,7 @@ tiene su propio historial y no comparte commits con el workspace:
 
 | Carpeta del workspace | Repositorio                              | Raíz en el repositorio                    |
 |-----------------------|------------------------------------------|-------------------------------------------|
-| `backend/`            | `WilliamChavez-Grupo2b/BACKEND-AGROSENSE` | `agrosense/`, `README.md`, `database/` vacía |
+| `backend/agrosense/`   | `WilliamChavez-Grupo2b/BACKEND-AGROSENSE` | `src/`, `pom.xml`, `Dockerfile` (y `backend/README.md` como `README.md`) |
 | `frontend/`           | `ssantivr/FRONTEND-AGROSENSE`            | `src/`, `pom.xml`, `package.json`         |
 | `database/`           | `ssantivr/BASE-DE-DATOS-AGROSENSE`       | los seis archivos de la carpeta           |
 | `docs/`               | ninguno; solo existe en el workspace     |                                           |
@@ -32,7 +32,7 @@ esa rama se sube con un `git push` normal, sin forzar.
 ### Backend (`backend/agrosense`)
 
 - **Versiones:** Java 17, Spring Boot 4.1.1, Maven.
-- **Paquetes:** `config`, `controller`, `domain.enums`, `dto`, `event`, `exception`, `models`, `mqtt`,
+- **Paquetes:** `ai` (`controller`, `service`, `dto`), `config`, `controller`, `domain.enums`, `dto`, `event`, `exception`, `models`, `mqtt`,
   `pattern`, `repository`, `security`, `seed`, `service`, `websocket`.
 - **Entidades:** `User`, `Estate`, `Crop`, `Sensor`, `SensorReading`, `Alert`, `Irrigation`, `AiPrediction`,
   con un repositorio Spring Data por cada una.
@@ -49,6 +49,8 @@ esa rama se sube con un `git push` normal, sin forzar.
   | `GET /api/riego/cultivo/{id}`, `POST /api/riego` | Historial y registro de riegos manuales         |
   | `GET /api/dashboard`, `GET /api/dashboard/{id}`  | Resumen general o de un cultivo                 |
   | `GET` y `POST /api/crops/{id}/predictions`       | Predicciones de riego del servicio de IA        |
+  | `POST /api/ai/chat` `{message, history}`         | Pregunta escrita al asistente. Responde `{reply}` |
+  | `POST /api/ai/voice` (formulario `audio` o `transcript`) | Pregunta hablada. Responde `{reply, transcript}` |
 
   Tiene registro de usuarios (`POST /api/auth/register`) y comprobación de correo
   (`GET /api/auth/check-user`), pero no edición ni eliminación, y los listados no incluyen todo lo que muestra
@@ -65,6 +67,7 @@ esa rama se sube con un `git push` normal, sin forzar.
 - **Tiempo real:** WebSocket STOMP en `/ws`, autenticado con el mismo token; las sesiones se cierran
   cuando el token vence o la cuenta se desactiva.
 - **IA:** `AiClientService` llama al servicio de predicción; sin `AI_SERVICE_URL` queda desactivado.
+  El asistente conversacional (`ai/`, decisión 23) usa Google Gemini; sin `GEMINI_API_KEY` responde 503.
 - **Patrones de diseño** en `pattern/`: builder, factory, prototype y singleton (creacionales); adapter,
   decorator, facade y proxy (estructurales).
 
@@ -183,6 +186,22 @@ esa rama se sube con un `git push` normal, sin forzar.
     incrustados en la página en vez de pedirse aparte. Fuentes, imágenes y WebJars se guardan en la caché
     del navegador (antes Spring Security los marcaba `no-store`) y las respuestas de texto van comprimidas.
     El pool de conexiones mantiene dos abiertas (`DB_POOL_MIN_IDLE`, `DB_POOL_MAX_SIZE`).
+23. **Asistente de IA, por texto y por voz.** Vive en el backend (`com.agrosense.backend.ai`:
+    `controller/AiController`, `service/AiAssistantService`, `dto/AiRequestDto` y `AiResponseDto`), dentro
+    del paquete raíz que Spring explora, y llama a la API de Google Gemini.
+    - La llave se lee de `GEMINI_API_KEY`, viaja en una cabecera y no está en ningún archivo ni llega al
+      navegador: la ventana de chat llama al frontend (`/api/ui/ai/chat` y `/api/ui/ai/voice`, con sesión y
+      CSRF) y este al backend con el token compartido.
+    - El modelo es `GEMINI_MODEL`, por defecto `gemini-flash-latest`: los nombres fijos se retiran
+      (`gemini-1.5-flash` ya no responde) y el alias sigue al modelo Flash vigente.
+    - Cada pregunta lleva las instrucciones del asistente agronómico y una línea con las cifras de la finca
+      del usuario (cultivos, sensores, alertas y últimas lecturas), más los turnos anteriores.
+    - La voz se graba con `MediaRecorder` y se envía como audio; Gemini devuelve lo que entendió y la
+      respuesta. Las respuestas se leen en español con `speechSynthesis`. Donde el navegador no ofrece
+      alguna de las dos, su botón no aparece.
+    - Límites: 10 preguntas por minuto y usuario (`AI_REQUESTS_PER_MINUTE`), 1000 caracteres por pregunta,
+      12 turnos de contexto y 3 MB de audio. No hay respaldo en la base de datos: sin backend o sin llave
+      el asistente lo dice.
 
 ## 3. Estructura del frontend
 
@@ -194,6 +213,7 @@ frontend/src/main/java/com/agrosense/frontend/
   service/      DashboardService, EstateService, SensorService, AlertService, IrrigationService,
                 CatalogService, AccountService
   backend/      BackendClient (llamadas a la API del backend), BackendToken, BackendUnavailableException
+  ai/           AiAssistantController (`/api/ui/ai`), AiChatForm, AiReply, AiAssistantException
   repository/   Un repositorio Spring Data por entidad
   entity/       Entidades JPA y enumeraciones
   dto/          Views (proyecciones de solo lectura) y los formularios (IrrigationForm, EstateForm,
@@ -202,11 +222,12 @@ frontend/src/main/java/com/agrosense/frontend/
   exception/    NotFoundException, BusinessRuleException, GlobalExceptionHandler
 frontend/src/main/resources/
   templates/            Páginas y templates/fragments/ (layout, brand, sidebar, navbar, stat-card, status-pill,
-                        confirm-modal, toast, empty-state, error-state, page-header, pagination)
-  static/css/           tokens.css (variables de diseño por tema) y styles.css
+                        confirm-modal, toast, empty-state, error-state, page-header, pagination, ai-chat)
+  static/css/           tokens.css (variables de diseño por tema), styles.css y ai-chat.css
   static/js/            Salida de tsc; no se edita a mano
 frontend/src/main/ts/   theme-init, theme, app, tables, palette, forms, login, dashboard, settings,
-                        design-system; api/ (cliente HTTP y endpoints), core/dom, types/
+                        design-system; api/ (cliente HTTP y endpoints), core/dom, types/;
+                        ai/ (chat-widget, markdown, voice)
   static/img/           brand/ (logotipos, favicon, créditos) y photos/
   static/fonts/         PlusJakartaSans.woff2
   messages.properties   Textos en español de las enumeraciones
@@ -237,6 +258,7 @@ caso contrario (decisión 21).
 | Riego                           | `IrrigationService` (historial); alta por la API del backend (`POST /api/riego`) | Parcial (registra el riego con sus litros; no acciona la bomba) |
 | Alertas                         | `AlertService` (listar, paginar); marcar como atendida por la API del backend (`PATCH /api/alerts/{id}/acknowledge`) | Real |
 | Reportes                        | `IrrigationService.waterReport`                        | Parcial (exporta a CSV la tabla visible; sin PDF) |
+| Asistente de IA (todas las páginas con sesión) | `POST /api/ui/ai/chat` y `/voice` → API del backend (`POST /api/ai/chat` y `/voice`) → Gemini | Real con `GEMINI_API_KEY` en el backend; sin ella, o sin backend, avisa de que no está disponible |
 | Configuración · perfil          | `AccountService.findProfile`                           | Parcial (solo lectura) |
 | Configuración · preferencias    | `localStorage` del navegador                           | Parcial (no se guardan en la cuenta) |
 | Configuración · cerrar sesión   | `POST /logout` con CSRF                                | Real            |
@@ -254,6 +276,8 @@ Del frontend (la del backend está en la sección 1):
   BCrypt.
 - Las llamadas al backend llevan un token de dos minutos firmado con el secreto compartido, a nombre del
   usuario que tiene la sesión; el token nunca llega al navegador.
+- Las respuestas del asistente se convierten de Markdown a nodos con `textContent`; nunca se interpretan
+  como HTML.
 - Todas las rutas requieren autenticación excepto `/login`, los recursos estáticos y `/error`.
 - CSRF activo en formularios y en las peticiones `fetch` (cabecera leída de las etiquetas `<meta>`).
 - Cookie de sesión `HttpOnly`, `SameSite=Lax` y `Secure` (desactivado solo en el perfil `demo`).
@@ -264,12 +288,19 @@ Del frontend (la del backend está en la sección 1):
 
 ## 6. Verificación realizada
 
-- `mvnw test` en `frontend/` (10 de octubre de 2026): 73 pruebas (JUnit 5, Mockito, MockMvc); 71
+- `mvnw test` en `frontend/` (11 de octubre de 2026): 76 pruebas (JUnit 5, Mockito, MockMvc); 74
   correctas y 2 omitidas, que son las de PostgreSQL. Incluyen las del cliente del backend contra un
   servidor HTTP local.
-- `mvnw test` en `backend/agrosense` (10 de octubre de 2026): 46 pruebas; 43 correctas y 3 omitidas,
+- `mvnw test` en `backend/agrosense` (11 de octubre de 2026): 55 pruebas; 52 correctas y 3 omitidas,
   también las de PostgreSQL. La JVM de pruebas termina sola: cada prueba cierra las sesiones WebSocket
-  que abre.
+  que abre. Las del asistente usan un servidor local en el papel de Gemini.
+- Asistente de punta a punta en local (11 de octubre de 2026), backend y frontend sobre una base H2 nueva
+  y un servidor local en el papel de Gemini: inicio de sesión, pregunta escrita y mensaje de voz por el
+  backend y a través del frontend (200), y rechazos sin token (401), sin CSRF (403) y sin pregunta (400).
+  No se probó contra Gemini real (no hay llave en este equipo) ni el micrófono en un navegador.
+- Producción (11 de octubre de 2026): `/api/health` responde `{"status":"UP"}` (80 s si el servicio
+  estaba dormido, 0,4 s despierto), las rutas protegidas devuelven 401 sin token y CORS solo acepta el
+  origen del frontend en Vercel.
 - `PostgresCompatibilityTests` solo se ejecuta con `POSTGRES_TEST_URL`, `POSTGRES_TEST_USERNAME` y
   `POSTGRES_TEST_PASSWORD` definidas. La última ejecución de los dos proyectos contra Neon
   (PostgreSQL 18.6) fue correcta, en un esquema propio que se borra al terminar; no se repitió con los
@@ -301,11 +332,14 @@ Del frontend (la del backend está en la sección 1):
   `Dockerfile.vercel`. La conexión sale de las variables `NEON_*` que pone la integración de Neon, y
   aplica `schema.sql` al arrancar (`SQL_INIT_MODE=always`). Para llamar al backend necesita
   `BACKEND_URL` y `BACKEND_JWT_SECRET`. `.vercelignore` deja fuera `/backend` y `/docs`.
-- **Backend.** Render construye `agrosense/Dockerfile` del repositorio `BACKEND-AGROSENSE` en cada
-  cambio de su rama `main`. Variables: `DATABASE_URL` en formato JDBC, `DATABASE_USERNAME`,
-  `DATABASE_PASSWORD`, `JWT_SECRET` y `SQL_INIT_MODE=never`. El plan gratuito apaga el servicio tras unos
-  15 minutos sin uso y tarda cerca de 3 minutos en volver a arrancar; mientras tanto el frontend trabaja
-  contra la base de datos.
+- **Backend.** Render construye el `Dockerfile` de la raíz del repositorio `BACKEND-AGROSENSE` en cada
+  cambio de su rama `main` (`agrosense/Dockerfile` es una copia temporal para un servicio cuya ruta aún
+  apunte allí). Variables: `DATABASE_URL` en formato JDBC (`jdbc:postgresql://…`), `DATABASE_USERNAME`,
+  `DATABASE_PASSWORD`, `JWT_SECRET` (al menos 64 bytes), `CORS_ALLOWED_ORIGINS` con la dirección del
+  frontend, `LOGIN_MAX_ATTEMPTS_PER_ADDRESS=0` y, para el asistente, `GEMINI_API_KEY`. La imagen no
+  incluye `datasource.properties`, así que la conexión sale solo de esas variables. El plan gratuito
+  apaga el servicio tras unos 15 minutos sin uso y tarda entre 1 y 3 minutos en volver a arrancar;
+  mientras tanto el frontend trabaja contra la base de datos.
 - **Orden al publicar un cambio.** Primero `database/` (a `main` de `BASE-DE-DATOS-AGROSENSE`), después
   el backend y por último el frontend, porque los dos aplican o validan el esquema al arrancar. El
   backend y el frontend entran por pull request de su rama hacia `main`; Render despliega el backend al
@@ -325,6 +359,8 @@ Del frontend (la del backend está en la sección 1):
 - Ingesta de lecturas: el backend las recibe por REST y por MQTT, pero MQTT está apagado y no hay broker
   ni dispositivos que envíen datos.
 - Servicio de IA para las predicciones: el backend lo llama, pero `AI_SERVICE_URL` está vacía.
+- Asistente de IA: publicar el módulo en `BACKEND-AGROSENSE` y `FRONTEND-AGROSENSE`, definir
+  `GEMINI_API_KEY` en Render y probarlo con Gemini real y con el micrófono en un navegador.
 - Abrir el sitio al público (quitar Vercel Authentication) y, antes, cambiar la contraseña de la cuenta
   de ejemplo, que está escrita en `frontend/README.md`.
 - Decidir un único despliegue del backend y mantenerlo despierto, o pasarlo a un plan que no se apague.

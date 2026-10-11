@@ -9,3 +9,5 @@
 **/.vscode
 **/.env
 .env*.local
+/agrosense-export
+/temp_agrosense

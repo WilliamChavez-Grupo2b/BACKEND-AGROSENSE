@@ -1,2 +1,5 @@
 .vercel
 .env*
+# Local copies of the backend repository, kept out of the workspace history.
+agrosense-export/
+temp_agrosense/
