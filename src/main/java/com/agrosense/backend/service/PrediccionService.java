@@ -5,6 +5,7 @@ import com.agrosense.backend.domain.enums.SensorType;
 import com.agrosense.backend.dto.response.PredictionResponse;
 import com.agrosense.backend.exception.ResourceNotFoundException;
 import com.agrosense.backend.models.AiPrediction;
+import com.agrosense.backend.models.Crop;
 import com.agrosense.backend.pattern.structural.proxy.AiServiceProxy;
 import com.agrosense.backend.repository.AiPredictionRepository;
 import com.agrosense.backend.repository.CropRepository;
@@ -16,6 +17,7 @@ import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -45,17 +47,31 @@ public class PrediccionService {
     }
 
     /**
-     * The latest soil moisture, air temperature and pH of one of the user's crops, in the shape the AI
-     * service expects. A measurement the crop has no reading for is left out.
+     * The latest soil moisture, air temperature and pH of one of the user's crops, with the crop's own
+     * humidity and pH limits, in the shape the AI service expects. A measurement the crop has no reading
+     * for is left out.
      */
     @Transactional(readOnly = true)
     public Map<String, Object> currentConditions(String email, Integer cropId) {
-        requireOwnedCrop(email, cropId);
+        Crop crop = cropRepository.findByIdCropAndEstateUserEmail(cropId, email)
+                .orElseThrow(() -> new ResourceNotFoundException("Crop not found"));
         Map<String, Object> conditions = new HashMap<>();
         putLatest(conditions, "soil_moisture", cropId, SensorType.SOIL_MOISTURE);
         putLatest(conditions, "air_temperature", cropId, SensorType.AIR_TEMPERATURE);
         putLatest(conditions, "ph", cropId, SensorType.PH);
+        // Without them the service judges every crop by the same average limits.
+        putRange(conditions, "humidity_min", "humidity_max", crop.getHumidityMin(), crop.getHumidityMax());
+        putRange(conditions, "ph_min", "ph_max", crop.getPhMin(), crop.getPhMax());
         return conditions;
+    }
+
+    /** A range only means something whole and in order; the AI service refuses anything else. */
+    private static void putRange(Map<String, Object> conditions, String minimumKey, String maximumKey,
+            BigDecimal minimum, BigDecimal maximum) {
+        if (minimum != null && maximum != null && minimum.compareTo(maximum) < 0) {
+            conditions.put(minimumKey, minimum);
+            conditions.put(maximumKey, maximum);
+        }
     }
 
     /**

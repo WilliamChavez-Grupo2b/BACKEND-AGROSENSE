@@ -109,6 +109,34 @@ class ServiceTests {
 	}
 
 	@Test
+	void aPredictionIsAskedWithTheCropsOwnLimitsAndOnlyWithWhatWasMeasured() {
+		CropRepository crops = mock(CropRepository.class);
+		SensorReadingRepository readings = mock(SensorReadingRepository.class);
+		PrediccionService service = new PrediccionService(mock(AiServiceProxy.class),
+				mock(AiPredictionRepository.class), crops, readings);
+		Crop rice = crop(7);
+		rice.setHumidityMin(new BigDecimal("70.0"));
+		rice.setHumidityMax(new BigDecimal("95.0"));
+		when(crops.findByIdCropAndEstateUserEmail(7, "ana@agrosense.co")).thenReturn(Optional.of(rice));
+
+		Map<String, Object> conditions = service.currentConditions("ana@agrosense.co", 7);
+
+		// No readings yet: no measurement is made up, and the limits still travel.
+		assertThat(conditions).doesNotContainKeys("soil_moisture", "air_temperature", "ph")
+				.containsEntry("humidity_min", new BigDecimal("70.0"))
+				.containsEntry("humidity_max", new BigDecimal("95.0"))
+				.containsEntry("ph_min", new BigDecimal("5.5"))
+				.containsEntry("ph_max", new BigDecimal("7.0"));
+
+		// A range stored the wrong way round is left out rather than sent to be refused.
+		rice.setPhMin(new BigDecimal("8.0"));
+		assertThat(service.currentConditions("ana@agrosense.co", 7)).doesNotContainKeys("ph_min", "ph_max")
+				.containsKey("humidity_min");
+		assertThatThrownBy(() -> service.currentConditions("otra@agrosense.co", 7))
+				.isInstanceOf(ResourceNotFoundException.class);
+	}
+
+	@Test
 	void sensorsAreCreatedAndListedOnlyOnTheCallersOwnCrops() {
 		SensorRepository sensors = mock(SensorRepository.class);
 		CropRepository crops = mock(CropRepository.class);
