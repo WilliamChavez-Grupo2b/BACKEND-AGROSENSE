@@ -106,6 +106,48 @@ Las aplicaciones buscan esta carpeta con una ruta relativa a la suya (`../databa
 `../../database` desde `backend/agrosense`). Si las ejecutas desde otro lugar, indica dónde está con la
 variable `DATABASE_DIR`.
 
+## Desplegar el backend en Render con PostgreSQL
+
+La base de datos PostgreSQL y el backend Spring Boot se despliegan como servicios separados en Render.
+La base de datos no tiene un comando de compilación; los comandos siguientes son para el servicio web
+del backend. Configura ese servicio con Java 17 y como directorio raíz la carpeta que contiene el
+`pom.xml` del backend.
+
+- **Build Command:**
+
+  ```sh
+  ./mvnw clean package -DskipTests
+  ```
+
+- **Start Command:**
+
+  ```sh
+  java -Dserver.port=$PORT -jar target/agrosense-0.0.1-SNAPSHOT.jar
+  ```
+
+  El nombre del JAR corresponde a la versión del `pom.xml`; actualiza el comando si cambia.
+
+En las variables de entorno del servicio web configura:
+
+| Variable | Valor |
+|----------|-------|
+| `DATABASE_URL` | URL JDBC de la base de Render: `jdbc:postgresql://<internal-host>:5432/<database-name>` |
+| `DATABASE_USERNAME` | Usuario de la base de datos de Render |
+| `DATABASE_PASSWORD` | Contraseña de la base de datos de Render |
+| `DATABASE_DIR` | Ruta en el servicio donde están `datasource.properties`, `schema.sql` y `seed_demo.sql`, si la ruta relativa predeterminada no aplica |
+
+Usa el **Internal Database URL** de Render para obtener el host, puerto y nombre de la base, pero convierte
+su formato `postgresql://...` al formato JDBC mostrado arriba: esta aplicación espera
+`jdbc:postgresql://...`. No guardes la contraseña en el repositorio.
+
+Antes de iniciar la aplicación, asegúrate de que estos archivos SQL estén disponibles para el servicio
+web y ejecuta `schema.sql` contra la base de Render usando la herramienta SQL de Render o `psql`.
+La aplicación usa `ddl-auto=validate`, por lo que comprueba que las tablas ya existan; no las crea por
+defecto. Para una instancia de producción deja `SQL_INIT_MODE` sin definir (su valor predeterminado es
+`never`) y no actives el perfil `seed`, que carga datos de ejemplo. Si necesitas datos de ejemplo,
+ejecuta `seed_demo.sql` de forma intencional y configura `SEED_USER_PASSWORD` solo si vas a usar el
+perfil `seed`.
+
 ## Variables de conexión
 
 | Variable            | Por defecto                                      |
