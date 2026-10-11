@@ -17,6 +17,7 @@ import com.agrosense.backend.repository.SensorReadingRepository;
 import com.agrosense.backend.repository.SensorRepository;
 import com.agrosense.backend.repository.UserRepository;
 import com.agrosense.backend.websocket.WebSocketSessionRegistry;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -80,6 +81,15 @@ class ApiIntegrationTests {
 
 	@Value("${local.server.port}")
 	private int port;
+
+	/** WebSocket sessions opened by a test. Left open, they hold the server's shutdown for seconds. */
+	private final List<StompSession> openSessions = new ArrayList<>();
+
+	@AfterEach
+	void closeWebSocketSessions() {
+		openSessions.stream().filter(StompSession::isConnected).forEach(StompSession::disconnect);
+		openSessions.clear();
+	}
 
 	@Autowired
 	private UserRepository userRepository;
@@ -724,9 +734,11 @@ class ApiIntegrationTests {
 		if (authorization != null) {
 			connectHeaders.add("Authorization", authorization);
 		}
-		return stompClient.connectAsync("ws://localhost:" + port + "/ws", new WebSocketHttpHeaders(), connectHeaders,
-				new StompSessionHandlerAdapter() {
+		StompSession session = stompClient.connectAsync("ws://localhost:" + port + "/ws", new WebSocketHttpHeaders(),
+				connectHeaders, new StompSessionHandlerAdapter() {
 				}).get(5, TimeUnit.SECONDS);
+		openSessions.add(session);
+		return session;
 	}
 
 	private static BlockingQueue<String> subscribe(StompSession session, String destination) {
