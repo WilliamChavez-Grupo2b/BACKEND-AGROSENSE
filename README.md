@@ -53,7 +53,7 @@ Add these environment variables in Render's **Environment** settings:
 | `SPRING_DATASOURCE_USERNAME` | PostgreSQL username |
 | `SPRING_DATASOURCE_PASSWORD` | PostgreSQL password |
 | `CORS_ALLOWED_ORIGINS` | Your frontend's public origin, such as `https://your-frontend.example.com` |
-| `GEMINI_API_KEY` | Google Gemini API key for the AI assistant. Optional: without it `/api/ai/*` answers 503 and everything else works. |
+| `GEMINI_API_KEY` | Google Gemini API key for the AI assistant. Optional: without it the assistant answers from the farm's own readings instead of the model. |
 
 Use the internal connection details if the database is hosted on Render in the
 same region. Do not commit database credentials or `JWT_SECRET` to the
@@ -88,12 +88,18 @@ Gemini a partir de las cifras de la finca de quien pregunta. Las dos rutas exige
 
 | Método y ruta | Respuesta |
 |---|---|
-| `POST /api/ai/chat` `{message, history: [{role: "user" o "assistant", text}]}` | 200 `{reply}` · 400 pregunta vacía o conversación no válida · 429 demasiadas consultas · 503 sin llave configurada |
-| `POST /api/ai/voice` formulario con `audio` (WebM, Ogg, MP4, WAV, MP3; hasta 3 MB) o `transcript` | 200 `{reply, transcript}` · 400 sin audio · 413 audio demasiado largo · 415 formato no admitido |
+| `POST /api/ai/chat` `{message, history: [{role: "user" o "assistant", text}]}` | 200 `{reply, source}` · 400 pregunta vacía o conversación no válida · 429 demasiadas consultas |
+| `POST /api/ai/voice` formulario con `audio` (WebM, Ogg, MP4, WAV, MP3; hasta 3 MB) o `transcript` | 200 `{reply, transcript, source}` · 400 sin audio · 413 audio demasiado largo · 415 formato no admitido · 503 grabación sin texto y sin modelo que la escuche |
+
+Cada pregunta viaja con las últimas lecturas de cada cultivo del usuario y los límites de ese cultivo.
+`source` dice quién respondió: `model` es Gemini; `local` es el propio backend, que responde con esos
+mismos datos (riego, alertas, temperatura, pH y estado de cada cultivo) cuando Gemini no está
+configurado, falla o se queda sin cuota. Así el asistente sigue siendo útil sin llave.
 
 | Variable | Descripción |
 |---|---|
-| `GEMINI_API_KEY` | Llave de la API de Gemini. Sin valor por defecto; sin ella el asistente responde 503 |
+| `GEMINI_API_KEY` | Llave de la API de Gemini. Sin valor por defecto; sin ella el asistente responde solo con los datos de la finca |
 | `GEMINI_MODEL` | Modelo (por defecto `gemini-flash-latest`, el alias del Flash vigente) |
 | `GEMINI_TIMEOUT_MS`, `GEMINI_MAX_OUTPUT_TOKENS` | Tiempo de espera (20000) y tamaño máximo de la respuesta (1024) |
 | `AI_REQUESTS_PER_MINUTE` | Preguntas por minuto y usuario (10); `0` quita el límite |
+| `AI_LOCAL_ANSWERS` | `false` para rechazar las preguntas con 503 cuando el modelo no está disponible, en vez de responder con los datos de la finca (por defecto `true`) |
