@@ -202,6 +202,10 @@ esa rama se sube con un `git push` normal, sin forzar.
       CSRF) y este al backend con el token compartido.
     - El modelo es `GEMINI_MODEL`, por defecto `gemini-flash-latest`: los nombres fijos se retiran
       (`gemini-1.5-flash` ya no responde) y el alias sigue al modelo Flash vigente.
+    - En lugar de Gemini puede responder cualquier proveedor que hable la API de OpenAI
+      (`OpenAiCompatibleClient`): con `AI_CHAT_API_KEY` definida se usa ese, por defecto Groq
+      (`AI_CHAT_BASE_URL`, `AI_CHAT_MODEL`, `AI_TRANSCRIPTION_MODEL`). Ahí la voz va en dos pasos: la
+      grabación se transcribe y el texto se responde como cualquier pregunta escrita.
     - Cada pregunta lleva las instrucciones del asistente agronómico y los datos de la finca del usuario
       (`FarmContextService`): los totales, las alertas abiertas y, de cada cultivo, sus últimas lecturas de
       humedad, temperatura y pH junto al rango de ese cultivo; más los turnos anteriores.
@@ -308,7 +312,7 @@ Del frontend (la del backend está en la sección 1):
 - `mvnw test` en `frontend/` (11 de octubre de 2026): 76 pruebas (JUnit 5, Mockito, MockMvc); 74
   correctas y 2 omitidas, que son las de PostgreSQL. Incluyen las del cliente del backend contra un
   servidor HTTP local.
-- `mvnw test` en `backend/agrosense` (11 de octubre de 2026): 73 pruebas; 70 correctas y 3 omitidas,
+- `mvnw test` en `backend/agrosense` (11 de octubre de 2026): 77 pruebas; 74 correctas y 3 omitidas,
   también las de PostgreSQL. La JVM de pruebas termina sola: cada prueba cierra las sesiones WebSocket
   que abre. Las del asistente usan un servidor local en el papel de Gemini.
 - Asistente de punta a punta en local (11 de octubre de 2026), backend y frontend sobre una base H2 nueva
@@ -329,6 +333,9 @@ Del frontend (la del backend está en la sección 1):
 - Asistente sin modelo en Edge sin interfaz (11 de octubre de 2026), 12 comprobaciones: las sugerencias
   y las preguntas por un cultivo se responden con las lecturas reales, con la nota de que no respondió el
   modelo; una grabación se rechaza indicando que se escriba la pregunta.
+- Asistente con un proveedor compatible con OpenAI (11 de octubre de 2026): las mismas 25 comprobaciones
+  en Edge, con un servidor local en el papel del proveedor: preguntas escritas y un mensaje de voz
+  grabado, transcrito y respondido. No se probó contra un proveedor real: no hay llave en este equipo.
 - Contrato de la API (`api/`, 11 de octubre de 2026): `validate_spec.py` y 12 pruebas de las
   herramientas, que GitHub repite en cada push; `check_contract.py` con 45 comprobaciones (cada ruta sin
   token, con token y el esquema de cada respuesta correcta) contra el backend local y contra producción
@@ -412,9 +419,9 @@ Del frontend (la del backend está en la sección 1):
   responde, esa predicción no se guarda y hay que pedirla de nuevo.
 - El servicio del backend en Render no tiene ruta de comprobación de estado; conviene ponerle
   `/api/health`.
-- Asistente de IA: está publicado y desplegado (11 de octubre de 2026). Sin `GEMINI_API_KEY` en Render
-  responde solo con los datos de la finca; con ella responderá Gemini. Falta probarlo con Gemini real y
-  con un micrófono de verdad.
+- Asistente de IA: está publicado y desplegado (11 de octubre de 2026). Sin `AI_CHAT_API_KEY` ni
+  `GEMINI_API_KEY` en Render responde solo con los datos de la finca. Falta definir una de las dos y
+  probarlo con un modelo real y con un micrófono de verdad.
 - Abrir el sitio al público (quitar Vercel Authentication) y, antes, cambiar la contraseña de la cuenta
   de ejemplo, que está escrita en `frontend/README.md`.
 - Decidir un único despliegue del backend y mantenerlo despierto, o pasarlo a un plan que no se apague.
