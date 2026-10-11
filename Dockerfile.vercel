@@ -10,15 +10,25 @@ COPY frontend/mvnw frontend/pom.xml ./
 RUN sed -i 's/\r$//' mvnw && chmod +x mvnw && ./mvnw dependency:go-offline -B
 COPY frontend/src/ src/
 RUN ./mvnw package -DskipTests -B
+# The jar is unpacked into app.jar plus lib/: only classes loaded from plain jars can go into the class
+# archive that the next stage builds.
+RUN cp target/*.jar app.jar && java -Djarmode=tools -jar app.jar extract --destination extracted
 
 # ── Stage 2: Run ──────────────────────────────────────
 FROM eclipse-temurin:21-jre-alpine
 WORKDIR /app
 RUN addgroup -S agrosense && adduser -S agrosense -G agrosense
-COPY --from=builder /app/target/*.jar app.jar
+COPY --from=builder /app/extracted/ ./
 # Connection settings, schema and sample data; application.properties imports them from DATABASE_DIR.
 COPY database/ /app/database/
 ENV DATABASE_DIR=/app/database
+# An instance must accept connections within Vercel's startup timeout (about 28 s) or the request that
+# woke it gets a 500, and on this one-CPU machine the application took 21 to 29 s. Two things cut that:
+# a class archive (CDS), recorded here by starting the application once against the in-memory demo
+# database and stopping as soon as it is up, and repositories that are built on first use.
+RUN java -XX:ArchiveClassesAtExit=app.jsa -Dspring.context.exit=onRefresh -jar app.jar \
+        --spring.profiles.active=demo --server.port=8099
+ENV SPRING_DATA_JPA_REPOSITORIES_BOOTSTRAP_MODE=lazy
 # Vercel sends traffic to $PORT; the same value must be set as PORT in the project's environment.
 ENV PORT=8080
 # Requests arrive through Vercel's proxy: trust its headers so redirects keep https and the real host.
@@ -32,4 +42,4 @@ USER agrosense
 EXPOSE 8080
 # The Postgres resource is connected to this project with the NEON_ prefix, which provides
 # NEON_PGHOST_UNPOOLED, NEON_PGDATABASE, NEON_PGUSER and NEON_PGPASSWORD; the datasource is built from them.
-ENTRYPOINT ["sh", "-c", "exec java -jar app.jar \"--spring.datasource.url=jdbc:postgresql://${NEON_PGHOST_UNPOOLED}/${NEON_PGDATABASE}?sslmode=require\" \"--spring.datasource.username=${NEON_PGUSER}\" \"--spring.datasource.password=${NEON_PGPASSWORD}\""]
+ENTRYPOINT ["sh", "-c", "exec java -XX:SharedArchiveFile=app.jsa -jar app.jar \"--spring.datasource.url=jdbc:postgresql://${NEON_PGHOST_UNPOOLED}/${NEON_PGDATABASE}?sslmode=require\" \"--spring.datasource.username=${NEON_PGUSER}\" \"--spring.datasource.password=${NEON_PGPASSWORD}\""]
