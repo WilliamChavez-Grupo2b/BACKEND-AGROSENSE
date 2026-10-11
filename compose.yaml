@@ -1,0 +1,6 @@
+services:
+  backend:
+    image: agrosense-backend
+    build:
+      context: .
+      dockerfile: agrosense/Dockerfile
