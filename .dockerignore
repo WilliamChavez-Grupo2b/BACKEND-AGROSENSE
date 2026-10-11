@@ -4,4 +4,3 @@ target/
 .vscode/
 .env
 *.log
-skills/
