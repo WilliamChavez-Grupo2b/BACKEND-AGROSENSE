@@ -42,8 +42,10 @@ public class AiClientService implements AiService {
         }
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("id_crop", cropId);
-        // Only what was measured is sent; the service works without the temperature and the pH.
-        for (String measurement : List.of(SOIL_MOISTURE, "air_temperature", "ph")) {
+        // Only what was measured is sent; the service works without the temperature and the pH, and
+        // falls back to average limits for a crop that comes without its own.
+        for (String measurement : List.of(SOIL_MOISTURE, "air_temperature", "ph",
+                "humidity_min", "humidity_max", "ph_min", "ph_max")) {
             if (sensorData.get(measurement) != null) {
                 body.put(measurement, sensorData.get(measurement));
             }
