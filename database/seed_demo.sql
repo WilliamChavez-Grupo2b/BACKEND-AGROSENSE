@@ -48,6 +48,28 @@ JOIN (VALUES
     ) AS v(crop_name, sensor_code, sensor_type, location, active) ON v.crop_name = c.name
 WHERE NOT EXISTS (SELECT 1 FROM sensors s WHERE s.sensor_code = v.sensor_code);
 
+-- A sample outline for one estate, so the map shows both cases: a drawn outline and, for the other estate,
+-- the circle used while none exists. Only set while empty, so an outline drawn in the application is kept.
+UPDATE estates
+SET boundary = '[[1.2153000,-77.2822000],[1.2155000,-77.2803000],[1.2143000,-77.2792000],[1.2124000,-77.2797000],[1.2119000,-77.2815000],[1.2131000,-77.2829000]]'
+WHERE name = 'Finca La Esperanza' AND boundary IS NULL
+  AND id_user = (SELECT id_user FROM users WHERE email = 'demo@agrosense.co');
+
+-- Where the sample sensors stand, a few dozen metres around their estate's point, and the radius each one
+-- covers. Only set while empty, so positions edited in the application are kept.
+UPDATE sensors SET latitude = 1.2142000, longitude = -77.2818000, coverage_m = 40
+WHERE sensor_code = 'AS-001' AND latitude IS NULL;
+UPDATE sensors SET latitude = 1.2138000, longitude = -77.2802000, coverage_m = 60
+WHERE sensor_code = 'AS-002' AND latitude IS NULL;
+UPDATE sensors SET latitude = 1.2128000, longitude = -77.2814000, coverage_m = 30
+WHERE sensor_code = 'AS-003' AND latitude IS NULL;
+UPDATE sensors SET latitude = 1.2132000, longitude = -77.2803000, coverage_m = 40
+WHERE sensor_code = 'AS-004' AND latitude IS NULL;
+UPDATE sensors SET latitude = 1.2145000, longitude = -77.2809000, coverage_m = 30
+WHERE sensor_code = 'AS-005' AND latitude IS NULL;
+UPDATE sensors SET latitude = 1.6047000, longitude = -77.1321000, coverage_m = 35
+WHERE sensor_code = 'AS-006' AND latitude IS NULL;
+
 -- One reading per hour for the last 24 hours of every active sensor.
 
 INSERT INTO sensor_readings (id_sensor, reading_value, unit, recorded_at)
