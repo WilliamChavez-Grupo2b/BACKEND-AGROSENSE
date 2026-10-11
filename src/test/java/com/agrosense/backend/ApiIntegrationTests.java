@@ -117,6 +117,13 @@ class ApiIntegrationTests {
 	@Test
 	void onlyHealthAndLoginArePublic() throws Exception {
 		assertThat(send("GET", "/api/health", null, null).statusCode()).isEqualTo(200);
+		// The bare address says what the service is instead of asking a browser for a token.
+		HttpResponse<String> root = send("GET", "/", null, null);
+		assertThat(root.statusCode()).isEqualTo(200);
+		assertThat(root.body()).contains("\"service\":\"AgroSense API\"", "\"status\":\"UP\"", "\"health\":\"/api/health\"");
+		assertThat(send("HEAD", "/", null, null).statusCode()).isEqualTo(200);
+		assertThat(send("HEAD", "/api/health", null, null).statusCode()).isEqualTo(200);
+		assertThat(send("GET", "/anything-else", null, null).statusCode()).isEqualTo(401);
 
 		HttpResponse<String> anonymous = send("GET", "/api/dashboard", null, null);
 		assertThat(anonymous.statusCode()).isEqualTo(401);
