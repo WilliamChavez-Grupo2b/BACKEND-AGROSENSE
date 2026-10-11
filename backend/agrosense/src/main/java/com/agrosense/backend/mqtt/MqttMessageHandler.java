@@ -9,6 +9,7 @@ import com.agrosense.backend.pattern.structural.facade.SensorFacade;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
+import tools.jackson.core.JacksonException;
 import tools.jackson.databind.ObjectMapper;
 
 import java.nio.charset.StandardCharsets;
@@ -65,6 +66,9 @@ public class MqttMessageHandler {
             sensorFacade.recordReading(reading);
         } catch (ResourceNotFoundException exception) {
             log.warn("Mensaje MQTT de un sensor no registrado en {}", topic);
+        } catch (JacksonException exception) {
+            // Not JSON, or not the expected shape: the device's fault, not a failure of the application.
+            log.warn("Mensaje MQTT ilegible descartado en {}", topic);
         } catch (BusinessRuleException | IllegalArgumentException exception) {
             log.warn("Mensaje MQTT rechazado en {}: {}", topic, exception.getMessage());
         } catch (Exception exception) {
