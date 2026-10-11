@@ -208,8 +208,9 @@ esa rama se sube con un `git push` normal, sin forzar.
     - Límites: 10 preguntas por minuto y usuario (`AI_REQUESTS_PER_MINUTE`), 1000 caracteres por pregunta,
       12 turnos de contexto y 3 MB de audio. No hay respaldo en la base de datos: sin backend o sin llave
       el asistente lo dice.
-    - La conversación se guarda en `sessionStorage` a nombre de la cuenta: dura lo que la pestaña y quien
-      inicie sesión después en esa pestaña empieza con una vacía.
+    - La conversación se guarda en `sessionStorage` a nombre de la cuenta y dura lo que la pestaña. Las
+      páginas de acceso y de registro la borran (`ai/storage.ts`), así que no sobrevive a cerrar sesión
+      ni a que la sesión caduque.
 
 ## 3. Estructura del frontend
 
@@ -235,7 +236,7 @@ frontend/src/main/resources/
   static/js/            Salida de tsc; no se edita a mano
 frontend/src/main/ts/   theme-init, theme, app, tables, palette, forms, login, dashboard, settings,
                         design-system; api/ (cliente HTTP y endpoints), core/dom, types/;
-                        ai/ (chat-widget, markdown, voice)
+                        ai/ (chat-widget, markdown, voice, storage)
   static/img/           brand/ (logotipos, favicon, créditos) y photos/
   static/fonts/         PlusJakartaSans.woff2
   messages.properties   Textos en español de las enumeraciones
@@ -306,10 +307,10 @@ Del frontend (la del backend está en la sección 1):
   y un servidor local en el papel de Gemini: inicio de sesión, pregunta escrita y mensaje de voz por el
   backend y a través del frontend (200), y rechazos sin token (401), sin CSRF (403) y sin pregunta (400).
   No se probó contra Gemini real: no hay llave en este equipo.
-- Ventana del asistente en Edge sin interfaz con micrófono simulado (11 de octubre de 2026), 22
+- Ventana del asistente en Edge sin interfaz con micrófono simulado (11 de octubre de 2026), 25
   comprobaciones: abrir y cerrar, estado de carga, respuesta en Markdown, desplazamiento al último
   mensaje, grabar y enviar un mensaje de voz, micrófono liberado también al cerrar la ventana mientras
-  el navegador lo entrega, conversación conservada entre páginas y no mostrada a otra cuenta. Sin errores
+  el navegador lo entrega, conversación conservada entre páginas, no mostrada a otra cuenta y borrada al cerrar sesión. Sin errores
   de consola ni bloqueos de CSP. La lectura en voz alta solo se comprobó hasta activar el botón.
 - Servicio de predicción (`IA/`, 11 de octubre de 2026): 20 pruebas con `python -m unittest`. De punta a
   punta en local: el backend pide la predicción, el servicio responde y queda guardada con el modelo
