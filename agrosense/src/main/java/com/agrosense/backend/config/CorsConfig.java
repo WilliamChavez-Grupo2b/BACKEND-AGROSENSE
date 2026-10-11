@@ -28,6 +28,8 @@ public class CorsConfig {
 
         config.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         config.setAllowedHeaders(List.of("Authorization", "Content-Type", "Accept"));
+        // Lets a browser client read how long a locked sign-in must wait (429).
+        config.setExposedHeaders(List.of("Retry-After"));
         config.setAllowCredentials(true);
         config.setMaxAge(3600L);
 
