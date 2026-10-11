@@ -350,6 +350,7 @@ Del frontend (la del backend está en la sección 1):
 | Base de datos | Neon (PostgreSQL 18), recurso `agrosense-db` | La entrega Neon en las variables del proyecto |
 | Frontend      | Vercel, proyecto `agrosense-frontend`, contenedor | `https://agrosense-frontend-iota.vercel.app` |
 | Backend       | Render, servicio `BACKEND-AGROSENSE`, Docker, plan gratuito | `https://backend-agrosense-u5mz.onrender.com` |
+| Predicción de riego | Render, servicio `ia-agrosense`, Docker, plan gratuito, misma región que el backend | `https://ia-agrosense.onrender.com` |
 
 - **Base de datos.** Una sola para los dos componentes, con las tablas de `database/schema.sql` y los
   datos de `seed_demo.sql`. No hay base separada para pruebas: `PostgresCompatibilityTests` usa la misma,
@@ -373,6 +374,12 @@ Del frontend (la del backend está en la sección 1):
   incluye `datasource.properties`, así que la conexión sale solo de esas variables. El plan gratuito
   apaga el servicio tras unos 15 minutos sin uso y tarda entre 1 y 3 minutos en volver a arrancar;
   mientras tanto el frontend trabaja contra la base de datos.
+- **Predicción de riego.** Render construye el `Dockerfile` del repositorio `IA-AGROSENSE` en cada cambio
+  de su `main` y comprueba `/health`. Su `AI_SERVICE_TOKEN` es un secreto generado al crear el servicio;
+  el backend lleva el mismo valor en su `AI_SERVICE_TOKEN` y la dirección en `AI_SERVICE_URL`. Si se
+  cambia en uno hay que cambiarlo en el otro y volver a desplegar. Comprobado el 11 de octubre de 2026:
+  sin el token responde 401, y una predicción pedida por el backend en producción quedó guardada 13
+  segundos después con el modelo `agrosense-riego-reglas-1.0`.
 - **Orden al publicar un cambio.** Primero `database/` (a `main` de `BASE-DE-DATOS-AGROSENSE`), después
   el backend y por último el frontend, porque los dos aplican o validan el esquema al arrancar. El
   backend y el frontend entran por pull request de su rama hacia `main`; Render despliega el backend al
@@ -391,9 +398,11 @@ Del frontend (la del backend está en la sección 1):
   pueda dejar de leer la base de datos directamente (ver decisión 21).
 - Ingesta de lecturas: el backend las recibe por REST y por MQTT, pero MQTT está apagado y no hay broker
   ni dispositivos que envíen datos.
-- Servicio de predicción de riego: existe (`IA-AGROSENSE`) pero no está desplegado. Falta alojarlo (su
-  `render.yaml` lo crea en Render con un `AI_SERVICE_TOKEN` generado) y definir `AI_SERVICE_URL` y
-  `AI_SERVICE_TOKEN` en el servicio del backend.
+- El servicio de predicción de riego también duerme en el plan gratuito. El backend lo espera 60
+  segundos y lo intenta dos veces (`AI_SERVICE_TIMEOUT_MS`, `AI_SERVICE_MAX_ATTEMPTS`); si aun así no
+  responde, esa predicción no se guarda y hay que pedirla de nuevo.
+- El servicio del backend en Render no tiene ruta de comprobación de estado; conviene ponerle
+  `/api/health`.
 - Asistente de IA: está publicado y desplegado (11 de octubre de 2026), pero responde 503 hasta que
   Render tenga `GEMINI_API_KEY`. Falta probarlo con Gemini real y con un micrófono de verdad.
 - Abrir el sitio al público (quitar Vercel Authentication) y, antes, cambiar la contraseña de la cuenta
