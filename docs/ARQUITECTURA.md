@@ -353,6 +353,13 @@ Del frontend (la del backend está en la sección 1):
   `Dockerfile.vercel`. La conexión sale de las variables `NEON_*` que pone la integración de Neon, y
   aplica `schema.sql` al arrancar (`SQL_INIT_MODE=always`). Para llamar al backend necesita
   `BACKEND_URL` y `BACKEND_JWT_SECRET`. `.vercelignore` deja fuera `/backend` y `/docs`.
+  Vercel apaga las instancias sin uso y da unos 28 segundos a una nueva para aceptar conexiones; si no
+  llega, la petición que la despertó recibe un 500. La aplicación tardaba entre 21 y 29 segundos en esa
+  máquina de una CPU, así que la imagen lleva un archivo de clases (CDS), que se graba al construirla
+  arrancando la aplicación una vez contra la base de demostración en memoria, y construye los
+  repositorios JPA al primer uso (`SPRING_DATA_JPA_REPOSITORIES_BOOTSTRAP_MODE=lazy`, solo en la imagen:
+  las pruebas los siguen validando al arrancar). Con eso arranca en unos 11 segundos. Las opciones de
+  JVM habituales para arrancar antes (`-XX:TieredStopAtLevel=1`, GC serie) se midieron y la empeoran.
 - **Backend.** Render construye el `Dockerfile` de la raíz del repositorio `BACKEND-AGROSENSE` en cada
   cambio de su rama `main` (`agrosense/Dockerfile` es una copia temporal para un servicio cuya ruta aún
   apunte allí). Variables: `DATABASE_URL` en formato JDBC (`jdbc:postgresql://…`), `DATABASE_USERNAME`,
@@ -381,8 +388,8 @@ Del frontend (la del backend está en la sección 1):
   ni dispositivos que envíen datos.
 - Servicio de predicción de riego: existe (`IA-AGROSENSE`) pero no está desplegado; falta alojarlo y
   definir `AI_SERVICE_URL` en Render. No pide autenticación, así que conviene una red privada.
-- Asistente de IA: publicar el módulo en `BACKEND-AGROSENSE` y `FRONTEND-AGROSENSE`, definir
-  `GEMINI_API_KEY` en Render y probarlo con Gemini real y con un micrófono de verdad.
+- Asistente de IA: está publicado y desplegado (11 de octubre de 2026), pero responde 503 hasta que
+  Render tenga `GEMINI_API_KEY`. Falta probarlo con Gemini real y con un micrófono de verdad.
 - Abrir el sitio al público (quitar Vercel Authentication) y, antes, cambiar la contraseña de la cuenta
   de ejemplo, que está escrita en `frontend/README.md`.
 - Decidir un único despliegue del backend y mantenerlo despierto, o pasarlo a un plan que no se apague.
