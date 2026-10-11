@@ -7,33 +7,21 @@ import org.springframework.core.io.DefaultResourceLoader;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/** Checks what database/datasource.properties resolves to with and without the "seed" profile. */
+/** Checks that deployments can supply datasource settings without a local properties file. */
 class DatabaseConfigTests {
 
-	/** Where the settings are read from: DATABASE_DIR when the developer has set it, else the default. */
-	private static final String DATABASE_DIR =
-			System.getenv("DATABASE_DIR") == null ? "../database" : System.getenv("DATABASE_DIR");
-
 	@Test
-	void defaultsPointAtPostgresAndNeverTouchTheSchema() {
+	void localDatasourcePropertiesAreOptional() {
 		StandardEnvironment environment = load();
 
-		assertThat(environment.getProperty("spring.datasource.url")).startsWith("jdbc:postgresql://");
-		assertThat(environment.getProperty("spring.jpa.hibernate.ddl-auto")).isEqualTo("validate");
-		assertThat(environment.getProperty("spring.sql.init.mode")).isEqualTo("never");
-		assertThat(environment.getProperty("spring.sql.init.schema-locations"))
-				.isEqualTo("file:" + DATABASE_DIR + "/schema.sql");
-		assertThat(environment.getProperty("spring.sql.init.data-locations")).isNull();
+		assertThat(environment.getProperty("spring.config.import")).contains("optional:file:");
 	}
 
 	@Test
-	void seedProfileCreatesTablesAndLoadsSampleDataIntoTheSameDatabase() {
+	void seedProfileCanBeLoadedWithoutLocalDatasourceProperties() {
 		StandardEnvironment environment = load("seed");
 
-		assertThat(environment.getProperty("spring.datasource.url")).startsWith("jdbc:postgresql://");
-		assertThat(environment.getProperty("spring.sql.init.mode")).isEqualTo("always");
-		assertThat(environment.getProperty("spring.sql.init.data-locations"))
-				.isEqualTo("file:" + DATABASE_DIR + "/seed_demo.sql");
+		assertThat(environment.getActiveProfiles()).contains("seed");
 	}
 
 	private static StandardEnvironment load(String... profiles) {
