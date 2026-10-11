@@ -202,14 +202,20 @@ esa rama se sube con un `git push` normal, sin forzar.
       CSRF) y este al backend con el token compartido.
     - El modelo es `GEMINI_MODEL`, por defecto `gemini-flash-latest`: los nombres fijos se retiran
       (`gemini-1.5-flash` ya no responde) y el alias sigue al modelo Flash vigente.
-    - Cada pregunta lleva las instrucciones del asistente agronómico y una línea con las cifras de la finca
-      del usuario (cultivos, sensores, alertas y últimas lecturas), más los turnos anteriores.
+    - Cada pregunta lleva las instrucciones del asistente agronómico y los datos de la finca del usuario
+      (`FarmContextService`): los totales, las alertas abiertas y, de cada cultivo, sus últimas lecturas de
+      humedad, temperatura y pH junto al rango de ese cultivo; más los turnos anteriores.
+    - Cuando el modelo no está configurado, falla o se queda sin cuota, la pregunta escrita no se rechaza:
+      `LocalAdvisor` la responde con esos mismos datos (riego, alertas, temperatura, pH, sensores y estado
+      de cada cultivo; reconoce el tema por sus palabras y el cultivo por su nombre) y la respuesta lleva
+      `source: local`. La ventana lo dice bajo la respuesta. No razona ni lo aparenta: lo que no sabe
+      responder lo dice. Una negativa del modelo a responder sigue siendo una negativa, y una grabación
+      sin texto necesita el modelo. `AI_LOCAL_ANSWERS=false` lo desactiva.
     - La voz se graba con `MediaRecorder` y se envía como audio; Gemini devuelve lo que entendió y la
       respuesta. Las respuestas se leen en español con `speechSynthesis`. Donde el navegador no ofrece
       alguna de las dos, su botón no aparece.
     - Límites: 10 preguntas por minuto y usuario (`AI_REQUESTS_PER_MINUTE`), 1000 caracteres por pregunta,
-      12 turnos de contexto y 3 MB de audio. No hay respaldo en la base de datos: sin backend o sin llave
-      el asistente lo dice.
+      12 turnos de contexto y 3 MB de audio. Sin backend el asistente dice que no está disponible.
     - La conversación se guarda en `sessionStorage` a nombre de la cuenta y dura lo que la pestaña. Las
       páginas de acceso y de registro la borran (`ai/storage.ts`), así que no sobrevive a cerrar sesión
       ni a que la sesión caduque.
@@ -302,7 +308,7 @@ Del frontend (la del backend está en la sección 1):
 - `mvnw test` en `frontend/` (11 de octubre de 2026): 76 pruebas (JUnit 5, Mockito, MockMvc); 74
   correctas y 2 omitidas, que son las de PostgreSQL. Incluyen las del cliente del backend contra un
   servidor HTTP local.
-- `mvnw test` en `backend/agrosense` (11 de octubre de 2026): 61 pruebas; 58 correctas y 3 omitidas,
+- `mvnw test` en `backend/agrosense` (11 de octubre de 2026): 73 pruebas; 70 correctas y 3 omitidas,
   también las de PostgreSQL. La JVM de pruebas termina sola: cada prueba cierra las sesiones WebSocket
   que abre. Las del asistente usan un servidor local en el papel de Gemini.
 - Asistente de punta a punta en local (11 de octubre de 2026), backend y frontend sobre una base H2 nueva
@@ -320,6 +326,9 @@ Del frontend (la del backend está en la sección 1):
   cultivo con límites propios (70–95 % de humedad) que marca 65 % recibe «riega ahora», y uno sin lectura
   de humedad no recibe ninguna. No se construyó su imagen Docker (no hay Docker en este equipo), no se
   probó `render.yaml` y el servicio no está desplegado.
+- Asistente sin modelo en Edge sin interfaz (11 de octubre de 2026), 12 comprobaciones: las sugerencias
+  y las preguntas por un cultivo se responden con las lecturas reales, con la nota de que no respondió el
+  modelo; una grabación se rechaza indicando que se escriba la pregunta.
 - Contrato de la API (`api/`, 11 de octubre de 2026): `validate_spec.py` y 12 pruebas de las
   herramientas, que GitHub repite en cada push; `check_contract.py` con 45 comprobaciones (cada ruta sin
   token, con token y el esquema de cada respuesta correcta) contra el backend local y contra producción
@@ -403,8 +412,9 @@ Del frontend (la del backend está en la sección 1):
   responde, esa predicción no se guarda y hay que pedirla de nuevo.
 - El servicio del backend en Render no tiene ruta de comprobación de estado; conviene ponerle
   `/api/health`.
-- Asistente de IA: está publicado y desplegado (11 de octubre de 2026), pero responde 503 hasta que
-  Render tenga `GEMINI_API_KEY`. Falta probarlo con Gemini real y con un micrófono de verdad.
+- Asistente de IA: está publicado y desplegado (11 de octubre de 2026). Sin `GEMINI_API_KEY` en Render
+  responde solo con los datos de la finca; con ella responderá Gemini. Falta probarlo con Gemini real y
+  con un micrófono de verdad.
 - Abrir el sitio al público (quitar Vercel Authentication) y, antes, cambiar la contraseña de la cuenta
   de ejemplo, que está escrita en `frontend/README.md`.
 - Decidir un único despliegue del backend y mantenerlo despierto, o pasarlo a un plan que no se apague.
