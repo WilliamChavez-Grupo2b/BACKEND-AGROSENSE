@@ -1,1 +1,0 @@
-Keep this directory in the Docker build context; it can also hold local database configuration and SQL scripts.

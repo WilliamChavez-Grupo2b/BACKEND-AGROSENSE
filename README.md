@@ -2,7 +2,7 @@
 
 ## Build the backend image
 
-Run from the repository root so Docker can access both `agrosense/` and `database/`:
+The Maven project is at the repository root. Run from there:
 
 ```powershell
 docker compose build backend
@@ -11,14 +11,16 @@ docker compose build backend
 Alternatively, build directly:
 
 ```powershell
-docker build -f agrosense/Dockerfile -t agrosense-backend .
+docker build -t agrosense-backend .
 ```
 
-If your current directory is `agrosense\`, use `..` as the build context:
+## Database files
 
-```powershell
-docker build -f Dockerfile -t agrosense-backend ..
-```
+The schema, the sample data and `datasource.properties` live in the
+[BASE-DE-DATOS-AGROSENSE](https://github.com/ssantivr/BASE-DE-DATOS-AGROSENSE) repository, not here.
+For local runs and for the tests, clone it next to this repository as `database`
+(`git clone https://github.com/ssantivr/BASE-DE-DATOS-AGROSENSE ../database`), or point `DATABASE_DIR`
+at a copy of it.
 
 ## Deploy on Render
 
@@ -28,13 +30,13 @@ Create a **Web Service** from this repository and configure it to use Docker:
 | --- | --- |
 | Root Directory | Leave blank (the repository root) |
 | Runtime | Docker |
-| Dockerfile Path | `agrosense/Dockerfile` |
+| Dockerfile Path | `Dockerfile` |
 | Health Check Path | `/api/health` |
 
-Keep the repository root as the build context. The Dockerfile copies files from
-both `agrosense/` and `database/`, so setting the root directory to `agrosense/`
-will break the build. Render builds the Dockerfile directly; it does not use the
-local `compose.yaml`.
+Keep the repository root as the build context. A service created while the
+project was inside `agrosense/` still has `agrosense/Dockerfile` as its
+Dockerfile Path: change it to `Dockerfile`, or the build fails. Render builds
+the Dockerfile directly; it does not use the local `compose.yaml`.
 
 ### Configure the service
 
@@ -53,7 +55,7 @@ same region. Do not commit database credentials or `JWT_SECRET` to the
 repository. The service reads Render's `PORT` automatically (falling back to
 `9000` for local Docker runs); do not set `PORT` yourself.
 
-The local `database/datasource.properties` file is optional in the container.
+The image carries no `datasource.properties` file; it is optional.
 Spring Boot can take the datasource settings from the environment variables
 above instead. The PostgreSQL database must already have the application's
 schema before the service starts; initialize it using your database schema
