@@ -4,9 +4,10 @@ import com.agrosense.backend.ai.AiException;
 import com.agrosense.backend.ai.dto.AiRequestDto;
 import com.agrosense.backend.ai.dto.AiResponseDto;
 import com.agrosense.backend.ai.service.AiAssistantService;
-import com.agrosense.backend.dto.response.AlertResponse;
-import com.agrosense.backend.dto.response.DashboardResponse;
-import com.agrosense.backend.service.DashboardService;
+import com.agrosense.backend.ai.service.FarmContextService;
+import com.agrosense.backend.ai.service.FarmSnapshot;
+import com.agrosense.backend.ai.service.FarmSnapshot.CropStatus;
+import com.agrosense.backend.ai.service.FarmSnapshot.OpenAlert;
 import com.sun.net.httpserver.HttpServer;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -47,7 +48,7 @@ class AiAssistantTests {
 	private final AtomicReference<String> receivedKey = new AtomicReference<>();
 	private final AtomicReference<String> receivedPath = new AtomicReference<>();
 	private final AtomicInteger calls = new AtomicInteger();
-	private final DashboardService dashboard = mock(DashboardService.class);
+	private final FarmContextService farm = mock(FarmContextService.class);
 
 	@BeforeEach
 	void startGemini() throws IOException {
@@ -64,11 +65,14 @@ class AiAssistantTests {
 			exchange.close();
 		});
 		gemini.start();
-		when(dashboard.build(EMAIL)).thenReturn(DashboardResponse.builder()
-				.totalCrops(2).totalSensors(5).pendingAlerts(1)
-				.lastHumidity(new BigDecimal("31.5000")).lastTemperature(new BigDecimal("24.0"))
-				.activeAlerts(List.of(AlertResponse.builder().cropName("Café").message("Humedad baja.").build()))
-				.build());
+		when(farm.snapshot(EMAIL)).thenReturn(new FarmSnapshot(2, 5, 1,
+				List.of(new CropStatus("Café", new BigDecimal("31.5000"), new BigDecimal("40.0"), new BigDecimal("80.0"),
+								new BigDecimal("24.0"), new BigDecimal("15.0"), new BigDecimal("35.0"),
+								null, new BigDecimal("5.5"), new BigDecimal("7.0")),
+						new CropStatus("Papa", null, new BigDecimal("40.0"), new BigDecimal("80.0"),
+								null, new BigDecimal("15.0"), new BigDecimal("35.0"),
+								null, new BigDecimal("5.5"), new BigDecimal("7.0"))),
+				List.of(new OpenAlert("Café", "Humedad baja."))));
 	}
 
 	@AfterEach
@@ -92,8 +96,11 @@ class AiAssistantTests {
 		assertThat(sent.path("system_instruction").path("parts").path(0).path("text").asString())
 				.contains("AgroSense IA");
 		assertThat(sent.path("system_instruction").path("parts").path(1).path("text").asString())
-				.contains("2 cultivos", "5 sensores", "1 alertas", "suelo 31.5 %", "Temperatura 24 °C")
-				.endsWith("Café: Humedad baja.").doesNotContain("pH");
+				.contains("2 cultivos", "5 sensores", "1 alertas",
+						"Cultivo Café: humedad del suelo 31.5 % (rango 40–80 %), temperatura 24 °C (rango 15–35 °C).",
+						"Cultivo Papa: sin lecturas.")
+				.endsWith("Alerta en Café: Humedad baja.").doesNotContain("pH");
+		assertThat(response.source()).isEqualTo("model");
 		JsonNode contents = sent.path("contents");
 		assertThat(contents).hasSize(3);
 		assertThat(contents.path(1).path("role").asString()).isEqualTo("model");
@@ -107,6 +114,57 @@ class AiAssistantTests {
 		assertThatThrownBy(() -> assistant(" ", 10, Clock.systemUTC()).chat(EMAIL, question("Hola")))
 				.isInstanceOfSatisfying(AiException.class,
 						error -> assertThat(error.getStatus()).isEqualTo(HttpStatus.SERVICE_UNAVAILABLE));
+		assertThat(calls.get()).isZero();
+	}
+
+	@Test
+	void withoutAKeyAWrittenQuestionIsAnsweredFromTheFarmsFigures() {
+		AiResponseDto response = answeringOnItsOwn(" ", 10).chat(EMAIL, question("¿Cuándo conviene regar?"));
+
+		assertThat(response.source()).isEqualTo("local");
+		assertThat(response.reply()).contains("**Café**: riega. La humedad (31.5 %) está por debajo de su mínimo (40 %).",
+				"**Papa**: no tiene lecturas de humedad");
+		assertThat(calls.get()).isZero();
+	}
+
+	@Test
+	void whenTheModelFailsTheQuestionIsStillAnsweredAndARefusalStaysARefusal() {
+		AiAssistantService assistant = answeringOnItsOwn(KEY, 0);
+
+		for (int failure : new int[] {429, 500, 403}) {
+			status.set(failure);
+			AiResponseDto response = assistant.chat(EMAIL, question("¿Qué alertas tengo?"));
+			assertThat(response.source()).isEqualTo("local");
+			assertThat(response.reply()).startsWith("Tienes 1 alerta sin atender:").contains("**Café**: Humedad baja.");
+		}
+		status.set(200);
+		answer.set("{\"candidates\":[{\"finishReason\":\"MAX_TOKENS\",\"content\":{\"parts\":[]}}]}");
+		assertThat(assistant.chat(EMAIL, question("¿Riego?")).source()).isEqualTo("local");
+		// The model declining a question is an answer about the question, not a fault to work around.
+		answer.set("{\"promptFeedback\":{\"blockReason\":\"SAFETY\"}}");
+		assertStatus(() -> assistant.chat(EMAIL, question("Hola")), HttpStatus.UNPROCESSABLE_ENTITY);
+
+		gemini.stop(0);
+		assertThat(assistant.chat(EMAIL, question("¿Riego?")).source()).isEqualTo("local");
+	}
+
+	@Test
+	void answersGivenWithoutTheModelCountTowardsTheLimitAndVoiceNeedsTheModelToListen() {
+		AiAssistantService assistant = answeringOnItsOwn("", 2);
+
+		// What was said, already as text, is answered like any written question.
+		AiResponseDto spoken = assistant.voice(EMAIL, null, null, " ¿Riego hoy? ");
+		assertThat(spoken.transcript()).isEqualTo("¿Riego hoy?");
+		assertThat(spoken.source()).isEqualTo("local");
+		assertThat(spoken.reply()).contains("**Café**: riega");
+		assistant.chat(EMAIL, question("Dos"));
+		assertStatus(() -> assistant.chat(EMAIL, question("Tres")), HttpStatus.TOO_MANY_REQUESTS);
+
+		assertThatThrownBy(() -> assistant.voice(EMAIL, new byte[] {1}, "audio/webm", null))
+				.isInstanceOfSatisfying(AiException.class, error -> {
+					assertThat(error.getStatus()).isEqualTo(HttpStatus.SERVICE_UNAVAILABLE);
+					assertThat(error.getMessage()).contains("Escribe tu pregunta");
+				});
 		assertThat(calls.get()).isZero();
 	}
 
@@ -160,7 +218,7 @@ class AiAssistantTests {
 				return now.get();
 			}
 		};
-		when(dashboard.build("other@agrosense.co")).thenReturn(DashboardResponse.builder().build());
+		when(farm.snapshot("other@agrosense.co")).thenReturn(new FarmSnapshot(0, 0, 0, List.of(), List.of()));
 		AiAssistantService assistant = assistant(KEY, 2, clock);
 
 		assistant.chat(EMAIL, question("Uno"));
@@ -243,7 +301,7 @@ class AiAssistantTests {
 
 	@Test
 	void theAssistantStillAnswersWhenTheFarmFiguresCannotBeRead() {
-		when(dashboard.build(EMAIL)).thenThrow(new IllegalStateException("database down"));
+		when(farm.snapshot(EMAIL)).thenThrow(new IllegalStateException("database down"));
 
 		assertThat(assistant(KEY, 10, Clock.systemUTC()).chat(EMAIL, question("Hola")).reply())
 				.isEqualTo("Riega 20 minutos al amanecer.");
@@ -252,9 +310,19 @@ class AiAssistantTests {
 
 	// ---------- helpers ----------
 
+	/** An assistant that refuses a question when the model cannot answer it, to see each refusal. */
 	private AiAssistantService assistant(String key, int requestsPerMinute, Clock clock) {
-		return new AiAssistantService(dashboard, JSON, clock, key, "test-model",
-				"http://127.0.0.1:" + gemini.getAddress().getPort(), 2000, 256, requestsPerMinute);
+		return assistant(key, requestsPerMinute, clock, false);
+	}
+
+	/** The assistant as it runs: without the model it answers from the farm's figures. */
+	private AiAssistantService answeringOnItsOwn(String key, int requestsPerMinute) {
+		return assistant(key, requestsPerMinute, Clock.systemUTC(), true);
+	}
+
+	private AiAssistantService assistant(String key, int requestsPerMinute, Clock clock, boolean localAnswers) {
+		return new AiAssistantService(farm, JSON, clock, key, "test-model",
+				"http://127.0.0.1:" + gemini.getAddress().getPort(), 2000, 256, requestsPerMinute, localAnswers);
 	}
 
 	private static void assertStatus(org.assertj.core.api.ThrowableAssert.ThrowingCallable call, HttpStatus expected) {

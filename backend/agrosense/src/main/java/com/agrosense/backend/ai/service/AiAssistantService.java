@@ -3,9 +3,6 @@ package com.agrosense.backend.ai.service;
 import com.agrosense.backend.ai.AiException;
 import com.agrosense.backend.ai.dto.AiRequestDto;
 import com.agrosense.backend.ai.dto.AiResponseDto;
-import com.agrosense.backend.dto.response.AlertResponse;
-import com.agrosense.backend.dto.response.DashboardResponse;
-import com.agrosense.backend.service.DashboardService;
 import io.netty.channel.ChannelOption;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -21,7 +18,6 @@ import tools.jackson.core.JacksonException;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
-import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -47,8 +43,10 @@ public class AiAssistantService {
 
     static final String SYSTEM_PROMPT = "Eres AgroSense IA, asistente agronómico. Respondes en español, "
             + "en menos de 120 palabras y con pasos prácticos, sobre cultivos, riego, suelo, sensores IoT y "
-            + "alertas. Usa los datos de la finca que recibes; si falta un dato, dilo y no lo inventes. "
-            + "Rechaza con amabilidad los temas ajenos al agro. Puedes usar listas Markdown cortas.";
+            + "alertas. Recibes los datos de la finca: de cada cultivo, sus últimas lecturas y el rango que "
+            + "le corresponde. Compara cada lectura con el rango de ese cultivo, nombra el cultivo y cita la "
+            + "cifra; si falta un dato, dilo y no lo inventes. Rechaza con amabilidad los temas ajenos al "
+            + "agro. Puedes usar listas Markdown cortas.";
 
     /** Asked of a voice message: what was said, so the conversation can show it, and the answer to it. */
     static final String VOICE_INSTRUCTION = "Transcribe el audio en español y responde a lo que pregunta.";
@@ -60,9 +58,13 @@ public class AiAssistantService {
             "audio/x-wav", "audio/mp4", "audio/mpeg", "audio/mp3", "audio/aac", "audio/flac");
 
     private static final Duration RATE_WINDOW = Duration.ofMinutes(1);
-    private static final int MAX_ALERTS_IN_CONTEXT = 3;
 
-    private final DashboardService dashboardService;
+    /** Failures of the model that say nothing about the question: it can still be answered without it. */
+    private static final Set<HttpStatus> MODEL_UNAVAILABLE = Set.of(HttpStatus.TOO_MANY_REQUESTS,
+            HttpStatus.BAD_GATEWAY, HttpStatus.GATEWAY_TIMEOUT);
+
+    private final FarmContextService farmContext;
+    private final boolean localAnswers;
     private final ObjectMapper objectMapper;
     private final Clock clock;
     private final WebClient gemini;
@@ -73,22 +75,29 @@ public class AiAssistantService {
     private final Map<String, Deque<Instant>> recentRequests = new ConcurrentHashMap<>();
 
     @Autowired
-    public AiAssistantService(DashboardService dashboardService, ObjectMapper objectMapper,
+    public AiAssistantService(FarmContextService farmContext, ObjectMapper objectMapper,
             @Value("${gemini.api-key:}") String apiKey,
             @Value("${gemini.model:gemini-flash-latest}") String model,
             @Value("${gemini.base-url:https://generativelanguage.googleapis.com}") String baseUrl,
             @Value("${gemini.timeout-ms:20000}") int timeoutMs,
             @Value("${gemini.max-output-tokens:1024}") int maxOutputTokens,
-            @Value("${ai.assistant.requests-per-minute:10}") int requestsPerMinute) {
-        this(dashboardService, objectMapper, Clock.systemUTC(), apiKey, model, baseUrl, timeoutMs, maxOutputTokens,
-                requestsPerMinute);
+            @Value("${ai.assistant.requests-per-minute:10}") int requestsPerMinute,
+            @Value("${ai.assistant.local-answers:true}") boolean localAnswers) {
+        this(farmContext, objectMapper, Clock.systemUTC(), apiKey, model, baseUrl, timeoutMs, maxOutputTokens,
+                requestsPerMinute, localAnswers);
     }
 
-    /** With the clock given, so the limit on requests per minute can be tested without waiting. */
-    public AiAssistantService(DashboardService dashboardService, ObjectMapper objectMapper, Clock clock,
+    /**
+     * With the clock given, so the limit on requests per minute can be tested without waiting.
+     *
+     * @param localAnswers whether a written question is answered from the farm's figures when the model
+     *                     is not configured or does not respond, instead of being refused
+     */
+    public AiAssistantService(FarmContextService farmContext, ObjectMapper objectMapper, Clock clock,
             String apiKey, String model, String baseUrl, int timeoutMs, int maxOutputTokens,
-            int requestsPerMinute) {
-        this.dashboardService = dashboardService;
+            int requestsPerMinute, boolean localAnswers) {
+        this.farmContext = farmContext;
+        this.localAnswers = localAnswers;
         this.objectMapper = objectMapper;
         this.clock = clock;
         this.apiKey = apiKey.trim();
@@ -104,11 +113,49 @@ public class AiAssistantService {
                 .build();
     }
 
-    /** Answers a written question, taking the earlier turns of the conversation into account. */
+    /**
+     * Answers a written question, taking the earlier turns of the conversation into account. When the
+     * model is not configured or fails for reasons of its own, the question is answered from the farm's
+     * figures instead, and the answer says so in its {@code source}.
+     */
     public AiResponseDto chat(String email, AiRequestDto request) {
-        checkAvailable(email);
+        String question = request.getMessage().trim();
+        countRequest(email);
+        FarmSnapshot farm = farmOf(email);
+        if (apiKey.isEmpty()) {
+            return withoutTheModel(question, farm, notConfigured());
+        }
         List<AiRequestDto.Turn> history = request.getHistory() == null ? List.of() : request.getHistory();
-        return new AiResponseDto(textOf(generate(email, conversation(history, request.getMessage().trim()), false)));
+        try {
+            return new AiResponseDto(textOf(generate(farm, conversation(history, question), false)), null,
+                    AiResponseDto.SOURCE_MODEL);
+        } catch (AiException failure) {
+            if (!MODEL_UNAVAILABLE.contains(failure.getStatus())) {
+                throw failure;
+            }
+            return withoutTheModel(question, farm, failure);
+        }
+    }
+
+    private AiResponseDto withoutTheModel(String question, FarmSnapshot farm, AiException reason) {
+        if (!localAnswers) {
+            throw reason;
+        }
+        return new AiResponseDto(LocalAdvisor.answer(question, farm), null, AiResponseDto.SOURCE_LOCAL);
+    }
+
+    private static AiException notConfigured() {
+        return new AiException(HttpStatus.SERVICE_UNAVAILABLE, "El asistente de IA no está configurado todavía.");
+    }
+
+    /** The caller's farm, or {@code null} when it cannot be read: the question is still worth answering. */
+    private FarmSnapshot farmOf(String email) {
+        try {
+            return farmContext.snapshot(email);
+        } catch (RuntimeException exception) {
+            log.warn("No se pudieron leer los datos de la finca para el asistente: {}", exception.getMessage());
+            return null;
+        }
     }
 
     /**
@@ -155,7 +202,7 @@ public class AiAssistantService {
             }
             AiRequestDto request = new AiRequestDto();
             request.setMessage(spoken);
-            return new AiResponseDto(chat(email, request).reply(), spoken);
+            return chat(email, request).heard(spoken);
         }
         if (audio == null || audio.length == 0) {
             throw new AiException(HttpStatus.BAD_REQUEST, "No se recibió ningún audio.");
@@ -167,26 +214,33 @@ public class AiAssistantService {
         if (!AUDIO_TYPES.contains(mimeType)) {
             throw new AiException(HttpStatus.UNSUPPORTED_MEDIA_TYPE, "Ese formato de audio no es compatible.");
         }
-        checkAvailable(email);
+        // Only the model can listen: without it a recording cannot be turned into a question.
+        if (apiKey.isEmpty()) {
+            throw localAnswers
+                    ? new AiException(HttpStatus.SERVICE_UNAVAILABLE,
+                            "Ahora no puedo escuchar mensajes de voz. Escribe tu pregunta y te respondo.")
+                    : notConfigured();
+        }
+        countRequest(email);
         Map<String, Object> audioPart = Map.of("inline_data",
                 Map.of("mime_type", mimeType, "data", Base64.getEncoder().encodeToString(audio)));
-        String answer = textOf(generate(email,
+        String answer = textOf(generate(farmOf(email),
                 List.of(content("user", audioPart, Map.of("text", VOICE_INSTRUCTION))), true));
         try {
             JsonNode parsed = objectMapper.readTree(answer);
             String reply = parsed.path("reply").asString("").trim();
             if (!reply.isEmpty()) {
                 String heard = parsed.path("transcript").asString("").trim();
-                return new AiResponseDto(reply, heard.isEmpty() ? null : heard);
+                return new AiResponseDto(reply, heard.isEmpty() ? null : heard, AiResponseDto.SOURCE_MODEL);
             }
         } catch (JacksonException exception) {
             log.warn("El asistente no devolvió el JSON pedido para un mensaje de voz");
         }
         // The model ignored the requested shape: its text is still an answer worth showing.
-        return new AiResponseDto(answer);
+        return new AiResponseDto(answer, null, AiResponseDto.SOURCE_MODEL);
     }
 
-    private JsonNode generate(String email, List<Map<String, Object>> contents, boolean voiceAnswer) {
+    private JsonNode generate(FarmSnapshot farm, List<Map<String, Object>> contents, boolean voiceAnswer) {
         Map<String, Object> generationConfig = new LinkedHashMap<>();
         generationConfig.put("temperature", 0.4);
         generationConfig.put("maxOutputTokens", maxOutputTokens);
@@ -201,7 +255,8 @@ public class AiAssistantService {
         }
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("system_instruction", Map.of("parts", List.of(
-                Map.of("text", SYSTEM_PROMPT), Map.of("text", farmSummary(email)))));
+                Map.of("text", SYSTEM_PROMPT),
+                Map.of("text", farm == null ? "No hay datos de la finca disponibles en este momento." : farm.describe()))));
         body.put("contents", contents);
         body.put("generationConfig", generationConfig);
         try {
@@ -250,44 +305,8 @@ public class AiAssistantService {
         throw new AiException(HttpStatus.BAD_GATEWAY, "El asistente no generó una respuesta. Inténtalo de nuevo.");
     }
 
-    /** One line with the caller's own figures. Kept short on purpose: it is sent with every question. */
-    private String farmSummary(String email) {
-        try {
-            DashboardResponse farm = dashboardService.build(email);
-            StringBuilder summary = new StringBuilder("Datos de la finca del usuario: ")
-                    .append(farm.getTotalCrops()).append(" cultivos, ")
-                    .append(farm.getTotalSensors()).append(" sensores, ")
-                    .append(farm.getPendingAlerts()).append(" alertas sin atender.");
-            append(summary, " Humedad del suelo ", farm.getLastHumidity(), " %.");
-            append(summary, " Temperatura ", farm.getLastTemperature(), " °C.");
-            append(summary, " pH ", farm.getLastPh(), ".");
-            List<AlertResponse> alerts = farm.getActiveAlerts() == null ? List.of() : farm.getActiveAlerts();
-            alerts.stream().limit(MAX_ALERTS_IN_CONTEXT).forEach(alert -> {
-                String message = alert.getMessage() == null ? "" : alert.getMessage().trim();
-                summary.append(" Alerta en ").append(alert.getCropName()).append(": ").append(message);
-                // Stored messages usually end their own sentence.
-                if (!message.endsWith(".")) {
-                    summary.append('.');
-                }
-            });
-            return summary.toString();
-        } catch (RuntimeException exception) {
-            log.warn("No se pudieron leer los datos de la finca para el asistente: {}", exception.getMessage());
-            return "No hay datos de la finca disponibles en este momento.";
-        }
-    }
-
-    /** Readings are stored with four decimals; 64.7400 is sent as 64.74. */
-    private static void append(StringBuilder summary, String label, BigDecimal value, String unit) {
-        if (value != null) {
-            summary.append(label).append(value.stripTrailingZeros().toPlainString()).append(unit);
-        }
-    }
-
-    private void checkAvailable(String email) {
-        if (apiKey.isEmpty()) {
-            throw new AiException(HttpStatus.SERVICE_UNAVAILABLE, "El asistente de IA no está configurado todavía.");
-        }
+    /** Counts one more question of this user and refuses it when the minute's allowance is spent. */
+    private void countRequest(String email) {
         if (requestsPerMinute <= 0) {
             return;
         }
