@@ -53,6 +53,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
+import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -128,6 +129,72 @@ class ApiIntegrationTests {
 		HttpResponse<String> ok = login("  DEMO@agrosense.co ", PASSWORD);
 		assertThat(ok.statusCode()).isEqualTo(200);
 		assertThat(ok.body()).contains("\"token\":\"").contains("\"role\":\"farmer\"").doesNotContain("password");
+	}
+
+	@Test
+	void registrationCreatesAFarmerAccountThatCanSignIn() throws Exception {
+		assertThat(send("GET", "/api/auth/check-user?email=new-user@agrosense.test", null, null).body())
+				.contains("\"exists\":false").contains("\"available\":true");
+
+		HttpResponse<String> created = send("POST", "/api/auth/register", null,
+				"{\"name\":\"Ana María\",\"lastName\":\"Pérez\",\"email\":\"  New-User@AgroSense.test \","
+						+ "\"password\":\"a-long-password\"}");
+		assertThat(created.statusCode()).isEqualTo(201);
+		assertThat(created.body()).contains("\"email\":\"new-user@agrosense.test\"").contains("\"role\":\"farmer\"")
+				.doesNotContain("password");
+		User stored = userRepository.findByEmail("new-user@agrosense.test").orElseThrow();
+		assertThat(stored.getPasswordHash()).startsWith("$2").doesNotContain("a-long-password");
+
+		assertThat(send("GET", "/api/auth/check-user?email=%20NEW-user@agrosense.test", null, null).body())
+				.contains("\"exists\":true").contains("\"available\":false");
+		assertThat(send("GET", "/api/auth/email-available?email=new-user@agrosense.test", null, null).body())
+				.contains("\"available\":false");
+		assertThat(login("new-user@agrosense.test", "a-long-password").statusCode()).isEqualTo(200);
+	}
+
+	@Test
+	void registrationRejectsTakenEmailsWith409AndInvalidFieldsWith400() throws Exception {
+		String originalHash = userRepository.findByEmail(EMAIL).orElseThrow().getPasswordHash();
+		HttpResponse<String> taken = send("POST", "/api/auth/register", null,
+				"{\"name\":\"Intruso\",\"lastName\":\"Uno\",\"email\":\"" + EMAIL + "\",\"password\":\"another-password\"}");
+		assertThat(taken.statusCode()).isEqualTo(409);
+		assertThat(taken.body()).contains("Ya existe una cuenta con ese correo.");
+		assertThat(userRepository.findByEmail(EMAIL).orElseThrow().getPasswordHash()).isEqualTo(originalHash);
+
+		// 19 characters with the space, one over the limit; a 7-character and a 33-character password.
+		HttpResponse<String> invalid = send("POST", "/api/auth/register", null,
+				"{\"name\":\"Maximiliano Andres\",\"lastName\":\"P\",\"email\":\"not-an-email\",\"password\":\"short77\"}");
+		assertThat(invalid.statusCode()).isEqualTo(400);
+		assertThat(invalid.body()).contains("\"fields\"").contains("\"lastName\"").contains("\"email\"")
+				.contains("La contraseña debe tener entre 8 y 32 caracteres.").doesNotContain("\"name\":");
+		assertThat(send("POST", "/api/auth/register", null,
+				"{\"name\":\"Maximiliano Andrés1\",\"lastName\":\"Pérez\",\"email\":\"limit@agrosense.test\","
+						+ "\"password\":\"" + "p".repeat(33) + "\"}").body())
+				.contains("El nombre debe tener entre 2 y 18 caracteres.")
+				.contains("La contraseña debe tener entre 8 y 32 caracteres.");
+		assertThat(send("POST", "/api/auth/register", null, "not json").statusCode()).isEqualTo(400);
+		assertThat(userRepository.existsByEmail("limit@agrosense.test")).isFalse();
+	}
+
+	@Test
+	void browsersOfAllowedOriginsMayCallTheSignUpEndpoints() throws Exception {
+		HttpResponse<String> preflight = client.send(HttpRequest.newBuilder(
+						URI.create("http://localhost:" + port + "/api/auth/register"))
+				.method("OPTIONS", HttpRequest.BodyPublishers.noBody())
+				.header("Origin", "http://localhost:5173")
+				.header("Access-Control-Request-Method", "POST")
+				.header("Access-Control-Request-Headers", "content-type")
+				.build(), HttpResponse.BodyHandlers.ofString());
+		assertThat(preflight.statusCode()).isEqualTo(200);
+		assertThat(preflight.headers().firstValue("Access-Control-Allow-Origin")).contains("http://localhost:5173");
+
+		HttpResponse<String> foreign = client.send(HttpRequest.newBuilder(
+						URI.create("http://localhost:" + port + "/api/auth/register"))
+				.method("OPTIONS", HttpRequest.BodyPublishers.noBody())
+				.header("Origin", "http://evil.example")
+				.header("Access-Control-Request-Method", "POST")
+				.build(), HttpResponse.BodyHandlers.ofString());
+		assertThat(foreign.statusCode()).isEqualTo(403);
 	}
 
 	@Test
@@ -570,6 +637,40 @@ class ApiIntegrationTests {
 		send("POST", "/api/readings", "Bearer " + token(), "{\"sensorCode\":\"AS-005\",\"value\":1.2}");
 
 		assertThat(shared.poll(1, TimeUnit.SECONDS)).isNull();
+	}
+
+	@Autowired
+	private jakarta.persistence.EntityManagerFactory entityManagerFactory;
+
+	/**
+	 * SQL statements per request, one of which loads the caller for the token. The numbers do not depend on
+	 * how many rows the sample data has: one that grows with them is an N+1 query.
+	 */
+	@Test
+	void listingsStayWithinAFixedNumberOfQueries() throws Exception {
+		org.hibernate.stat.Statistics statistics =
+				entityManagerFactory.unwrap(org.hibernate.SessionFactory.class).getStatistics();
+		statistics.setStatisticsEnabled(true);
+		String auth = "Bearer " + token();
+		Sensor sensor = sensorRepository.findBySensorCode("AS-001").orElseThrow();
+		Integer cropId = sensor.getCrop().getIdCrop();
+		Map<String, Integer> budgets = new java.util.LinkedHashMap<>();
+		budgets.put("/api/dashboard", 10);
+		budgets.put("/api/dashboard/" + cropId, 10);
+		budgets.put("/api/alerts", 2);
+		budgets.put("/api/crops/" + cropId + "/alerts", 3);
+		budgets.put("/api/fincas", 2);
+		budgets.put("/api/cultivos", 2);
+		budgets.put("/api/riego/cultivo/" + cropId, 3);
+		budgets.put("/api/sensors/" + sensor.getIdSensor() + "/readings?limit=500", 3);
+		budgets.put("/api/crops/" + cropId + "/sensors", 3);
+
+		for (Map.Entry<String, Integer> budget : budgets.entrySet()) {
+			statistics.clear();
+			assertThat(send("GET", budget.getKey(), auth, null).statusCode()).isEqualTo(200);
+			assertThat(statistics.getPrepareStatementCount()).as("statements for %s", budget.getKey())
+					.isLessThanOrEqualTo(budget.getValue());
+		}
 	}
 
 	// ---------- helpers ----------
