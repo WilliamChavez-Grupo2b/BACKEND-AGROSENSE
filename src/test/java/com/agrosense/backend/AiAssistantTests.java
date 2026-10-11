@@ -172,6 +172,31 @@ class AiAssistantTests {
 		now.set(now.get().plus(Duration.ofSeconds(61)));
 		assistant.chat(EMAIL, question("Tres"));
 		assertThat(calls.get()).isEqualTo(4);
+
+		// Users who stopped asking are forgotten, so the count does not grow with every account.
+		assistant.forgetIdleUsers();
+		assertThat(assistant.trackedUsers()).isEqualTo(1);
+		now.set(now.get().plus(Duration.ofSeconds(61)));
+		assistant.forgetIdleUsers();
+		assertThat(assistant.trackedUsers()).isZero();
+	}
+
+	@Test
+	void theConversationSentAlwaysStartsWithTheUserAndAlternates() {
+		AiRequestDto request = question("¿Y mañana?");
+		// What a browser may keep: an answer whose question was dropped, and questions left unanswered.
+		request.setHistory(List.of(turn("assistant", "Hola"), turn("user", "¿Riego hoy?"),
+				turn("user", "¿Sigues ahí?"), turn("assistant", "Sí, riega hoy."), turn("user", "Gracias")));
+
+		assistant(KEY, 10, Clock.systemUTC()).chat(EMAIL, request);
+
+		JsonNode contents = JSON.readTree(receivedBody.get()).path("contents");
+		assertThat(contents).hasSize(3);
+		assertThat(contents.path(0).path("role").asString()).isEqualTo("user");
+		assertThat(contents.path(0).path("parts").path(0).path("text").asString()).isEqualTo("¿Riego hoy?\n¿Sigues ahí?");
+		assertThat(contents.path(1).path("role").asString()).isEqualTo("model");
+		assertThat(contents.path(2).path("role").asString()).isEqualTo("user");
+		assertThat(contents.path(2).path("parts").path(0).path("text").asString()).isEqualTo("Gracias\n¿Y mañana?");
 	}
 
 	@Test
