@@ -67,6 +67,8 @@ public class AiAssistantService {
     private final boolean localAnswers;
     private final ObjectMapper objectMapper;
     private final Clock clock;
+    /** The provider that speaks the OpenAI API, when one is configured; it is then used instead of Gemini. */
+    private final OpenAiCompatibleClient openAi;
     private final WebClient gemini;
     private final String apiKey;
     private final String model;
@@ -82,9 +84,23 @@ public class AiAssistantService {
             @Value("${gemini.timeout-ms:20000}") int timeoutMs,
             @Value("${gemini.max-output-tokens:1024}") int maxOutputTokens,
             @Value("${ai.assistant.requests-per-minute:10}") int requestsPerMinute,
-            @Value("${ai.assistant.local-answers:true}") boolean localAnswers) {
+            @Value("${ai.assistant.local-answers:true}") boolean localAnswers,
+            @Value("${ai.chat.api-key:}") String chatApiKey,
+            @Value("${ai.chat.base-url:https://api.groq.com/openai/v1}") String chatBaseUrl,
+            @Value("${ai.chat.model:llama-3.3-70b-versatile}") String chatModel,
+            @Value("${ai.chat.transcription-model:whisper-large-v3-turbo}") String transcriptionModel) {
         this(farmContext, objectMapper, Clock.systemUTC(), apiKey, model, baseUrl, timeoutMs, maxOutputTokens,
-                requestsPerMinute, localAnswers);
+                requestsPerMinute, localAnswers,
+                chatApiKey.isBlank() ? null : new OpenAiCompatibleClient(chatApiKey, chatBaseUrl, chatModel,
+                        transcriptionModel, timeoutMs, maxOutputTokens));
+    }
+
+    /** Answered by Gemini, or by nobody when {@code apiKey} is empty. */
+    public AiAssistantService(FarmContextService farmContext, ObjectMapper objectMapper, Clock clock,
+            String apiKey, String model, String baseUrl, int timeoutMs, int maxOutputTokens,
+            int requestsPerMinute, boolean localAnswers) {
+        this(farmContext, objectMapper, clock, apiKey, model, baseUrl, timeoutMs, maxOutputTokens,
+                requestsPerMinute, localAnswers, null);
     }
 
     /**
@@ -92,10 +108,12 @@ public class AiAssistantService {
      *
      * @param localAnswers whether a written question is answered from the farm's figures when the model
      *                     is not configured or does not respond, instead of being refused
+     * @param openAi       a provider that speaks the OpenAI API, used instead of Gemini; {@code null} for none
      */
     public AiAssistantService(FarmContextService farmContext, ObjectMapper objectMapper, Clock clock,
             String apiKey, String model, String baseUrl, int timeoutMs, int maxOutputTokens,
-            int requestsPerMinute, boolean localAnswers) {
+            int requestsPerMinute, boolean localAnswers, OpenAiCompatibleClient openAi) {
+        this.openAi = openAi;
         this.farmContext = farmContext;
         this.localAnswers = localAnswers;
         this.objectMapper = objectMapper;
@@ -119,16 +137,27 @@ public class AiAssistantService {
      * figures instead, and the answer says so in its {@code source}.
      */
     public AiResponseDto chat(String email, AiRequestDto request) {
-        String question = request.getMessage().trim();
         countRequest(email);
+        return answer(email, request.getMessage().trim(),
+                request.getHistory() == null ? List.of() : request.getHistory());
+    }
+
+    /** Answers a question that has already been counted against the user's allowance. */
+    private AiResponseDto answer(String email, String question, List<AiRequestDto.Turn> history) {
         FarmSnapshot farm = farmOf(email);
-        if (apiKey.isEmpty()) {
+        if (openAi == null && apiKey.isEmpty()) {
             return withoutTheModel(question, farm, notConfigured());
         }
-        List<AiRequestDto.Turn> history = request.getHistory() == null ? List.of() : request.getHistory();
+        List<OpenAiCompatibleClient.Said> conversation = conversation(history, question);
         try {
-            return new AiResponseDto(textOf(generate(farm, conversation(history, question), false)), null,
-                    AiResponseDto.SOURCE_MODEL);
+            String reply = openAi != null
+                    ? openAi.chat(SYSTEM_PROMPT + "\n\n" + describe(farm), conversation)
+                    : textOf(generate(farm, conversation.stream()
+                            // Gemini calls the assistant's side "model".
+                            .map(turn -> content(OpenAiCompatibleClient.USER.equals(turn.role()) ? "user" : "model",
+                                    Map.of("text", turn.text())))
+                            .toList(), false));
+            return new AiResponseDto(reply, null, AiResponseDto.SOURCE_MODEL);
         } catch (AiException failure) {
             if (!MODEL_UNAVAILABLE.contains(failure.getStatus())) {
                 throw failure;
@@ -158,28 +187,33 @@ public class AiAssistantService {
         }
     }
 
+    private static String describe(FarmSnapshot farm) {
+        return farm == null ? "No hay datos de la finca disponibles en este momento." : farm.describe();
+    }
+
     /**
-     * The turns in the shape Gemini accepts: the first one is the user's and the two sides alternate. A
+     * The turns in the shape models accept: the first one is the user's and the two sides alternate. A
      * conversation kept by a browser does not always look like that (a question left without an answer,
      * or older turns dropped from the start), so answers with nothing before them are left out and turns
      * in a row from the same side become one.
      */
-    private static List<Map<String, Object>> conversation(List<AiRequestDto.Turn> history, String question) {
+    private static List<OpenAiCompatibleClient.Said> conversation(List<AiRequestDto.Turn> history, String question) {
         List<String> roles = new ArrayList<>();
         List<StringBuilder> texts = new ArrayList<>();
         for (AiRequestDto.Turn turn : history) {
-            add(roles, texts, AiRequestDto.Turn.ASSISTANT.equals(turn.getRole()) ? "model" : "user", turn.getText());
+            add(roles, texts, AiRequestDto.Turn.ASSISTANT.equals(turn.getRole())
+                    ? OpenAiCompatibleClient.ASSISTANT : OpenAiCompatibleClient.USER, turn.getText());
         }
-        add(roles, texts, "user", question);
-        List<Map<String, Object>> contents = new ArrayList<>();
+        add(roles, texts, OpenAiCompatibleClient.USER, question);
+        List<OpenAiCompatibleClient.Said> conversation = new ArrayList<>();
         for (int index = 0; index < roles.size(); index++) {
-            contents.add(content(roles.get(index), Map.of("text", texts.get(index).toString())));
+            conversation.add(new OpenAiCompatibleClient.Said(roles.get(index), texts.get(index).toString()));
         }
-        return contents;
+        return conversation;
     }
 
     private static void add(List<String> roles, List<StringBuilder> texts, String role, String text) {
-        if (roles.isEmpty() && "model".equals(role)) {
+        if (roles.isEmpty() && OpenAiCompatibleClient.ASSISTANT.equals(role)) {
             return;
         }
         if (!roles.isEmpty() && roles.get(roles.size() - 1).equals(role)) {
@@ -214,8 +248,18 @@ public class AiAssistantService {
         if (!AUDIO_TYPES.contains(mimeType)) {
             throw new AiException(HttpStatus.UNSUPPORTED_MEDIA_TYPE, "Ese formato de audio no es compatible.");
         }
-        // Only the model can listen: without it a recording cannot be turned into a question.
-        if (apiKey.isEmpty()) {
+        if (openAi != null && openAi.listens()) {
+            // This kind of provider listens and answers in two steps; once the recording is text, it is a
+            // written question like any other, also for the answers given without the model.
+            countRequest(email);
+            String heard = openAi.transcribe(audio, mimeType);
+            if (heard.length() > AiRequestDto.MAX_MESSAGE_LENGTH) {
+                heard = heard.substring(0, AiRequestDto.MAX_MESSAGE_LENGTH);
+            }
+            return answer(email, heard, List.of()).heard(heard);
+        }
+        // Only a model can listen: without one a recording cannot be turned into a question.
+        if (openAi != null || apiKey.isEmpty()) {
             throw localAnswers
                     ? new AiException(HttpStatus.SERVICE_UNAVAILABLE,
                             "Ahora no puedo escuchar mensajes de voz. Escribe tu pregunta y te respondo.")
@@ -256,7 +300,7 @@ public class AiAssistantService {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("system_instruction", Map.of("parts", List.of(
                 Map.of("text", SYSTEM_PROMPT),
-                Map.of("text", farm == null ? "No hay datos de la finca disponibles en este momento." : farm.describe()))));
+                Map.of("text", describe(farm)))));
         body.put("contents", contents);
         body.put("generationConfig", generationConfig);
         try {
