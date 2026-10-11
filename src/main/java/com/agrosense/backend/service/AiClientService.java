@@ -1,12 +1,15 @@
 package com.agrosense.backend.service;
 
 import com.agrosense.backend.pattern.structural.proxy.AiService;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
@@ -14,8 +17,11 @@ import java.util.Optional;
  * The real HTTP client of the AI service. It blocks and lets errors propagate; callers go through
  * AiServiceProxy, which decides whether to call at all and what to do when the call fails.
  */
+@Slf4j
 @Service
 public class AiClientService implements AiService {
+
+    private static final String SOIL_MOISTURE = "soil_moisture";
 
     private final WebClient aiWebClient;
     private final String irrigationPath;
@@ -28,13 +34,23 @@ public class AiClientService implements AiService {
 
     @Override
     public Optional<IrrigationPrediction> predictIrrigation(Integer cropId, Map<String, Object> sensorData) {
+        // The decision rests on the soil moisture: without a reading of it there is nothing to predict
+        // from, and a made-up value would come back as advice about a measurement nobody took.
+        if (sensorData.get(SOIL_MOISTURE) == null) {
+            log.info("Predicción de riego omitida: el cultivo {} no tiene lecturas de humedad del suelo", cropId);
+            return Optional.empty();
+        }
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("id_crop", cropId);
+        // Only what was measured is sent; the service works without the temperature and the pH.
+        for (String measurement : List.of(SOIL_MOISTURE, "air_temperature", "ph")) {
+            if (sensorData.get(measurement) != null) {
+                body.put(measurement, sensorData.get(measurement));
+            }
+        }
         Map<?, ?> result = aiWebClient.post()
                 .uri(irrigationPath)
-                .bodyValue(Map.of(
-                        "id_crop", cropId,
-                        "soil_moisture", sensorData.getOrDefault("soil_moisture", 60),
-                        "air_temperature", sensorData.getOrDefault("air_temperature", 25),
-                        "ph", sensorData.getOrDefault("ph", 6.5)))
+                .bodyValue(body)
                 .retrieve()
                 .bodyToMono(Map.class)
                 .block();
