@@ -44,6 +44,7 @@ esa rama se sube con un `git push` normal, sin forzar.
 
   | Ruta                                             | Uso                                             |
   |--------------------------------------------------|-------------------------------------------------|
+  | `GET /`                                          | Qué servicio es; lo que se ve al abrir la dirección. Pública |
   | `GET /api/health`                                | Estado del servicio. Pública                    |
   | `POST /api/auth/login`                           | Devuelve el token. Pública                      |
   | `GET` y `POST /api/fincas`, `/api/cultivos`      | Listar y crear fincas y cultivos                |
@@ -71,8 +72,9 @@ esa rama se sube con un `git push` normal, sin forzar.
 - **Tiempo real:** WebSocket STOMP en `/ws`, autenticado con el mismo token; las sesiones se cierran
   cuando el token vence o la cuenta se desactiva.
 - **IA:** `AiClientService` llama al servicio de predicción de riego (`IA/`, repositorio `IA-AGROSENSE`);
-  sin `AI_SERVICE_URL` queda desactivado. Solo envía lo que se midió y no pide predicción para un cultivo
-  sin lecturas de humedad del suelo.
+  sin `AI_SERVICE_URL` queda desactivado. Solo envía lo que se midió, junto con los límites de humedad y
+  pH del propio cultivo, y no pide predicción para un cultivo sin lecturas de humedad del suelo. Con
+  `AI_SERVICE_TOKEN` envía ese secreto en cada llamada, para un servicio que solo responde a su backend.
   El asistente conversacional (`ai/`, decisión 23) usa Google Gemini; sin `GEMINI_API_KEY` responde 503.
 - **Patrones de diseño** en `pattern/`: builder, factory, prototype y singleton (creacionales); adapter,
   decorator, facade y proxy (estructurales).
@@ -300,7 +302,7 @@ Del frontend (la del backend está en la sección 1):
 - `mvnw test` en `frontend/` (11 de octubre de 2026): 76 pruebas (JUnit 5, Mockito, MockMvc); 74
   correctas y 2 omitidas, que son las de PostgreSQL. Incluyen las del cliente del backend contra un
   servidor HTTP local.
-- `mvnw test` en `backend/agrosense` (11 de octubre de 2026): 59 pruebas; 56 correctas y 3 omitidas,
+- `mvnw test` en `backend/agrosense` (11 de octubre de 2026): 64 pruebas; 61 correctas y 3 omitidas,
   también las de PostgreSQL. La JVM de pruebas termina sola: cada prueba cierra las sesiones WebSocket
   que abre. Las del asistente usan un servidor local en el papel de Gemini.
 - Asistente de punta a punta en local (11 de octubre de 2026), backend y frontend sobre una base H2 nueva
@@ -312,13 +314,16 @@ Del frontend (la del backend está en la sección 1):
   mensaje, grabar y enviar un mensaje de voz, micrófono liberado también al cerrar la ventana mientras
   el navegador lo entrega, conversación conservada entre páginas, no mostrada a otra cuenta y borrada al cerrar sesión. Sin errores
   de consola ni bloqueos de CSP. La lectura en voz alta solo se comprobó hasta activar el botón.
-- Servicio de predicción (`IA/`, 11 de octubre de 2026): 20 pruebas con `python -m unittest`. De punta a
-  punta en local: el backend pide la predicción, el servicio responde y queda guardada con el modelo
-  `agrosense-riego-reglas-1.0`; un cultivo sin lectura de humedad no recibe ninguna. No se construyó su
-  imagen Docker (no hay Docker en este equipo) ni está desplegado.
-- Contrato de la API (`api/`, 11 de octubre de 2026): `check_contract.py` contra el backend local, 44
-  comprobaciones (cada ruta sin token, con token y el esquema de cada respuesta correcta); contra
-  producción, sin cuenta, las 24 de las rutas públicas y los 401.
+- Servicio de predicción (`IA/`, 11 de octubre de 2026): 40 pruebas con `python -m unittest`, que GitHub
+  repite en cada push. De punta a punta en local, con token entre los dos servicios: el backend pide la
+  predicción, el servicio responde y queda guardada con el modelo `agrosense-riego-reglas-1.0`; un
+  cultivo con límites propios (70–95 % de humedad) que marca 65 % recibe «riega ahora», y uno sin lectura
+  de humedad no recibe ninguna. No se construyó su imagen Docker (no hay Docker en este equipo), no se
+  probó `render.yaml` y el servicio no está desplegado.
+- Contrato de la API (`api/`, 11 de octubre de 2026): `validate_spec.py` y 12 pruebas de las
+  herramientas, que GitHub repite en cada push; `check_contract.py` con 45 comprobaciones (cada ruta sin
+  token, con token y el esquema de cada respuesta correcta) contra el backend local y contra producción
+  con la cuenta de ejemplo.
 - Producción (11 de octubre de 2026): `/api/health` responde `{"status":"UP"}` (80 s si el servicio
   estaba dormido, 0,4 s despierto), las rutas protegidas devuelven 401 sin token y CORS solo acepta el
   origen del frontend en Vercel.
@@ -386,8 +391,9 @@ Del frontend (la del backend está en la sección 1):
   pueda dejar de leer la base de datos directamente (ver decisión 21).
 - Ingesta de lecturas: el backend las recibe por REST y por MQTT, pero MQTT está apagado y no hay broker
   ni dispositivos que envíen datos.
-- Servicio de predicción de riego: existe (`IA-AGROSENSE`) pero no está desplegado; falta alojarlo y
-  definir `AI_SERVICE_URL` en Render. No pide autenticación, así que conviene una red privada.
+- Servicio de predicción de riego: existe (`IA-AGROSENSE`) pero no está desplegado. Falta alojarlo (su
+  `render.yaml` lo crea en Render con un `AI_SERVICE_TOKEN` generado) y definir `AI_SERVICE_URL` y
+  `AI_SERVICE_TOKEN` en el servicio del backend.
 - Asistente de IA: está publicado y desplegado (11 de octubre de 2026), pero responde 503 hasta que
   Render tenga `GEMINI_API_KEY`. Falta probarlo con Gemini real y con un micrófono de verdad.
 - Abrir el sitio al público (quitar Vercel Authentication) y, antes, cambiar la contraseña de la cuenta
