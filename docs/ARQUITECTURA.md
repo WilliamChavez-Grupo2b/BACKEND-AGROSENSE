@@ -205,7 +205,11 @@ esa rama se sube con un `git push` normal, sin forzar.
     - En lugar de Gemini puede responder cualquier proveedor que hable la API de OpenAI
       (`OpenAiCompatibleClient`): con `AI_CHAT_API_KEY` definida se usa ese, por defecto Groq
       (`AI_CHAT_BASE_URL`, `AI_CHAT_MODEL`, `AI_TRANSCRIPTION_MODEL`). Ahí la voz va en dos pasos: la
-      grabación se transcribe y el texto se responde como cualquier pregunta escrita.
+      grabación se transcribe y el texto se responde como cualquier pregunta escrita. Es lo que usa
+      producción desde el 11 de octubre de 2026: Groq, con `qwen/qwen3.8-27b` para responder y
+      `whisper-large-v3-turbo` para transcribir. De los modelos que Groq ofrecía ese día fue el más rápido
+      (0,7 s) y el que mejor siguió las instrucciones; `openai/gpt-oss-120b` respondía con tablas, que la
+      ventana no dibuja, y `openai/gpt-oss-20b` gastaba la respuesta en razonar y la dejaba cortada.
     - Cada pregunta lleva las instrucciones del asistente agronómico y los datos de la finca del usuario
       (`FarmContextService`): los totales, las alertas abiertas y, de cada cultivo, sus últimas lecturas de
       humedad, temperatura y pH junto al rango de ese cultivo; más los turnos anteriores.
@@ -335,7 +339,12 @@ Del frontend (la del backend está en la sección 1):
   modelo; una grabación se rechaza indicando que se escriba la pregunta.
 - Asistente con un proveedor compatible con OpenAI (11 de octubre de 2026): las mismas 25 comprobaciones
   en Edge, con un servidor local en el papel del proveedor: preguntas escritas y un mensaje de voz
-  grabado, transcrito y respondido. No se probó contra un proveedor real: no hay llave en este equipo.
+  grabado, transcrito y respondido.
+- Asistente en producción con Groq (11 de octubre de 2026), con la cuenta de ejemplo: una pregunta
+  escrita respondida en 1,4 s con las cifras de cada cultivo; una segunda pregunta que dependía de la
+  primera; un tema ajeno al agro, rechazado; y un mensaje de voz en español, transcrito y respondido,
+  directamente contra el backend y a través del frontend desplegado. El audio fue voz sintetizada, no un
+  micrófono.
 - Contrato de la API (`api/`, 11 de octubre de 2026): `validate_spec.py` y 12 pruebas de las
   herramientas, que GitHub repite en cada push; `check_contract.py` con 45 comprobaciones (cada ruta sin
   token, con token y el esquema de cada respuesta correcta) contra el backend local y contra producción
@@ -386,7 +395,7 @@ Del frontend (la del backend está en la sección 1):
   cambio de su rama `main` (`agrosense/Dockerfile` es una copia temporal para un servicio cuya ruta aún
   apunte allí). Variables: `DATABASE_URL` en formato JDBC (`jdbc:postgresql://…`), `DATABASE_USERNAME`,
   `DATABASE_PASSWORD`, `JWT_SECRET` (al menos 64 bytes), `CORS_ALLOWED_ORIGINS` con la dirección del
-  frontend, `LOGIN_MAX_ATTEMPTS_PER_ADDRESS=0` y, para el asistente, `GEMINI_API_KEY`. La imagen no
+  frontend, `LOGIN_MAX_ATTEMPTS_PER_ADDRESS=0` y, para el asistente, `AI_CHAT_API_KEY` y `AI_CHAT_MODEL`. La imagen no
   incluye `datasource.properties`, así que la conexión sale solo de esas variables. El plan gratuito
   apaga el servicio tras unos 15 minutos sin uso y tarda entre 1 y 3 minutos en volver a arrancar;
   mientras tanto el frontend trabaja contra la base de datos.
@@ -419,9 +428,10 @@ Del frontend (la del backend está en la sección 1):
   responde, esa predicción no se guarda y hay que pedirla de nuevo.
 - El servicio del backend en Render no tiene ruta de comprobación de estado; conviene ponerle
   `/api/health`.
-- Asistente de IA: está publicado y desplegado (11 de octubre de 2026). Sin `AI_CHAT_API_KEY` ni
-  `GEMINI_API_KEY` en Render responde solo con los datos de la finca. Falta definir una de las dos y
-  probarlo con un modelo real y con un micrófono de verdad.
+- Asistente de IA: falta probarlo con un micrófono de verdad en un navegador, y fusionar y desplegar la
+  rama `feat/assistant-local-answers` del frontend (la nota bajo las respuestas dadas sin el modelo).
+- La alerta de humedad baja del café en los datos de ejemplo quedó desactualizada: su lectura actual
+  está dentro del rango, y el asistente lo señala cada vez que se le pregunta.
 - Abrir el sitio al público (quitar Vercel Authentication) y, antes, cambiar la contraseña de la cuenta
   de ejemplo, que está escrita en `frontend/README.md`.
 - Decidir un único despliegue del backend y mantenerlo despierto, o pasarlo a un plan que no se apague.
