@@ -202,6 +202,8 @@ esa rama se sube con un `git push` normal, sin forzar.
     - Límites: 10 preguntas por minuto y usuario (`AI_REQUESTS_PER_MINUTE`), 1000 caracteres por pregunta,
       12 turnos de contexto y 3 MB de audio. No hay respaldo en la base de datos: sin backend o sin llave
       el asistente lo dice.
+    - La conversación se guarda en `sessionStorage` a nombre de la cuenta: dura lo que la pestaña y quien
+      inicie sesión después en esa pestaña empieza con una vacía.
 
 ## 3. Estructura del frontend
 
@@ -291,13 +293,18 @@ Del frontend (la del backend está en la sección 1):
 - `mvnw test` en `frontend/` (11 de octubre de 2026): 76 pruebas (JUnit 5, Mockito, MockMvc); 74
   correctas y 2 omitidas, que son las de PostgreSQL. Incluyen las del cliente del backend contra un
   servidor HTTP local.
-- `mvnw test` en `backend/agrosense` (11 de octubre de 2026): 55 pruebas; 52 correctas y 3 omitidas,
+- `mvnw test` en `backend/agrosense` (11 de octubre de 2026): 56 pruebas; 53 correctas y 3 omitidas,
   también las de PostgreSQL. La JVM de pruebas termina sola: cada prueba cierra las sesiones WebSocket
   que abre. Las del asistente usan un servidor local en el papel de Gemini.
 - Asistente de punta a punta en local (11 de octubre de 2026), backend y frontend sobre una base H2 nueva
   y un servidor local en el papel de Gemini: inicio de sesión, pregunta escrita y mensaje de voz por el
   backend y a través del frontend (200), y rechazos sin token (401), sin CSRF (403) y sin pregunta (400).
-  No se probó contra Gemini real (no hay llave en este equipo) ni el micrófono en un navegador.
+  No se probó contra Gemini real: no hay llave en este equipo.
+- Ventana del asistente en Edge sin interfaz con micrófono simulado (11 de octubre de 2026), 22
+  comprobaciones: abrir y cerrar, estado de carga, respuesta en Markdown, desplazamiento al último
+  mensaje, grabar y enviar un mensaje de voz, micrófono liberado también al cerrar la ventana mientras
+  el navegador lo entrega, conversación conservada entre páginas y no mostrada a otra cuenta. Sin errores
+  de consola ni bloqueos de CSP. La lectura en voz alta solo se comprobó hasta activar el botón.
 - Producción (11 de octubre de 2026): `/api/health` responde `{"status":"UP"}` (80 s si el servicio
   estaba dormido, 0,4 s despierto), las rutas protegidas devuelven 401 sin token y CORS solo acepta el
   origen del frontend en Vercel.
@@ -360,7 +367,7 @@ Del frontend (la del backend está en la sección 1):
   ni dispositivos que envíen datos.
 - Servicio de IA para las predicciones: el backend lo llama, pero `AI_SERVICE_URL` está vacía.
 - Asistente de IA: publicar el módulo en `BACKEND-AGROSENSE` y `FRONTEND-AGROSENSE`, definir
-  `GEMINI_API_KEY` en Render y probarlo con Gemini real y con el micrófono en un navegador.
+  `GEMINI_API_KEY` en Render y probarlo con Gemini real y con un micrófono de verdad.
 - Abrir el sitio al público (quitar Vercel Authentication) y, antes, cambiar la contraseña de la cuenta
   de ejemplo, que está escrita en `frontend/README.md`.
 - Decidir un único despliegue del backend y mantenerlo despierto, o pasarlo a un plan que no se apague.
