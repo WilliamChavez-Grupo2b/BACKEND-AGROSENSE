@@ -1,5 +1,7 @@
 package com.agrosense.backend;
 
+import com.agrosense.backend.config.WebClientConfig;
+import com.agrosense.backend.pattern.creational.singleton.AiConfigManager;
 import com.agrosense.backend.pattern.structural.proxy.AiService.IrrigationPrediction;
 import com.agrosense.backend.service.AiClientService;
 import com.sun.net.httpserver.HttpServer;
@@ -26,6 +28,7 @@ class AiClientServiceTests {
 	private final AtomicInteger calls = new AtomicInteger();
 	private final AtomicReference<String> receivedPath = new AtomicReference<>();
 	private final AtomicReference<String> receivedBody = new AtomicReference<>();
+	private final AtomicReference<String> receivedAuthorization = new AtomicReference<>();
 	private final AtomicReference<String> answer = new AtomicReference<>(
 			"{\"recommendation\":\"Riega ahora.\",\"confidence\":0.77671,\"model_used\":\"agrosense-riego-reglas-1.0\"}");
 	private AiClientService client;
@@ -36,6 +39,7 @@ class AiClientServiceTests {
 		service.createContext("/", exchange -> {
 			calls.incrementAndGet();
 			receivedPath.set(exchange.getRequestURI().toString());
+			receivedAuthorization.set(exchange.getRequestHeaders().getFirst("Authorization"));
 			receivedBody.set(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
 			byte[] body = answer.get().getBytes(StandardCharsets.UTF_8);
 			exchange.getResponseHeaders().add("Content-Type", "application/json");
@@ -61,11 +65,27 @@ class AiClientServiceTests {
 
 		assertThat(receivedPath.get()).isEqualTo("/predict/irrigation");
 		assertThat(receivedBody.get()).contains("\"id_crop\":7", "\"soil_moisture\":31.5", "\"ph\":6.4")
-				.doesNotContain("air_temperature");
+				.doesNotContain("air_temperature", "humidity_min");
+		assertThat(receivedAuthorization.get()).isNull();
 		assertThat(prediction).isPresent();
 		assertThat(prediction.get().recommendation()).isEqualTo("Riega ahora.");
 		assertThat(prediction.get().confidence()).isEqualByComparingTo("0.7767");
 		assertThat(prediction.get().modelUsed()).isEqualTo("agrosense-riego-reglas-1.0");
+	}
+
+	@Test
+	void theCropsLimitsTravelWithTheReadingsAndTheTokenWithEveryCall() {
+		// The client as the application builds it, pointed at the local server.
+		WebClient withToken = new WebClientConfig().aiWebClient(AiConfigManager.getInstance(), " secreto-del-servicio ")
+				.mutate().baseUrl("http://127.0.0.1:" + service.getAddress().getPort()).build();
+
+		new AiClientService(withToken, "/predict/irrigation").predictIrrigation(7, Map.of(
+				"soil_moisture", new BigDecimal("65"), "humidity_min", new BigDecimal("70.0"),
+				"humidity_max", new BigDecimal("95.0"), "ph_min", new BigDecimal("5.5"), "ph_max", new BigDecimal("7.0")));
+
+		assertThat(receivedBody.get()).contains("\"humidity_min\":70.0", "\"humidity_max\":95.0",
+				"\"ph_min\":5.5", "\"ph_max\":7.0");
+		assertThat(receivedAuthorization.get()).isEqualTo("Bearer secreto-del-servicio");
 	}
 
 	@Test
