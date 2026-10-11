@@ -11,6 +11,8 @@ cada componente.
 | `backend/`  | Proyecto Spring Boot de William Chávez (`BACKEND-AGROSENSE`), auditado y corregido.         |
 | `frontend/` | Aplicación web Spring Boot + Thymeleaf (este documento la describe en detalle).             |
 | `database/` | Todo lo de base de datos: `schema.sql`, `seed_demo.sql`, `reset.sql`, `datasource.properties`, `.env.example` y `README.md`. |
+| `api/`      | Contrato de la API del backend: `openapi.json`, peticiones de ejemplo y `tools/check_contract.py`, que comprueba un backend en marcha contra el contrato. |
+| `IA/`       | Servicio de predicción de riego (Python, sin dependencias) que el backend llama en `AI_SERVICE_URL`. |
 
 ### Repositorios
 
@@ -22,6 +24,8 @@ tiene su propio historial y no comparte commits con el workspace:
 | `backend/agrosense/`   | `WilliamChavez-Grupo2b/BACKEND-AGROSENSE` | `src/`, `pom.xml`, `Dockerfile` (y `backend/README.md` como `README.md`) |
 | `frontend/`           | `ssantivr/FRONTEND-AGROSENSE`            | `src/`, `pom.xml`, `package.json`         |
 | `database/`           | `ssantivr/BASE-DE-DATOS-AGROSENSE`       | los seis archivos de la carpeta           |
+| `api/`                | `ssantivr/API-AGROSENSE`                 | los archivos de la carpeta                |
+| `IA/`                 | `ssantivr/IA-AGROSENSE`                  | los archivos de la carpeta                |
 | `docs/`               | ninguno; solo existe en el workspace     |                                           |
 
 Una rama del workspace no se puede subir tal cual a ninguno de ellos. Para publicar, los commits de
@@ -66,7 +70,9 @@ esa rama se sube con un `git push` normal, sin forzar.
   cultivo, crea una alerta bloqueando la fila del cultivo para no duplicarla.
 - **Tiempo real:** WebSocket STOMP en `/ws`, autenticado con el mismo token; las sesiones se cierran
   cuando el token vence o la cuenta se desactiva.
-- **IA:** `AiClientService` llama al servicio de predicción; sin `AI_SERVICE_URL` queda desactivado.
+- **IA:** `AiClientService` llama al servicio de predicción de riego (`IA/`, repositorio `IA-AGROSENSE`);
+  sin `AI_SERVICE_URL` queda desactivado. Solo envía lo que se midió y no pide predicción para un cultivo
+  sin lecturas de humedad del suelo.
   El asistente conversacional (`ai/`, decisión 23) usa Google Gemini; sin `GEMINI_API_KEY` responde 503.
 - **Patrones de diseño** en `pattern/`: builder, factory, prototype y singleton (creacionales); adapter,
   decorator, facade y proxy (estructurales).
@@ -293,7 +299,7 @@ Del frontend (la del backend está en la sección 1):
 - `mvnw test` en `frontend/` (11 de octubre de 2026): 76 pruebas (JUnit 5, Mockito, MockMvc); 74
   correctas y 2 omitidas, que son las de PostgreSQL. Incluyen las del cliente del backend contra un
   servidor HTTP local.
-- `mvnw test` en `backend/agrosense` (11 de octubre de 2026): 56 pruebas; 53 correctas y 3 omitidas,
+- `mvnw test` en `backend/agrosense` (11 de octubre de 2026): 59 pruebas; 56 correctas y 3 omitidas,
   también las de PostgreSQL. La JVM de pruebas termina sola: cada prueba cierra las sesiones WebSocket
   que abre. Las del asistente usan un servidor local en el papel de Gemini.
 - Asistente de punta a punta en local (11 de octubre de 2026), backend y frontend sobre una base H2 nueva
@@ -305,6 +311,13 @@ Del frontend (la del backend está en la sección 1):
   mensaje, grabar y enviar un mensaje de voz, micrófono liberado también al cerrar la ventana mientras
   el navegador lo entrega, conversación conservada entre páginas y no mostrada a otra cuenta. Sin errores
   de consola ni bloqueos de CSP. La lectura en voz alta solo se comprobó hasta activar el botón.
+- Servicio de predicción (`IA/`, 11 de octubre de 2026): 20 pruebas con `python -m unittest`. De punta a
+  punta en local: el backend pide la predicción, el servicio responde y queda guardada con el modelo
+  `agrosense-riego-reglas-1.0`; un cultivo sin lectura de humedad no recibe ninguna. No se construyó su
+  imagen Docker (no hay Docker en este equipo) ni está desplegado.
+- Contrato de la API (`api/`, 11 de octubre de 2026): `check_contract.py` contra el backend local, 44
+  comprobaciones (cada ruta sin token, con token y el esquema de cada respuesta correcta); contra
+  producción, sin cuenta, las 24 de las rutas públicas y los 401.
 - Producción (11 de octubre de 2026): `/api/health` responde `{"status":"UP"}` (80 s si el servicio
   estaba dormido, 0,4 s despierto), las rutas protegidas devuelven 401 sin token y CORS solo acepta el
   origen del frontend en Vercel.
@@ -365,7 +378,8 @@ Del frontend (la del backend está en la sección 1):
   pueda dejar de leer la base de datos directamente (ver decisión 21).
 - Ingesta de lecturas: el backend las recibe por REST y por MQTT, pero MQTT está apagado y no hay broker
   ni dispositivos que envíen datos.
-- Servicio de IA para las predicciones: el backend lo llama, pero `AI_SERVICE_URL` está vacía.
+- Servicio de predicción de riego: existe (`IA-AGROSENSE`) pero no está desplegado; falta alojarlo y
+  definir `AI_SERVICE_URL` en Render. No pide autenticación, así que conviene una red privada.
 - Asistente de IA: publicar el módulo en `BACKEND-AGROSENSE` y `FRONTEND-AGROSENSE`, definir
   `GEMINI_API_KEY` en Render y probarlo con Gemini real y con un micrófono de verdad.
 - Abrir el sitio al público (quitar Vercel Authentication) y, antes, cambiar la contraseña de la cuenta

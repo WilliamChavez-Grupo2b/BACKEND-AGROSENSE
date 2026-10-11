@@ -11,3 +11,5 @@
 .env*.local
 /agrosense-export
 /temp_agrosense
+/api
+/IA
