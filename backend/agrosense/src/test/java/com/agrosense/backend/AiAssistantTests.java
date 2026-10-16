@@ -94,7 +94,10 @@ class AiAssistantTests {
 		assertThat(receivedPath.get()).isEqualTo("/v1beta/models/test-model:generateContent").doesNotContain(KEY);
 		JsonNode sent = JSON.readTree(receivedBody.get());
 		assertThat(sent.path("system_instruction").path("parts").path(0).path("text").asString())
-				.contains("AgroSense IA");
+				// The prompt kept in ai/prompts/system-es.txt: open to farming and to the app, redirecting the rest.
+				.startsWith("Eres el asistente de AgroSense")
+				.contains("Preguntas generales de agricultura", "Preguntas sobre cómo funciona AgroSense",
+						"Nunca inventes lecturas", "redirige con amabilidad", "nunca tablas");
 		assertThat(sent.path("system_instruction").path("parts").path(1).path("text").asString())
 				.contains("2 cultivos", "5 sensores", "1 alertas",
 						"Cultivo Café: humedad del suelo 31.5 % (rango 40–80 %), temperatura 24 °C (rango 15–35 °C).",

@@ -108,7 +108,7 @@ class OpenAiCompatibleTests {
 		JsonNode messages = sent.path("messages");
 		assertThat(messages).hasSize(4);
 		assertThat(messages.path(0).path("role").asString()).isEqualTo("system");
-		assertThat(messages.path(0).path("content").asString()).startsWith("Eres AgroSense IA")
+		assertThat(messages.path(0).path("content").asString()).startsWith("Eres el asistente de AgroSense")
 				.contains("Cultivo Café: humedad del suelo 31.5 % (rango 40–80 %).", "Alerta en Café: Humedad baja.");
 		// The answer with nothing before it is dropped; the provider calls the other side "assistant".
 		assertThat(messages.path(1).path("role").asString()).isEqualTo("user");

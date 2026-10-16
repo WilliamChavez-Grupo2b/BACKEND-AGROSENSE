@@ -7,6 +7,7 @@ import io.netty.channel.ChannelOption;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.io.ClassPathResource;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.client.reactive.ReactorClientHttpConnector;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -18,6 +19,8 @@ import tools.jackson.core.JacksonException;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -41,13 +44,10 @@ import java.util.concurrent.ConcurrentHashMap;
 @Service
 public class AiAssistantService {
 
-    static final String SYSTEM_PROMPT = "Eres AgroSense IA, asistente agronómico. Respondes en español, "
-            + "en menos de 120 palabras y con pasos prácticos, sobre cultivos, riego, suelo, sensores IoT y "
-            + "alertas. Recibes los datos de la finca: de cada cultivo, sus últimas lecturas y el rango que "
-            + "le corresponde. Compara cada lectura con el rango de ese cultivo, nombra el cultivo y cita la "
-            + "cifra; si falta un dato, dilo y no lo inventes. Rechaza con amabilidad los temas ajenos al "
-            + "agro. Puedes usar negritas y listas Markdown cortas, pero no tablas: la ventana donde se "
-            + "lee tu respuesta no las muestra.";
+    /** Kept as a text file so it can be reworded without touching the code. */
+    static final String SYSTEM_PROMPT_RESOURCE = "ai/prompts/system-es.txt";
+
+    static final String SYSTEM_PROMPT = readResource(SYSTEM_PROMPT_RESOURCE);
 
     /** Asked of a voice message: what was said, so the conversation can show it, and the answer to it. */
     static final String VOICE_INSTRUCTION = "Transcribe el audio en español y responde a lo que pregunta.";
@@ -405,5 +405,14 @@ public class AiAssistantService {
     /** {@code audio/webm;codecs=opus} is {@code audio/webm}. */
     private static String baseTypeOf(String contentType) {
         return contentType == null ? "" : contentType.split(";", 2)[0].trim().toLowerCase(Locale.ROOT);
+    }
+
+    /** A text file packaged with the application; a missing one stops it from starting rather than answering blind. */
+    static String readResource(String path) {
+        try {
+            return new ClassPathResource(path).getContentAsString(StandardCharsets.UTF_8).strip();
+        } catch (IOException exception) {
+            throw new IllegalStateException("No se encontró " + path, exception);
+        }
     }
 }
