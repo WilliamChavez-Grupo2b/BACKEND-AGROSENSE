@@ -12,42 +12,66 @@ Los orígenes del navegador permitidos se indican en `CORS_ALLOWED_ORIGINS`, sep
 
 ## Asistente de IA
 
-Código en `src/main/java/com/agrosense/backend/ai` (`controller`, `service`, `dto`). Responde con Google
-Gemini a partir de las cifras de la finca de quien pregunta. Las dos rutas exigen el token.
+Código en `src/main/java/com/agrosense/backend/ai` (`controller`, `service`, `dto`). Responde preguntas
+abiertas sobre la finca de quien pregunta, sobre agricultura en general y sobre cómo funciona AgroSense, y
+redirige con amabilidad las que no tienen relación con nada de eso. Las dos rutas exigen el token.
 
 | Método y ruta | Respuesta |
 |---|---|
-| `POST /api/ai/chat` `{message, history: [{role: "user" o "assistant", text}]}` | 200 `{reply, source}` · 400 pregunta vacía o conversación no válida · 429 demasiadas consultas |
-| `POST /api/ai/voice` formulario con `audio` (WebM, Ogg, MP4, WAV, MP3; hasta 3 MB) o `transcript` | 200 `{reply, transcript, source}` · 400 sin audio · 413 audio demasiado largo · 415 formato no admitido · 503 grabación sin texto y sin modelo que la escuche |
+| `POST /api/ai/chat` `{message, history: [{role: "user" o "assistant", text}]}` | 200 `{reply, source}` · 400 pregunta vacía o conversación no válida · 429 demasiadas consultas del usuario · 503 modelo no disponible con `AI_LOCAL_ANSWERS=false` |
+| `POST /api/ai/voice` formulario con `audio` (WebM, Ogg, MP4, WAV, MP3; hasta 3 MB) o `transcript` | 200 `{reply, transcript, source}` · 400 sin audio · 413 audio demasiado largo · 415 formato no admitido · 503 grabación sin un modelo disponible que la escuche |
 
-Cada pregunta viaja con las últimas lecturas de cada cultivo del usuario y los límites de ese cultivo.
-`source` dice quién respondió: `model` es el modelo de lenguaje; `local` es el propio backend, que responde con esos
-mismos datos (riego, alertas, temperatura, pH y estado de cada cultivo) cuando el modelo no está
-configurado, falla o se queda sin cuota. Así el asistente sigue siendo útil sin llave.
+`source` dice quién respondió: `model` es el modelo de lenguaje; `local` es el propio backend, que responde
+con los datos de la finca (riego, alertas, temperatura, pH y estado de cada cultivo) cuando el modelo no está
+configurado, falla o se queda sin cuota. Así el asistente sigue siendo útil sin llave. El 429 se reserva
+para el límite de preguntas por minuto del usuario; un proveedor sin cuota nunca se traduce en 429.
+
+### Qué recibe el modelo
+
+- **Instrucciones**: `src/main/resources/ai/prompts/system-es.txt`. Se editan ahí, sin tocar el código; incluyen
+  lo que el asistente puede decir sobre la aplicación (menú, registro de sensores, alertas y sus colores, riego).
+- **Datos de la finca**, solo del usuario autenticado y en texto compacto: fecha y hora actual; totales; por
+  cultivo (hasta 8), variedad, etapa, fecha de siembra, finca y ubicación, últimas lecturas de humedad,
+  temperatura y pH con el rango del cultivo; hasta 5 alertas abiertas y las 3 últimas atendidas, con tipo,
+  severidad, valor y fecha; y los 5 últimos riegos. Lo que no está registrado se omite; el texto se corta en
+  una línea completa a partir de 4000 caracteres.
+- **Conversación**: los últimos 8 mensajes del historial (la petición puede traer hasta 12) y la pregunta.
 
 ### Qué modelo responde
 
-El asistente funciona con cualquiera de estos dos tipos de proveedor; ninguna llave se escribe en el código.
+Responde el primer proveedor que tenga llave, en este orden:
+
+1. `AI_CHAT_API_KEY`: un proveedor que hable la API de OpenAI (Groq, OpenRouter, Mistral, OpenAI…).
+2. `ANTHROPIC_API_KEY`: Claude, de Anthropic.
+3. `GEMINI_API_KEY`: Google Gemini.
+4. Ninguna llave: respuestas `local` con los datos de la finca (o 503 con `AI_LOCAL_ANSWERS=false`).
+
+Si el proveedor elegido falla, se agota su cuota o tarda demasiado, la pregunta se responde en modo local; no
+se prueba el siguiente proveedor de la lista. Ninguna llave se escribe en el código ni en archivos del repositorio.
 
 | Variable | Descripción |
 |---|---|
-| `AI_CHAT_API_KEY` | Llave de un proveedor que hable la API de OpenAI (Groq, OpenRouter, Mistral, OpenAI…). Si está definida, responde ese proveedor y no Gemini |
+| `AI_CHAT_API_KEY` | Llave de un proveedor compatible con la API de OpenAI |
 | `AI_CHAT_BASE_URL` | Dirección de ese proveedor (por defecto la de Groq, `https://api.groq.com/openai/v1`) |
-| `AI_CHAT_MODEL` | Modelo que responde las preguntas (por defecto `qwen/qwen3.8-27b`, elegido el 11 de octubre de 2026 entre los que Groq ofrecía: el más rápido y el que mejor seguía las instrucciones) |
+| `AI_CHAT_MODEL` | Modelo que responde (por defecto `qwen/qwen3.8-27b`, elegido el 11 de octubre de 2026 entre los que Groq ofrecía). Admite varios separados por comas: si uno se queda sin cuota o deja de existir, responde el siguiente |
 | `AI_TRANSCRIPTION_MODEL` | Modelo que convierte en texto los mensajes de voz (por defecto `whisper-large-v3-turbo`). Vacío si el proveedor no ofrece transcripción: la ventana pide entonces escribir la pregunta |
-
-Con este tipo de proveedor un mensaje de voz se resuelve en dos pasos (transcribir y responder); con
-Gemini, en uno. Los nombres de modelo cambian con el tiempo: la lista vigente de un proveedor está en su
-ruta `/models`. Un modelo que «razona» antes de responder gasta en eso el tamaño máximo de la respuesta
-y puede dejarla cortada; con esos conviene subir `GEMINI_MAX_OUTPUT_TOKENS`.
-
-| Variable | Descripción |
-|---|---|
-| `GEMINI_API_KEY` | Llave de la API de Gemini, para cuando no hay `AI_CHAT_API_KEY`. Sin ninguna de las dos el asistente responde solo con los datos de la finca |
+| `ANTHROPIC_API_KEY` | Llave de la API de Anthropic, para cuando no hay `AI_CHAT_API_KEY` |
+| `ANTHROPIC_MODEL` | Modelo de Claude (por defecto `claude-haiku-5-5`; `claude-sonnet-5-5` responde mejor, a mayor precio) |
+| `ANTHROPIC_EFFORT` | Cuánto piensa el modelo antes de responder: `low` (por defecto), `medium` o `high`. Vacío para un modelo que no admite este ajuste |
+| `GEMINI_API_KEY` | Llave de la API de Gemini, para cuando no hay ninguna de las anteriores |
 | `GEMINI_MODEL` | Modelo (por defecto `gemini-flash-latest`, el alias del Flash vigente) |
-| `GEMINI_TIMEOUT_MS`, `GEMINI_MAX_OUTPUT_TOKENS` | Tiempo de espera (20000) y tamaño máximo de la respuesta (1024), con cualquiera de los dos proveedores |
+| `GEMINI_TIMEOUT_MS`, `GEMINI_MAX_OUTPUT_TOKENS` | Tiempo de espera (20000) y tamaño máximo de la respuesta (2048), con cualquiera de los proveedores |
 | `AI_REQUESTS_PER_MINUTE` | Preguntas por minuto y usuario (10); `0` quita el límite |
-| `AI_LOCAL_ANSWERS` | `false` para rechazar las preguntas con 503 cuando el modelo no está disponible, en vez de responder con los datos de la finca (por defecto `true`) |
+| `AI_LOCAL_ANSWERS` | `false` para responder 503 cuando el modelo no está configurado o no está disponible, en vez de responder con los datos de la finca (por defecto `true`) |
+
+Mensajes de voz: el proveedor compatible con OpenAI los resuelve en dos pasos (transcribir y responder) y
+Gemini en uno. Claude no transcribe audio: si el navegador ya convirtió la voz en texto, responde a ese texto;
+si llega solo la grabación, se pide escribir la pregunta (503). Los nombres de modelo cambian con el tiempo:
+la lista vigente de un proveedor compatible con OpenAI está en su ruta `/models`. Un modelo que «razona» antes
+de responder gasta en eso parte del tamaño máximo de la respuesta y puede dejarla cortada; con esos conviene
+subir `GEMINI_MAX_OUTPUT_TOKENS`.
+
+Las 15 preguntas de prueba del asistente y sus resultados están en [`docs/PRUEBAS-IA.md`](docs/PRUEBAS-IA.md).
 
 ## Producción
 
