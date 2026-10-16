@@ -17,6 +17,7 @@ import tools.jackson.databind.JsonNode;
 
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -43,13 +44,21 @@ public class OpenAiCompatibleClient {
             "audio/mp4", "mp4", "audio/mpeg", "mp3", "audio/mp3", "mp3", "audio/flac", "flac", "audio/aac", "aac");
 
     private final WebClient client;
-    private final String model;
+    /** Tried in this order: when one is out of allowance or no longer exists, the next one answers. */
+    private final List<String> models;
     private final String transcriptionModel;
     private final int maxOutputTokens;
 
-    public OpenAiCompatibleClient(String apiKey, String baseUrl, String model, String transcriptionModel,
+    /**
+     * @param models one model name, or several separated by commas. Providers limit each model on its
+     *               own and retire names over time, so a second one keeps the assistant answering.
+     */
+    public OpenAiCompatibleClient(String apiKey, String baseUrl, String models, String transcriptionModel,
             int timeoutMs, int maxOutputTokens) {
-        this.model = model.trim();
+        this.models = Arrays.stream(models.split(",")).map(String::trim).filter(name -> !name.isEmpty()).toList();
+        if (this.models.isEmpty()) {
+            throw new IllegalStateException("AI_CHAT_MODEL must name at least one model");
+        }
         this.transcriptionModel = transcriptionModel.trim();
         this.maxOutputTokens = maxOutputTokens;
         HttpClient httpClient = HttpClient.create()
@@ -75,6 +84,24 @@ public class OpenAiCompatibleClient {
         for (Said turn : conversation) {
             messages.add(Map.of("role", turn.role(), "content", turn.text()));
         }
+        AiException lastFailure = null;
+        for (String model : models) {
+            try {
+                return complete(model, messages);
+            } catch (AiException failure) {
+                // Out of allowance, gone, or broken for this model: another model may still answer. A
+                // refusal is about the question, and a provider that does not respond will not respond
+                // for the next model either; trying again would only make the user wait twice.
+                if (failure.getStatus() != HttpStatus.TOO_MANY_REQUESTS && failure.getStatus() != HttpStatus.BAD_GATEWAY) {
+                    throw failure;
+                }
+                lastFailure = failure;
+            }
+        }
+        throw lastFailure;
+    }
+
+    private String complete(String model, List<Map<String, String>> messages) {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("model", model);
         body.put("messages", messages);

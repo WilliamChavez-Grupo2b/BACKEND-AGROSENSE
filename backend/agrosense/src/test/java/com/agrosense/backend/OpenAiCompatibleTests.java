@@ -50,6 +50,9 @@ class OpenAiCompatibleTests {
 	private final List<String> bodies = new CopyOnWriteArrayList<>();
 	private final List<String> authorizations = new CopyOnWriteArrayList<>();
 	private final List<String> contentTypes = new CopyOnWriteArrayList<>();
+	/** Models the provider answers with {@code modelStatus} instead of an answer. */
+	private final List<String> unavailableModels = new CopyOnWriteArrayList<>();
+	private final AtomicInteger modelStatus = new AtomicInteger(429);
 	private final FarmContextService farm = mock(FarmContextService.class);
 
 	@BeforeEach
@@ -65,8 +68,11 @@ class OpenAiCompatibleTests {
 					path.endsWith("/audio/transcriptions") ? StandardCharsets.ISO_8859_1 : StandardCharsets.UTF_8));
 			byte[] body = (path.endsWith("/audio/transcriptions") ? heard.get() : chatAnswer.get())
 					.getBytes(StandardCharsets.UTF_8);
+			String received = bodies.get(bodies.size() - 1);
+			boolean unavailable = unavailableModels.stream()
+					.anyMatch(model -> received.contains("\"model\":\"" + model + "\""));
 			exchange.getResponseHeaders().add("Content-Type", "application/json");
-			exchange.sendResponseHeaders(status.get(), body.length);
+			exchange.sendResponseHeaders(unavailable ? modelStatus.get() : status.get(), body.length);
 			exchange.getResponseBody().write(body);
 			exchange.close();
 		});
@@ -170,6 +176,39 @@ class OpenAiCompatibleTests {
 	}
 
 	@Test
+	void whenAModelIsOutOfAllowanceOrGoneTheNextOneAnswers() {
+		AiAssistantService assistant = assistant("whisper-test", 0, " first-model , second-model,,third-model ");
+
+		assertThat(assistant.chat(EMAIL, question("¿Riego?")).source()).isEqualTo("model");
+		assertThat(modelsAsked()).containsExactly("first-model");
+
+		// Out of its allowance for this minute, and then retired by the provider: the second one answers.
+		for (int failure : new int[] {429, 404}) {
+			bodies.clear();
+			unavailableModels.add("first-model");
+			modelStatus.set(failure);
+			AiResponseDto response = assistant.chat(EMAIL, question("¿Riego?"));
+			assertThat(response.source()).isEqualTo("model");
+			assertThat(response.reply()).isEqualTo("Riega el **café** hoy.");
+			assertThat(modelsAsked()).containsExactly("first-model", "second-model");
+		}
+
+		// Every model unavailable: all are tried once, and the farm's figures answer.
+		bodies.clear();
+		unavailableModels.addAll(List.of("second-model", "third-model"));
+		AiResponseDto onItsOwn = assistant.chat(EMAIL, question("¿Cuándo conviene regar?"));
+		assertThat(onItsOwn.source()).isEqualTo("local");
+		assertThat(modelsAsked()).containsExactly("first-model", "second-model", "third-model");
+
+		// A refusal is an answer about the question: no other model is asked to go around it.
+		bodies.clear();
+		unavailableModels.clear();
+		chatAnswer.set(completion("", "content_filter"));
+		assertStatus(() -> assistant.chat(EMAIL, question("Hola")), HttpStatus.UNPROCESSABLE_ENTITY);
+		assertThat(modelsAsked()).containsExactly("first-model");
+	}
+
+	@Test
 	void aRecordingNobodyUnderstoodOrAProviderThatCannotListenAsksForWriting() {
 		heard.set("{\"text\":\"   \"}");
 		assertThatThrownBy(() -> assistant("whisper-test", 0).voice(EMAIL, new byte[] {1}, "audio/webm", null))
@@ -198,10 +237,19 @@ class OpenAiCompatibleTests {
 
 	/** An assistant with this provider and a Gemini key too: the provider is the one that answers. */
 	private AiAssistantService assistant(String transcriptionModel, int requestsPerMinute) {
+		return assistant(transcriptionModel, requestsPerMinute, " chat-test ");
+	}
+
+	private AiAssistantService assistant(String transcriptionModel, int requestsPerMinute, String models) {
 		String address = "http://127.0.0.1:" + provider.getAddress().getPort() + "/openai/v1/";
 		return new AiAssistantService(farm, JSON, Clock.systemUTC(), "a-gemini-key", "gemini-test",
 				"http://127.0.0.1:9", 2000, 256, requestsPerMinute, true,
-				new OpenAiCompatibleClient(KEY, address, " chat-test ", transcriptionModel, 2000, 256));
+				new OpenAiCompatibleClient(KEY, address, models, transcriptionModel, 2000, 256));
+	}
+
+	/** The model named in each chat request the provider received, in order. */
+	private List<String> modelsAsked() {
+		return bodies.stream().map(body -> JSON.readTree(body).path("model").asString()).toList();
 	}
 
 	private static void assertStatus(org.assertj.core.api.ThrowableAssert.ThrowingCallable call, HttpStatus expected) {
