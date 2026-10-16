@@ -3,18 +3,30 @@ package com.agrosense.backend;
 import com.agrosense.backend.ai.service.FarmContextService;
 import com.agrosense.backend.ai.service.FarmSnapshot;
 import com.agrosense.backend.ai.service.FarmSnapshot.CropStatus;
+import com.agrosense.backend.ai.service.FarmSnapshot.OpenAlert;
+import com.agrosense.backend.domain.enums.AlertType;
+import com.agrosense.backend.domain.enums.CropStage;
+import com.agrosense.backend.domain.enums.IrrigationType;
 import com.agrosense.backend.domain.enums.SensorType;
+import com.agrosense.backend.domain.enums.Severity;
 import com.agrosense.backend.dto.response.AlertResponse;
+import com.agrosense.backend.models.Alert;
 import com.agrosense.backend.models.Crop;
+import com.agrosense.backend.models.Estate;
+import com.agrosense.backend.models.Irrigation;
 import com.agrosense.backend.models.SensorReading;
 import com.agrosense.backend.repository.AlertRepository;
 import com.agrosense.backend.repository.CropRepository;
+import com.agrosense.backend.repository.IrrigationRepository;
 import com.agrosense.backend.repository.SensorReadingRepository;
 import com.agrosense.backend.repository.SensorRepository;
 import com.agrosense.backend.service.AlertService;
 import org.junit.jupiter.api.Test;
+import org.springframework.data.domain.PageRequest;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 import java.util.stream.IntStream;
@@ -38,7 +50,78 @@ class FarmContextServiceTests {
 	private final SensorReadingRepository readings = mock(SensorReadingRepository.class);
 	private final AlertRepository alerts = mock(AlertRepository.class);
 	private final AlertService alertService = mock(AlertService.class);
-	private final FarmContextService service = new FarmContextService(crops, sensors, readings, alerts, alertService);
+	private final IrrigationRepository irrigations = mock(IrrigationRepository.class);
+	private final FarmContextService service = new FarmContextService(crops, sensors, readings, alerts, alertService,
+			irrigations);
+
+	@Test
+	void theFarmComesWithEachCropsProfileItsAlertsOpenAndAttendedAndItsLatestIrrigations() {
+		Crop coffee = crop(1, "Café");
+		coffee.setVariety("Castillo");
+		coffee.setStage(CropStage.FLOWERING);
+		coffee.setSowingDate(LocalDate.of(2026, 3, 1));
+		Estate estate = new Estate();
+		estate.setName("El Roble");
+		estate.setLocation("Pasto, Nariño");
+		coffee.setEstate(estate);
+		when(crops.findByEstateUserEmailAndActiveTrueOrderByNameAsc(EMAIL)).thenReturn(List.of(coffee));
+		when(readings.findFirstBySensorCropIdCropAndSensorSensorTypeOrderByRecordedAtDesc(any(), any()))
+				.thenReturn(Optional.empty());
+		when(readings.findFirstBySensorCropIdCropAndSensorSensorTypeOrderByRecordedAtDesc(1, SensorType.SOIL_MOISTURE))
+				.thenReturn(Optional.of(reading("22.5000")));
+		when(alerts.countByCropEstateUserEmailAndAcknowledgedFalse(EMAIL)).thenReturn(1L);
+		when(alertService.findOpen(EMAIL, FarmContextService.MAX_ALERTS)).thenReturn(List.of(AlertResponse.builder()
+				.cropName("Café").message("Humedad baja").alertType("LOW_HUMIDITY").severity("HIGH")
+				.detectedValue(new BigDecimal("22.5000")).createdAt(LocalDateTime.of(2026, 10, 15, 6, 30)).build()));
+		Alert attended = new Alert();
+		attended.setCrop(coffee);
+		attended.setAlertType(AlertType.PH_OUT_OF_RANGE);
+		attended.setSeverity(Severity.MEDIUM);
+		attended.setMessage("pH fuera del rango del cultivo.");
+		attended.setDetectedValue(new BigDecimal("4.9"));
+		attended.setCreatedAt(LocalDateTime.of(2026, 10, 12, 8, 0));
+		when(alerts.findByCropEstateUserEmailAndAcknowledgedTrueOrderByCreatedAtDesc(EMAIL,
+				PageRequest.of(0, FarmContextService.MAX_ATTENDED_ALERTS))).thenReturn(List.of(attended));
+		Irrigation watering = new Irrigation();
+		watering.setCrop(coffee);
+		watering.setStartedAt(LocalDateTime.of(2026, 10, 14, 5, 45));
+		watering.setDurationMin(20);
+		watering.setWaterLiters(new BigDecimal("150.00"));
+		watering.setType(IrrigationType.MANUAL);
+		watering.setReason("Suelo seco");
+		when(irrigations.findByCropEstateUserEmailOrderByStartedAtDesc(EMAIL,
+				PageRequest.of(0, FarmContextService.MAX_IRRIGATIONS))).thenReturn(List.of(watering));
+
+		String described = service.snapshot(EMAIL).describe();
+
+		assertThat(described).contains(
+				"Cultivo Café (variedad Castillo, etapa floración, sembrado 2026-03-01, finca El Roble, Pasto, Nariño): "
+						+ "humedad del suelo 22.5 % (rango 40–80 %).",
+				"Alerta en Café (humedad baja, severidad alta, valor 22.5, 2026-10-15 06:30): Humedad baja.",
+				"Alerta atendida en Café (pH fuera de rango, severidad media, valor 4.9, 2026-10-12 08:00): "
+						+ "pH fuera del rango del cultivo.",
+				"Riego manual en Café el 2026-10-14 05:45, 20 min, 150 L, motivo: Suelo seco.");
+		// Only what the caller owns is asked for.
+		verify(alerts).findByCropEstateUserEmailAndAcknowledgedTrueOrderByCreatedAtDesc(eq(EMAIL), any());
+		verify(irrigations).findByCropEstateUserEmailOrderByStartedAtDesc(eq(EMAIL), any());
+	}
+
+	@Test
+	void whatWasNotRecordedIsLeftOutAndALongDescriptionIsCutAtAWholeLine() {
+		CropStatus bare = new CropStatus("Papa", null, null, null, null, null, null, null, null, null);
+		assertThat(new FarmSnapshot(1, 0, 0, List.of(bare), List.of()).describe())
+				.endsWith("Cultivo Papa: sin lecturas.")
+				.doesNotContain("variedad", "etapa", "Riego", "atendida", "null");
+
+		List<OpenAlert> many = IntStream.range(0, 200)
+				.mapToObj(index -> new OpenAlert("Café", "Alerta número " + index + " con un texto largo de ejemplo."))
+				.toList();
+		String described = new FarmSnapshot(1, 0, 200, List.of(bare), many).describe();
+		assertThat(described).hasSizeLessThanOrEqualTo(FarmSnapshot.MAX_DESCRIPTION_LENGTH)
+				.endsWith("\n(Hay más datos de la finca que no caben aquí.)");
+		assertThat(described.lines().filter(line -> line.startsWith("Alerta en")))
+				.allMatch(line -> line.endsWith("con un texto largo de ejemplo."));
+	}
 
 	@Test
 	void eachCropComesWithItsLatestReadingsItsOwnLimitsAndNothingMadeUp() {

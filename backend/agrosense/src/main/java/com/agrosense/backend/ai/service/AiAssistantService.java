@@ -24,6 +24,9 @@ import java.nio.charset.StandardCharsets;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Base64;
@@ -59,6 +62,8 @@ public class AiAssistantService {
             "audio/x-wav", "audio/mp4", "audio/mpeg", "audio/mp3", "audio/aac", "audio/flac");
 
     private static final Duration RATE_WINDOW = Duration.ofMinutes(1);
+
+    private static final DateTimeFormatter NOW = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
 
     /** Failures of the model that say nothing about the question: it can still be answered without it. */
     private static final Set<HttpStatus> MODEL_UNAVAILABLE = Set.of(HttpStatus.TOO_MANY_REQUESTS,
@@ -188,8 +193,12 @@ public class AiAssistantService {
         }
     }
 
-    private static String describe(FarmSnapshot farm) {
-        return farm == null ? "No hay datos de la finca disponibles en este momento." : farm.describe();
+    /** The farm, after the current date and time: without them "hoy" and "ayer" mean nothing to the model. */
+    private String describe(FarmSnapshot farm) {
+        // Stored times are the server's local time, so "now" is said in the same terms.
+        String now = "Fecha y hora actual: "
+                + LocalDateTime.now(clock.withZone(ZoneId.systemDefault())).format(NOW) + ".\n";
+        return now + (farm == null ? "No hay datos de la finca disponibles en este momento." : farm.describe());
     }
 
     /**

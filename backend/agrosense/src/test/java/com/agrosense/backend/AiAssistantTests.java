@@ -99,6 +99,8 @@ class AiAssistantTests {
 				.contains("Preguntas generales de agricultura", "Preguntas sobre cómo funciona AgroSense",
 						"Nunca inventes lecturas", "redirige con amabilidad", "nunca tablas");
 		assertThat(sent.path("system_instruction").path("parts").path(1).path("text").asString())
+				// Without today's date, "hoy" and "ayer" mean nothing next to the dates of alerts and irrigations.
+				.matches("(?s)Fecha y hora actual: \\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}\\.\n.*")
 				.contains("2 cultivos", "5 sensores", "1 alertas",
 						"Cultivo Café: humedad del suelo 31.5 % (rango 40–80 %), temperatura 24 °C (rango 15–35 °C).",
 						"Cultivo Papa: sin lecturas.")
