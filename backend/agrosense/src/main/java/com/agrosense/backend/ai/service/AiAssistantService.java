@@ -40,9 +40,10 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Supplier;
 
 /**
- * The conversational assistant, answered by Google Gemini. Each question travels with a short system
- * prompt and a one-line summary of the caller's own farm, so answers refer to real figures while the
- * request stays small. Off until {@code GEMINI_API_KEY} is set.
+ * The conversational assistant. Each question travels with the system prompt and a compact summary of
+ * the caller's own farm, so answers refer to real figures while the request stays small. It is answered
+ * by the first provider with a key: OpenAI-compatible, Claude, Gemini; without any, from the farm's
+ * own figures (see {@link #chosenModel}).
  */
 @Slf4j
 @Service
@@ -77,8 +78,8 @@ public class AiAssistantService {
     private final boolean localAnswers;
     private final ObjectMapper objectMapper;
     private final Clock clock;
-    /** The provider that speaks the OpenAI API, when one is configured; it is then used instead of Gemini. */
-    private final OpenAiCompatibleClient openAi;
+    /** An OpenAI-compatible provider or Claude, when one is configured; it is then used instead of Gemini. */
+    private final ChatModel chatModel;
     private final WebClient gemini;
     private final String apiKey;
     private final String model;
@@ -97,12 +98,35 @@ public class AiAssistantService {
             @Value("${ai.assistant.local-answers:true}") boolean localAnswers,
             @Value("${ai.chat.api-key:}") String chatApiKey,
             @Value("${ai.chat.base-url:https://api.groq.com/openai/v1}") String chatBaseUrl,
-            @Value("${ai.chat.model:qwen/qwen3.8-27b}") String chatModel,
-            @Value("${ai.chat.transcription-model:whisper-large-v3-turbo}") String transcriptionModel) {
+            @Value("${ai.chat.model:qwen/qwen3.8-27b}") String chatModels,
+            @Value("${ai.chat.transcription-model:whisper-large-v3-turbo}") String transcriptionModel,
+            @Value("${anthropic.api-key:}") String anthropicApiKey,
+            @Value("${anthropic.base-url:https://api.anthropic.com}") String anthropicBaseUrl,
+            @Value("${anthropic.model:claude-haiku-5-5}") String anthropicModel,
+            @Value("${anthropic.effort:low}") String anthropicEffort) {
         this(farmContext, objectMapper, Clock.systemUTC(), apiKey, model, baseUrl, timeoutMs, maxOutputTokens,
                 requestsPerMinute, localAnswers,
-                chatApiKey.isBlank() ? null : new OpenAiCompatibleClient(chatApiKey, chatBaseUrl, chatModel,
-                        transcriptionModel, timeoutMs, maxOutputTokens));
+                chosenModel(chatApiKey, chatBaseUrl, chatModels, transcriptionModel, anthropicApiKey,
+                        anthropicBaseUrl, anthropicModel, anthropicEffort, timeoutMs, maxOutputTokens));
+    }
+
+    /**
+     * The provider that answers, by priority: one that speaks the OpenAI API ({@code AI_CHAT_API_KEY}),
+     * then Claude ({@code ANTHROPIC_API_KEY}); {@code null} leaves it to Gemini ({@code GEMINI_API_KEY})
+     * and, without that key either, to the farm's own figures.
+     */
+    public static ChatModel chosenModel(String chatApiKey, String chatBaseUrl, String chatModels, String transcriptionModel,
+            String anthropicApiKey, String anthropicBaseUrl, String anthropicModel, String anthropicEffort,
+            int timeoutMs, int maxOutputTokens) {
+        if (!chatApiKey.isBlank()) {
+            return new OpenAiCompatibleClient(chatApiKey, chatBaseUrl, chatModels, transcriptionModel, timeoutMs,
+                    maxOutputTokens);
+        }
+        if (!anthropicApiKey.isBlank()) {
+            return new AnthropicClient(anthropicApiKey, anthropicBaseUrl, anthropicModel, anthropicEffort, timeoutMs,
+                    maxOutputTokens);
+        }
+        return null;
     }
 
     /** Answered by Gemini, or by nobody when {@code apiKey} is empty. */
@@ -118,12 +142,12 @@ public class AiAssistantService {
      *
      * @param localAnswers whether a written question is answered from the farm's figures when the model
      *                     is not configured or does not respond, instead of being refused
-     * @param openAi       a provider that speaks the OpenAI API, used instead of Gemini; {@code null} for none
+     * @param chatModel    an OpenAI-compatible provider or Claude, used instead of Gemini; {@code null} for none
      */
     public AiAssistantService(FarmContextService farmContext, ObjectMapper objectMapper, Clock clock,
             String apiKey, String model, String baseUrl, int timeoutMs, int maxOutputTokens,
-            int requestsPerMinute, boolean localAnswers, OpenAiCompatibleClient openAi) {
-        this.openAi = openAi;
+            int requestsPerMinute, boolean localAnswers, ChatModel chatModel) {
+        this.chatModel = chatModel;
         this.farmContext = farmContext;
         this.localAnswers = localAnswers;
         this.objectMapper = objectMapper;
@@ -162,16 +186,16 @@ public class AiAssistantService {
     /** Answers a question that has already been counted against the user's allowance. */
     private AiResponseDto answer(String email, String question, List<AiRequestDto.Turn> history) {
         FarmSnapshot farm = farmOf(email);
-        if (openAi == null && apiKey.isEmpty()) {
+        if (chatModel == null && apiKey.isEmpty()) {
             return withoutTheModel(question, farm, notConfigured());
         }
-        List<OpenAiCompatibleClient.Said> conversation = conversation(history, question);
+        List<ChatModel.Said> conversation = conversation(history, question);
         try {
-            String reply = openAi != null
-                    ? openAi.chat(SYSTEM_PROMPT + "\n\n" + describe(farm), conversation)
+            String reply = chatModel != null
+                    ? chatModel.chat(SYSTEM_PROMPT + "\n\n" + describe(farm), conversation)
                     : textOf(generate(farm, conversation.stream()
                             // Gemini calls the assistant's side "model".
-                            .map(turn -> content(OpenAiCompatibleClient.USER.equals(turn.role()) ? "user" : "model",
+                            .map(turn -> content(ChatModel.USER.equals(turn.role()) ? "user" : "model",
                                     Map.of("text", turn.text())))
                             .toList(), false));
             return new AiResponseDto(reply, null, AiResponseDto.SOURCE_MODEL);
@@ -227,23 +251,23 @@ public class AiAssistantService {
      * or older turns dropped from the start), so answers with nothing before them are left out and turns
      * in a row from the same side become one.
      */
-    private static List<OpenAiCompatibleClient.Said> conversation(List<AiRequestDto.Turn> history, String question) {
+    private static List<ChatModel.Said> conversation(List<AiRequestDto.Turn> history, String question) {
         List<String> roles = new ArrayList<>();
         List<StringBuilder> texts = new ArrayList<>();
         for (AiRequestDto.Turn turn : history) {
             add(roles, texts, AiRequestDto.Turn.ASSISTANT.equals(turn.getRole())
-                    ? OpenAiCompatibleClient.ASSISTANT : OpenAiCompatibleClient.USER, turn.getText());
+                    ? ChatModel.ASSISTANT : ChatModel.USER, turn.getText());
         }
-        add(roles, texts, OpenAiCompatibleClient.USER, question);
-        List<OpenAiCompatibleClient.Said> conversation = new ArrayList<>();
+        add(roles, texts, ChatModel.USER, question);
+        List<ChatModel.Said> conversation = new ArrayList<>();
         for (int index = 0; index < roles.size(); index++) {
-            conversation.add(new OpenAiCompatibleClient.Said(roles.get(index), texts.get(index).toString()));
+            conversation.add(new ChatModel.Said(roles.get(index), texts.get(index).toString()));
         }
         return conversation;
     }
 
     private static void add(List<String> roles, List<StringBuilder> texts, String role, String text) {
-        if (roles.isEmpty() && OpenAiCompatibleClient.ASSISTANT.equals(role)) {
+        if (roles.isEmpty() && ChatModel.ASSISTANT.equals(role)) {
             return;
         }
         if (!roles.isEmpty() && roles.get(roles.size() - 1).equals(role)) {
@@ -278,18 +302,18 @@ public class AiAssistantService {
         if (!AUDIO_TYPES.contains(mimeType)) {
             throw new AiException(HttpStatus.UNSUPPORTED_MEDIA_TYPE, "Ese formato de audio no es compatible.");
         }
-        if (openAi != null && openAi.listens()) {
+        if (chatModel != null && chatModel.listens()) {
             // This kind of provider listens and answers in two steps; once the recording is text, it is a
             // written question like any other, also for the answers given without the model.
             countRequest(email);
-            String heard = listening(() -> openAi.transcribe(audio, mimeType));
+            String heard = listening(() -> chatModel.transcribe(audio, mimeType));
             if (heard.length() > AiRequestDto.MAX_MESSAGE_LENGTH) {
                 heard = heard.substring(0, AiRequestDto.MAX_MESSAGE_LENGTH);
             }
             return answer(email, heard, List.of()).heard(heard);
         }
         // Only a model can listen: without one a recording cannot be turned into a question.
-        if (openAi != null || apiKey.isEmpty()) {
+        if (chatModel != null || apiKey.isEmpty()) {
             throw localAnswers
                     ? new AiException(HttpStatus.SERVICE_UNAVAILABLE,
                             "Ahora no puedo escuchar mensajes de voz. Escribe tu pregunta y te respondo.")

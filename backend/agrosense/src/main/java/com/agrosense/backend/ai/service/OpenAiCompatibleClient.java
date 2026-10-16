@@ -29,14 +29,7 @@ import java.util.Map;
  * base address, the key and the model names, all of which come from the environment.
  */
 @Slf4j
-public class OpenAiCompatibleClient {
-
-    /** One side's part of a conversation; {@code role} is {@code user} or {@code assistant}. */
-    public record Said(String role, String text) {
-    }
-
-    public static final String USER = "user";
-    public static final String ASSISTANT = "assistant";
+public class OpenAiCompatibleClient implements ChatModel {
 
     /** The file name tells the provider how to read the recording; the type alone is not enough for it. */
     private static final Map<String, String> EXTENSIONS = Map.of(
@@ -72,12 +65,12 @@ public class OpenAiCompatibleClient {
                 .build();
     }
 
-    /** Whether recordings can be turned into text; a provider without that still answers written questions. */
+    @Override
     public boolean listens() {
         return !transcriptionModel.isEmpty();
     }
 
-    /** The model's answer to the last turn of the conversation, under the given instructions. */
+    @Override
     public String chat(String instructions, List<Said> conversation) {
         List<Map<String, String>> messages = new ArrayList<>();
         messages.add(Map.of("role", "system", "content", instructions));
@@ -121,7 +114,7 @@ public class OpenAiCompatibleClient {
         throw new AiException(HttpStatus.BAD_GATEWAY, "El asistente no generó una respuesta. Inténtalo de nuevo.");
     }
 
-    /** What is said, in Spanish, in a recording of the given type (for example {@code audio/webm}). */
+    @Override
     public String transcribe(byte[] audio, String mimeType) {
         String fileName = "voice." + EXTENSIONS.getOrDefault(mimeType, "webm");
         MultipartBodyBuilder form = new MultipartBodyBuilder();
@@ -146,8 +139,11 @@ public class OpenAiCompatibleClient {
         return heard;
     }
 
-    /** Runs a call and turns each way it can fail into an answer the user can read. */
-    private static JsonNode send(java.util.function.Supplier<JsonNode> call, String model) {
+    /**
+     * Runs a call and turns each way it can fail into an answer the user can read; shared with the other
+     * providers reached over HTTP, so every one of them fails in the same terms.
+     */
+    static JsonNode send(java.util.function.Supplier<JsonNode> call, String model) {
         try {
             JsonNode answer = call.get();
             if (answer == null) {
