@@ -216,9 +216,12 @@ class OpenAiCompatibleTests {
 					assertThat(error.getStatus()).isEqualTo(HttpStatus.UNPROCESSABLE_ENTITY);
 					assertThat(error.getMessage()).contains("escribe tu pregunta");
 				});
-		status.set(500);
-		assertStatus(() -> assistant("whisper-test", 0).voice(EMAIL, new byte[] {1}, "audio/webm", null),
-				HttpStatus.BAD_GATEWAY);
+		// A provider that cannot listen right now leaves nothing to answer with: the contract's 503.
+		for (int failure : new int[] {500, 429}) {
+			status.set(failure);
+			assertStatus(() -> assistant("whisper-test", 0).voice(EMAIL, new byte[] {1}, "audio/webm", null),
+					HttpStatus.SERVICE_UNAVAILABLE);
+		}
 
 		// A provider configured without a transcription model: recordings are not sent anywhere.
 		status.set(200);

@@ -174,19 +174,24 @@ class AiAssistantTests {
 	}
 
 	@Test
-	void failuresOfGeminiBecomeAnswersTheUserCanRead() {
+	void withoutLocalAnswersAModelThatIsDownOrOutOfAllowanceIsA503TheUserCanRead() {
 		AiAssistantService assistant = assistant(KEY, 0, Clock.systemUTC());
 
+		// Out of allowance: still a 503, so a 429 only ever means the user's own limit per minute.
 		status.set(429);
-		assertStatus(() -> assistant.chat(EMAIL, question("Hola")), HttpStatus.TOO_MANY_REQUESTS);
+		assertThatThrownBy(() -> assistant.chat(EMAIL, question("Hola")))
+				.isInstanceOfSatisfying(AiException.class, error -> {
+					assertThat(error.getStatus()).isEqualTo(HttpStatus.SERVICE_UNAVAILABLE);
+					assertThat(error.getMessage()).contains("muchas consultas");
+				});
 		status.set(500);
-		assertStatus(() -> assistant.chat(EMAIL, question("Hola")), HttpStatus.BAD_GATEWAY);
+		assertStatus(() -> assistant.chat(EMAIL, question("Hola")), HttpStatus.SERVICE_UNAVAILABLE);
 		// A key Gemini refuses is a fault of this server's settings, not of the request.
 		status.set(403);
 		answer.set("{\"error\":{\"message\":\"API key not valid: " + KEY + "\"}}");
 		assertThatThrownBy(() -> assistant.chat(EMAIL, question("Hola")))
 				.isInstanceOfSatisfying(AiException.class, error -> {
-					assertThat(error.getStatus()).isEqualTo(HttpStatus.BAD_GATEWAY);
+					assertThat(error.getStatus()).isEqualTo(HttpStatus.SERVICE_UNAVAILABLE);
 					assertThat(error.getMessage()).doesNotContain(KEY);
 				});
 
@@ -194,14 +199,39 @@ class AiAssistantTests {
 		answer.set("{\"promptFeedback\":{\"blockReason\":\"SAFETY\"}}");
 		assertStatus(() -> assistant.chat(EMAIL, question("Hola")), HttpStatus.UNPROCESSABLE_ENTITY);
 		answer.set("{\"candidates\":[{\"finishReason\":\"MAX_TOKENS\",\"content\":{\"parts\":[]}}]}");
-		assertStatus(() -> assistant.chat(EMAIL, question("Hola")), HttpStatus.BAD_GATEWAY);
+		assertStatus(() -> assistant.chat(EMAIL, question("Hola")), HttpStatus.SERVICE_UNAVAILABLE);
 	}
 
 	@Test
-	void aServerThatDoesNotAnswerInTimeIsReportedAsATimeout() {
+	void aServerThatDoesNotAnswerInTimeIsA503ForWritingAndForVoice() {
 		gemini.stop(0);
-		assertStatus(() -> assistant(KEY, 0, Clock.systemUTC()).chat(EMAIL, question("Hola")),
-				HttpStatus.GATEWAY_TIMEOUT);
+		AiAssistantService assistant = assistant(KEY, 0, Clock.systemUTC());
+		assertThatThrownBy(() -> assistant.chat(EMAIL, question("Hola")))
+				.isInstanceOfSatisfying(AiException.class, error -> {
+					assertThat(error.getStatus()).isEqualTo(HttpStatus.SERVICE_UNAVAILABLE);
+					assertThat(error.getMessage()).contains("tardó demasiado");
+				});
+		// Nothing can stand in for the model that listens, even when written questions are answered locally.
+		assertStatus(() -> answeringOnItsOwn(KEY, 0).voice(EMAIL, new byte[] {1}, "audio/webm", null),
+				HttpStatus.SERVICE_UNAVAILABLE);
+	}
+
+	@Test
+	void onlyTheLastEightTurnsOfTheConversationReachTheModel() {
+		AiRequestDto request = question("¿Y hoy?");
+		request.setHistory(java.util.stream.IntStream.rangeClosed(1, AiRequestDto.MAX_HISTORY_TURNS)
+				.mapToObj(index -> turn(index % 2 == 1 ? "user" : "assistant", "Mensaje " + index))
+				.toList());
+
+		assistant(KEY, 10, Clock.systemUTC()).chat(EMAIL, request);
+
+		JsonNode contents = JSON.readTree(receivedBody.get()).path("contents");
+		// Turns 5 to 12 are sent, then the question: 9 alternating turns, starting with the user's.
+		assertThat(contents).hasSize(AiAssistantService.MAX_HISTORY_SENT + 1);
+		assertThat(contents.path(0).path("parts").path(0).path("text").asString()).isEqualTo("Mensaje 5");
+		assertThat(receivedBody.get()).doesNotContain("Mensaje 4\"", "Mensaje 1\"");
+		assertThat(contents.path(AiAssistantService.MAX_HISTORY_SENT).path("parts").path(0).path("text").asString())
+				.isEqualTo("¿Y hoy?");
 	}
 
 	@Test

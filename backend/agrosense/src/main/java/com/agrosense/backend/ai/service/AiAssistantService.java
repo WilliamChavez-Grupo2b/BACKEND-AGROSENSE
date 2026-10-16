@@ -37,6 +37,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Supplier;
 
 /**
  * The conversational assistant, answered by Google Gemini. Each question travels with a short system
@@ -56,6 +57,9 @@ public class AiAssistantService {
     static final String VOICE_INSTRUCTION = "Transcribe el audio en español y responde a lo que pregunta.";
 
     public static final int MAX_AUDIO_BYTES = 3 * 1024 * 1024;
+
+    /** Earlier turns sent to the model with a question; the request may carry more, the oldest are left out. */
+    public static final int MAX_HISTORY_SENT = 8;
 
     /** What browsers record (WebM, Ogg, MP4) and the formats Gemini documents for audio. */
     private static final Set<String> AUDIO_TYPES = Set.of("audio/webm", "audio/ogg", "audio/wav",
@@ -88,7 +92,7 @@ public class AiAssistantService {
             @Value("${gemini.model:gemini-flash-latest}") String model,
             @Value("${gemini.base-url:https://generativelanguage.googleapis.com}") String baseUrl,
             @Value("${gemini.timeout-ms:20000}") int timeoutMs,
-            @Value("${gemini.max-output-tokens:1024}") int maxOutputTokens,
+            @Value("${gemini.max-output-tokens:2048}") int maxOutputTokens,
             @Value("${ai.assistant.requests-per-minute:10}") int requestsPerMinute,
             @Value("${ai.assistant.local-answers:true}") boolean localAnswers,
             @Value("${ai.chat.api-key:}") String chatApiKey,
@@ -144,8 +148,15 @@ public class AiAssistantService {
      */
     public AiResponseDto chat(String email, AiRequestDto request) {
         countRequest(email);
-        return answer(email, request.getMessage().trim(),
-                request.getHistory() == null ? List.of() : request.getHistory());
+        return answer(email, request.getMessage().trim(), latest(request.getHistory()));
+    }
+
+    /** The last {@link #MAX_HISTORY_SENT} turns: older ones cost tokens and rarely change the answer. */
+    static List<AiRequestDto.Turn> latest(List<AiRequestDto.Turn> history) {
+        if (history == null) {
+            return List.of();
+        }
+        return history.subList(Math.max(0, history.size() - MAX_HISTORY_SENT), history.size());
     }
 
     /** Answers a question that has already been counted against the user's allowance. */
@@ -174,9 +185,18 @@ public class AiAssistantService {
 
     private AiResponseDto withoutTheModel(String question, FarmSnapshot farm, AiException reason) {
         if (!localAnswers) {
-            throw reason;
+            throw unavailable(reason);
         }
         return new AiResponseDto(LocalAdvisor.answer(question, farm), null, AiResponseDto.SOURCE_LOCAL);
+    }
+
+    /**
+     * A model that is down, slow or out of allowance is a 503 with its own explanation: a 429 is kept for
+     * the user's own limit of questions per minute, which waiting a minute does lift.
+     */
+    private static AiException unavailable(AiException reason) {
+        return reason.getStatus() == HttpStatus.SERVICE_UNAVAILABLE ? reason
+                : new AiException(HttpStatus.SERVICE_UNAVAILABLE, reason.getMessage());
     }
 
     private static AiException notConfigured() {
@@ -262,7 +282,7 @@ public class AiAssistantService {
             // This kind of provider listens and answers in two steps; once the recording is text, it is a
             // written question like any other, also for the answers given without the model.
             countRequest(email);
-            String heard = openAi.transcribe(audio, mimeType);
+            String heard = listening(() -> openAi.transcribe(audio, mimeType));
             if (heard.length() > AiRequestDto.MAX_MESSAGE_LENGTH) {
                 heard = heard.substring(0, AiRequestDto.MAX_MESSAGE_LENGTH);
             }
@@ -278,8 +298,9 @@ public class AiAssistantService {
         countRequest(email);
         Map<String, Object> audioPart = Map.of("inline_data",
                 Map.of("mime_type", mimeType, "data", Base64.getEncoder().encodeToString(audio)));
-        String answer = textOf(generate(farmOf(email),
-                List.of(content("user", audioPart, Map.of("text", VOICE_INSTRUCTION))), true));
+        FarmSnapshot farm = farmOf(email);
+        String answer = listening(() -> textOf(generate(farm,
+                List.of(content("user", audioPart, Map.of("text", VOICE_INSTRUCTION))), true)));
         try {
             JsonNode parsed = objectMapper.readTree(answer);
             String reply = parsed.path("reply").asString("").trim();
@@ -292,6 +313,18 @@ public class AiAssistantService {
         }
         // The model ignored the requested shape: its text is still an answer worth showing.
         return new AiResponseDto(answer, null, AiResponseDto.SOURCE_MODEL);
+    }
+
+    /**
+     * A recording only a model can turn into words, so when it is unavailable there is no answer to fall
+     * back on: that is a 503, whether or not written questions are answered without the model.
+     */
+    private static String listening(Supplier<String> call) {
+        try {
+            return call.get();
+        } catch (AiException failure) {
+            throw MODEL_UNAVAILABLE.contains(failure.getStatus()) ? unavailable(failure) : failure;
+        }
     }
 
     private JsonNode generate(FarmSnapshot farm, List<Map<String, Object>> contents, boolean voiceAnswer) {
