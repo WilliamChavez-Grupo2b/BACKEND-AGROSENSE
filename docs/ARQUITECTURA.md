@@ -1,8 +1,8 @@
 # Arquitectura de AgroSense
 
-Estado al 11 de octubre de 2026. Este documento recoge la inspección del repositorio, las decisiones
-tomadas, qué partes de la interfaz usan datos reales, parciales o no disponibles, y dónde está desplegado
-cada componente.
+Estado al 16 de octubre de 2026. Este documento recoge la inspección del repositorio, la arquitectura de
+servicios (sección 2), las decisiones tomadas, qué partes de la interfaz usan datos reales, parciales o no
+disponibles, y dónde está desplegado cada componente.
 
 ## 1. Inspección del workspace
 
@@ -12,7 +12,10 @@ cada componente.
 | `frontend/` | Aplicación web Spring Boot + Thymeleaf (este documento la describe en detalle).             |
 | `database/` | Todo lo de base de datos: `schema.sql`, `seed_demo.sql`, `reset.sql`, `datasource.properties`, `.env.example` y `README.md`. |
 | `api/`      | Contrato de la API del backend: `openapi.json`, peticiones de ejemplo y `tools/check_contract.py`, que comprueba un backend en marcha contra el contrato. |
-| `IA/`       | Servicio de predicción de riego (Python, sin dependencias) que el backend llama en `AI_SERVICE_URL`. |
+| `IA/`       | Servicio de IA (Python, FastAPI) que el backend llama en `AI_SERVICE_URL`: predicción de riego y asistente (`/chat`, `/voice`). |
+| `event-service/` | Manejador de eventos (Python, FastAPI): webhook de las Raspberry y canal en vivo (SSE) de cada usuario. |
+| `raspberry/` | Programa del dispositivo de campo (simulado en un PC): envía lecturas al webhook, con reintentos y cola en disco. |
+| `compose.yaml`, `.env.example` | Todos los servicios en una máquina (`docker compose up`) y todas sus variables. |
 
 ### Repositorios
 
@@ -26,6 +29,7 @@ tiene su propio historial y no comparte commits con el workspace:
 | `database/`           | `ssantivr/BASE-DE-DATOS-AGROSENSE`       | los seis archivos de la carpeta           |
 | `api/`                | `ssantivr/API-AGROSENSE`                 | los archivos de la carpeta                |
 | `IA/`                 | `ssantivr/IA-AGROSENSE`                  | los archivos de la carpeta                |
+| `event-service/`, `raspberry/`, `compose.yaml` | ninguno todavía; solo existen en el workspace |                  |
 | `docs/`               | ninguno; solo existe en el workspace     |                                           |
 
 Una rama del workspace no se puede subir tal cual a ninguno de ellos. Para publicar, los commits de
@@ -71,11 +75,15 @@ esa rama se sube con un `git push` normal, sin forzar.
   cultivo, crea una alerta bloqueando la fila del cultivo para no duplicarla.
 - **Tiempo real:** WebSocket STOMP en `/ws`, autenticado con el mismo token; las sesiones se cierran
   cuando el token vence o la cuenta se desactiva.
-- **IA:** `AiClientService` llama al servicio de predicción de riego (`IA/`, repositorio `IA-AGROSENSE`);
-  sin `AI_SERVICE_URL` queda desactivado. Solo envía lo que se midió, junto con los límites de humedad y
-  pH del propio cultivo, y no pide predicción para un cultivo sin lecturas de humedad del suelo. Con
-  `AI_SERVICE_TOKEN` envía ese secreto en cada llamada, para un servicio que solo responde a su backend.
-  El asistente conversacional (`ai/`, decisión 23) usa Google Gemini; sin `GEMINI_API_KEY` responde 503.
+- **IA:** `AiClientService` llama al servicio de IA (`IA/`, repositorio `IA-AGROSENSE`) para las
+  predicciones de riego; sin `AI_SERVICE_URL` quedan desactivadas. Solo envía lo que se midió, junto con los
+  límites de humedad y pH del propio cultivo, y no pide predicción para un cultivo sin lecturas de humedad
+  del suelo. Cada llamada lleva `X-Internal-Key` (`AI_SERVICE_KEY`) y, durante la migración, el
+  `AI_SERVICE_TOKEN` que ya enviaba. El asistente conversacional (`ai/`, decisiones 23 y 24) pasa por ese
+  mismo servicio con `AI_CHAT_VIA_SERVICE=true`; si no, responde con sus propios proveedores (ruta
+  obsoleta que se conserva como respaldo).
+- **Dispositivos y eventos** (decisiones 25 y 26): `POST /api/devices`, `POST /api/internal/events` (solo el
+  servicio de eventos) y `GET /api/events/token`.
 - **Patrones de diseño** en `pattern/`: builder, factory, prototype y singleton (creacionales); adapter,
   decorator, facade y proxy (estructurales).
 
@@ -90,7 +98,182 @@ esa rama se sube con un `git push` normal, sin forzar.
   resultado se guarda en el repositorio, así que Maven y la imagen de despliegue no necesitan Node; solo
   hace falta para editar los scripts (`npm install` y `npm run build` en `frontend/`).
 
-## 2. Decisiones
+## 2. Arquitectura de servicios
+
+### Diagrama
+
+Coincide con el diagrama del proyecto. Cada flecha continua existe en el código (tabla siguiente); la
+punteada es la desviación pendiente que se describe más abajo.
+
+```mermaid
+flowchart LR
+    RPI["Raspberry Pi<br/>(wifi)"]
+    EV["Manejador de eventos<br/>event-service · Python"]
+    FE["Frontend<br/>TypeScript"]
+    BE["Backend<br/>Java · Spring Boot"]
+    DB[("BD<br/>PostgreSQL")]
+    IA["IA<br/>IA/ · Python"]
+    LLM[["Modelos de lenguaje<br/>OpenAI-compatible · Claude · Gemini"]]
+
+    RPI -- "eventos HTTP<br/>POST /events · X-Device-Key" --> EV
+    EV -- "POST /api/internal/events<br/>X-Internal-Key + X-Device-Key" --> BE
+    BE -- "dueño del evento y lo guardado" --> EV
+    EV -- "eventos en vivo<br/>GET /stream · SSE · token de 5 min" --> FE
+    FE -- "peticiones /api/…" --> BE
+    BE -- "datos" --> FE
+    BE -- "JDBC" --> DB
+    BE -- "POST /chat · /voice · /predict/irrigation<br/>X-Internal-Key" --> IA
+    IA -- "respuesta" --> BE
+    IA --> LLM
+    FE -. "desviación pendiente: JPA directo" .-> DB
+```
+
+### Cada conexión en el código
+
+| Conexión | Dónde está | Cómo se asegura |
+|---|---|---|
+| Raspberry → manejador de eventos | `raspberry/simulator.py` → `event-service/agrosense_events/app.py` (`POST /events`) | `X-Device-Key`: la llave del dispositivo, que el backend compara con su SHA-256 en tiempo constante. HTTPS en Render |
+| Manejador de eventos → backend | `app.py` (`receive`) → `InternalEventController`, `DeviceEventService` | `X-Internal-Key` (`EVENTS_INTERNAL_KEY`), comprobada por `InternalKeyFilter` antes de leer el cuerpo; la ruta está fuera del JWT de usuarios |
+| Backend → BD | repositorios Spring Data del backend | Credenciales por variables; `ddl-auto=validate` |
+| Manejador de eventos → frontend (navegador) | `app.py` (`stream`) → `frontend/src/main/ts/events/live.ts` | Token HS256 de 5 minutos firmado por el backend con `EVENTS_STREAM_SECRET` (`EventStreamTokens`), pedido con la sesión a `/api/ui/events/token`; cada evento solo llega a las conexiones de su dueño; CORS solo para el frontend |
+| Frontend → backend (peticiones y datos) | `BackendClient` (servidor del frontend) | Token HS512 de 2 minutos a nombre del usuario de la sesión, firmado con el secreto compartido (`BACKEND_JWT_SECRET` = `JWT_SECRET`). El navegador solo habla con el servidor del frontend (sesión y CSRF) |
+| Backend → IA | `AiServiceClient` (chat y voz), `AiClientService` (predicción) | `X-Internal-Key` (`AI_SERVICE_KEY` = `INTERNAL_API_KEY`) y, durante la migración, el Bearer `AI_SERVICE_TOKEN` |
+| IA → modelos | `IA/agrosense_ia/providers.py` | Llave del proveedor en una cabecera, nunca en la dirección ni en el registro |
+
+**La BD solo la tocan el backend y, por ahora, el frontend.** El servicio de IA, el manejador de eventos y
+la Raspberry no tienen credenciales ni código de base de datos: el contexto de la finca llega a la IA ya
+armado por el backend (`farm_context`), y el manejador de eventos recibe del backend el dueño del evento.
+
+### Desviación pendiente: el frontend accede a la BD
+
+El criterio «la BD solo la usa el backend» se cumple en todos los servicios nuevos, pero no en el frontend,
+que desde el 8 de octubre lee y escribe la base con sus propias entidades JPA (decisiones 1 y 21) porque la
+API del backend no cubre todo lo que muestran sus páginas. Se decidió el 16 de octubre de 2026 dejarlo así
+por ahora y migrarlo después, servicio por servicio, en una rama aparte. Las clases afectadas son 9:
+
+| Clase del frontend | Qué hace con la BD | Qué tendría que ofrecer el backend |
+|---|---|---|
+| `service/EstateService` | Lista parcelas y cultivos con totales | Listados completos de fincas y cultivos (incluidos inactivos) |
+| `service/CatalogService` | Alta, edición y baja de parcelas, cultivos y sensores | Edición y baja de fincas, cultivos y sensores |
+| `service/SensorService` | Sensores con su última lectura | Listado de sensores con última lectura |
+| `service/AlertService` | Alertas con finca y paginación | Listado paginado con el nombre de la finca |
+| `service/IrrigationService` | Historial de riegos y consumo de agua | Historial y agregados de consumo |
+| `service/ReportService` | Reportes de consumo, lecturas y alertas | Rutas de reportes |
+| `service/AccountService` | Registro, perfil y eliminación de la cuenta | Perfil y eliminación de cuenta |
+| `security/DatabaseUserDetailsService` | Inicio de sesión cuando el backend no responde | Ninguna: desaparece cuando el inicio de sesión solo pase por el backend |
+| `config/DemoAccountInitializer` | Contraseña del usuario de ejemplo (perfil `demo`) | Ninguna: es solo de la demo en memoria |
+
+Además, Spring Session guarda las sesiones del frontend en `spring_session` (decisión 20). `compose.yaml`
+da al frontend la misma conexión que al backend mientras esto siga así.
+
+### Rutas internas y contratos
+
+**Backend → IA** (`IA/README.md` tiene el detalle):
+
+```
+POST /chat     {"message": "...", "history": [{"role": "user"|"assistant", "text": "..."}], "farm_context": "..."}
+            →  {"reply": "...", "source": "model"}
+POST /voice    multipart: audio | transcript, farm_context
+            →  {"reply": "...", "transcript": "..." | null, "source": "model"}
+POST /predict/irrigation  {"id_crop", "soil_moisture", "air_temperature", "ph", "humidity_min", ...}
+            →  {"irrigate", "duration_minutes", "recommendation", "confidence", "model_used", "factors"}
+GET  /health → {"status": "UP"}
+```
+
+Errores como `{"message"}`: 401 sin llave, 422 negativa del modelo, 429 sin cuota, 502 proveedor caído,
+503 sin proveedor, 504 tiempo agotado. Ante 429, 502, 503, 504 o una caída del servicio, el backend
+responde la pregunta escrita con los datos de la finca (`source: "local"`).
+
+**Raspberry → manejador de eventos → backend:**
+
+```
+POST /events  (X-Device-Key)
+  {"device_id": "RPI-DEMO-01", "type": "reading", "ts": "2026-10-16T08:00:00-05:00",
+   "data": {"soil_moisture": 31.5, "air_temperature": 24.1, "ph": 6.4}}
+  → 200 {"status": "stored", "readings": 3, "alerts": 1, "delivered": 2}
+  → 4xx {"message"} el evento o la llave están mal (no reintentar) · 502 backend caído (reintentar)
+
+POST /api/internal/events  (X-Internal-Key, X-Device-Key)   mismo cuerpo
+  → 200 {"ownerEmail": "demo@agrosense.co",
+         "event": {"type": "reading", "deviceId": "RPI-DEMO-01", "cropId": 1, "cropName": "Café",
+                   "readings": [{"idReading", "idSensor", "sensorCode", "sensorType", "value", "unit",
+                                 "quality", "recordedAt"}],
+                   "alerts": [{"idAlert", "alertType", "severity", "message", "detectedValue",
+                               "idCrop", "cropName", "createdAt", ...}]}}
+```
+
+Con varios sensores del mismo tipo en el cultivo, la medida debe nombrar el suyo
+(`{"soil_moisture": {"value": 31.5, "sensor_code": "AS-001"}}`); si no, 400 con los códigos posibles.
+`type: "alert"` lleva `data: {"alert_type", "message", "severity"?, "value"?}`.
+
+**Navegador ↔ frontend ↔ backend ↔ manejador de eventos:**
+
+```
+GET /api/ui/events/token (sesión)          → {"enabled": false}  sin EVENTS_PUBLIC_URL
+                                           → {"enabled": true, "token", "streamUrl", "expiresInSeconds": 300}
+GET /api/events/token (JWT del usuario)    → {"token", "expiresInSeconds": 300}       (backend)
+GET /stream?token=…                        → text/event-stream: ready, reading, alert, expired, ": ping"
+```
+
+### Variables de cada servicio
+
+Todas están en `.env.example`. Ninguna llave tiene valor por defecto ni se escribe en archivos del
+repositorio.
+
+| Servicio | Variables nuevas o que cambian |
+|---|---|
+| Backend | `AI_CHAT_VIA_SERVICE` (`false`), `AI_SERVICE_KEY`, `AI_SERVICE_TIMEOUT_MS` (ahora 30000), `EVENTS_INTERNAL_KEY`, `EVENTS_STREAM_SECRET` (≥ 32 bytes), `SEED_DEVICE_KEY` |
+| IA | `INTERNAL_API_KEY`, `AI_SERVICE_TOKEN` (migración), `AI_CHAT_API_KEY`, `AI_CHAT_BASE_URL`, `AI_CHAT_MODEL`, `AI_TRANSCRIPTION_MODEL`, `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL`, `ANTHROPIC_EFFORT`, `GEMINI_API_KEY`, `GEMINI_MODEL`, `AI_TIMEOUT_MS` (20000), `AI_MAX_OUTPUT_TOKENS` (2048), `PORT` |
+| Manejador de eventos | `BACKEND_URL`, `EVENTS_INTERNAL_KEY`, `EVENTS_STREAM_SECRET`, `EVENTS_ALLOWED_ORIGINS`, `BACKEND_TIMEOUT_MS` (30000), `EVENTS_HEARTBEAT_S`, `EVENTS_MAX_STREAMS_PER_USER`, `EVENTS_MAX_STREAMS`, `PORT` |
+| Frontend | `EVENTS_PUBLIC_URL` |
+| Raspberry | `EVENTS_URL`, `DEVICE_ID`, `DEVICE_KEY`, `INTERVAL_S`, `READINGS`, `QUEUE_FILE`, `MAX_QUEUE`, `TIMEOUT_S`, `ATTEMPTS`, `FIRST_BACKOFF_S`, `MAX_BACKOFF_S` |
+
+### Ejecutar todo junto
+
+```bash
+cp .env.example .env      # y completa los secretos
+docker compose up --build
+```
+
+`compose.yaml` arranca `postgres` (volumen `pgdata`, comprobación con `pg_isready`), `ia-service`, `backend`
+(perfil `seed`: aplica `schema.sql` y `seed_demo.sql`), `event-service` y `frontend`, cada uno cuando los
+que necesita ya responden a su comprobación de salud. El frontend queda en `http://localhost:8080` y el
+webhook en `http://localhost:8100/events`, al que se apunta el simulador (`raspberry/`). Cada Dockerfile
+corre con un usuario sin privilegios, lee el puerto de `PORT` y se comprueba en `/health` (`/api/health`
+en el backend, `/login` en el frontend).
+
+### Desplegar en Render
+
+Orden: base de datos, backend, IA, manejador de eventos, frontend.
+
+1. **Base de datos:** ejecuta a mano `database/migrations/001_devices.sql` en la base de producción
+   (Neon) antes de desplegar el backend nuevo; `database/README.md` explica cómo. El backend no arranca sin
+   la tabla `devices`.
+2. **IA** (`ia-agrosense`, ya existe): define `INTERNAL_API_KEY` (generada) y la llave del proveedor. Sigue
+   aceptando el `AI_SERVICE_TOKEN` actual, así que el backend desplegado no se rompe mientras tanto.
+3. **Backend** (`BACKEND-AGROSENSE`): añade `AI_SERVICE_KEY` (= `INTERNAL_API_KEY`), `EVENTS_INTERNAL_KEY`,
+   `EVENTS_STREAM_SECRET` y, cuando se quiera mover el chat, `AI_CHAT_VIA_SERVICE=true`. Pon `/api/health`
+   como ruta de comprobación.
+4. **Manejador de eventos:** servicio web nuevo con `event-service/render.yaml` (Docker, `/health`, un solo
+   proceso), con `BACKEND_URL`, `EVENTS_INTERNAL_KEY` y `EVENTS_STREAM_SECRET` iguales a los del backend y
+   `EVENTS_ALLOWED_ORIGINS` con la dirección del frontend.
+5. **Frontend** (Vercel): `EVENTS_PUBLIC_URL` con la dirección pública del manejador de eventos.
+
+**Plan gratuito:** Render duerme cada servicio tras unos 15 minutos sin uso y tarda entre 1 y 3 minutos en
+arrancarlo. Por eso los tiempos de espera son configurables y generosos (`AI_SERVICE_TIMEOUT_MS`,
+`BACKEND_TIMEOUT_MS`, `AI_TIMEOUT_MS`), la Raspberry reintenta y guarda en su cola, el chat responde en modo
+local si la IA no llega a tiempo y el frontend sigue mostrando lo que cargó. **Antes de una demo**,
+despierta los servicios unos minutos antes:
+
+```bash
+for url in https://backend-agrosense-u5mz.onrender.com/api/health \
+           https://ia-agrosense.onrender.com/health \
+           https://<manejador-de-eventos>.onrender.com/health; do
+  curl -s -o /dev/null -w "%{http_code} $url\n" --max-time 180 "$url"
+done
+```
+
+## 3. Decisiones
 
 1. **El frontend lee la base de datos directamente con JPA.** El backend no expone ningún endpoint, así
    que no hay API que consumir. Para no inventar endpoints, el frontend tiene sus propias entidades
@@ -227,8 +410,31 @@ esa rama se sube con un `git push` normal, sin forzar.
     - La conversación se guarda en `sessionStorage` a nombre de la cuenta y dura lo que la pestaña. Las
       páginas de acceso y de registro la borran (`ai/storage.ts`), así que no sobrevive a cerrar sesión
       ni a que la sesión caduque.
+24. **Un solo servicio de IA, en `IA/`** (16 de octubre de 2026). El servicio de predicción pasa a FastAPI
+    y suma el asistente (`/chat`, `/voice`) en lugar de crear un `ia-service/` aparte: el diagrama dibuja
+    una sola IA y `AI_SERVICE_URL` ya apuntaba a ella. `/predict/irrigation` conserva su contrato y sus 40
+    pruebas. Proveedores en el orden OpenAI-compatible → Claude → Gemini, instrucciones en
+    `IA/prompts/system-es.txt` y los 8 últimos turnos.
+    - El chat solo pasa por el servicio con `AI_CHAT_VIA_SERVICE=true` (por defecto `false`): activar las
+      predicciones no debe cambiar de proveedor el chat sin decidirlo. Con la bandera apagada el backend usa
+      su IA interna, que queda marcada como obsoleta pero no se borra.
+    - El servicio acepta `X-Internal-Key` y, durante la migración, el Bearer `AI_SERVICE_TOKEN`.
+25. **Dispositivos con llave propia.** Tabla `devices` (un dispositivo por cultivo), migración idempotente
+    `database/migrations/001_devices.sql` para la base existente y alta con `POST /api/devices` (`ADMIN` o
+    `FARMER`), que devuelve la llave una sola vez; se guarda su SHA-256. El dispositivo de ejemplo de
+    `seed_demo.sql` no tiene llave usable hasta que el backend le pone `SEED_DEVICE_KEY` (como la contraseña
+    del usuario de ejemplo, decisión 18). Si un evento trae una medida con varios sensores posibles en el
+    cultivo, se exige `sensor_code` y se responde 400 explicándolo, en vez de adivinar.
+26. **Eventos por webhook y SSE en lugar de MQTT.** Las Raspberry envían por HTTP al manejador de eventos,
+    que reenvía al backend (las lecturas siguen el camino de siempre, `SensorFacade`) y empuja el resultado al
+    navegador del dueño por Server-Sent Events. MQTT y el STOMP del backend se conservan, apagados o sin
+    cliente. El token del canal va en la dirección porque `EventSource` no admite cabeceras: dura 5 minutos
+    y el manejador de eventos no registra la parte de la dirección después de `?`.
+27. **Frontend y BD: desviación aceptada por ahora** (opción b del 16 de octubre). Los servicios nuevos no
+    tienen acceso a la BD; el frontend lo conserva en las 9 clases de la sección 2 hasta migrarlo, servicio
+    por servicio, en una rama aparte.
 
-## 3. Estructura del frontend
+## 4. Estructura del frontend
 
 ```
 frontend/src/main/java/com/agrosense/frontend/
@@ -239,6 +445,7 @@ frontend/src/main/java/com/agrosense/frontend/
                 CatalogService, AccountService
   backend/      BackendClient (llamadas a la API del backend), BackendToken, BackendUnavailableException
   ai/           AiAssistantController (`/api/ui/ai`), AiChatForm, AiReply, AiAssistantException
+  events/       LiveEventsController (`/api/ui/events/token`: dirección del canal en vivo y su token)
   repository/   Un repositorio Spring Data por entidad
   entity/       Entidades JPA y enumeraciones
   dto/          Views (proyecciones de solo lectura) y los formularios (IrrigationForm, EstateForm,
@@ -252,7 +459,7 @@ frontend/src/main/resources/
   static/js/            Salida de tsc; no se edita a mano
 frontend/src/main/ts/   theme-init, theme, app, tables, palette, forms, login, dashboard, settings,
                         design-system; api/ (cliente HTTP y endpoints), core/dom, types/;
-                        ai/ (chat-widget, markdown, voice, storage)
+                        ai/ (chat-widget, markdown, voice, storage); events/live (lecturas y alertas en vivo)
   static/img/           brand/ (logotipos, favicon, créditos) y photos/
   static/fonts/         PlusJakartaSans.woff2
   messages.properties   Textos en español de las enumeraciones
@@ -260,7 +467,7 @@ frontend/src/main/ts/   theme-init, theme, app, tables, palette, forms, login, d
 
 Los controladores solo delegan en servicios; los servicios devuelven DTO, nunca entidades.
 
-## 4. Cobertura: página ↔ servicio ↔ estado
+## 5. Cobertura: página ↔ servicio ↔ estado
 
 La columna central indica el servicio Java del frontend que atiende cada parte. Donde dice «API del
 backend», la operación pasa por el backend cuando está configurado y responde, y por la base de datos en
@@ -279,11 +486,13 @@ caso contrario (decisión 21).
 | Inicio · agua por día           | `GET /api/ui/water-usage`                              | Real            |
 | Inicio · alertas recientes      | `AlertService`                                         | Real            |
 | Parcelas                        | `EstateService` (lectura), `CatalogService` (alta, edición, baja de parcelas y cultivos) | Real |
-| Sensores                        | `SensorService` (lectura), `CatalogService` (baja; alta por la API del backend, `POST /api/sensors`) | Parcial (sin edición; no llegan lecturas nuevas mientras la ingesta del backend esté apagada) |
+| Sensores                        | `SensorService` (lectura), `CatalogService` (baja; alta por la API del backend, `POST /api/sensors`) | Parcial (sin edición) |
+| Sensores · última lectura en vivo | `events/live.ts` ← manejador de eventos (`GET /stream`); token por `GET /api/ui/events/token` | Real con `EVENTS_PUBLIC_URL`; sin él, la página muestra lo que cargó |
+| Alertas nuevas en vivo (todas las páginas con sesión) | `events/live.ts`: aviso y contadores del menú y la barra superior | Real con `EVENTS_PUBLIC_URL` |
 | Riego                           | `IrrigationService` (historial); alta por la API del backend (`POST /api/riego`) | Parcial (registra el riego con sus litros; no acciona la bomba) |
 | Alertas                         | `AlertService` (listar, paginar); marcar como atendida por la API del backend (`PATCH /api/alerts/{id}/acknowledge`) | Real |
 | Reportes                        | `IrrigationService.waterReport`                        | Parcial (exporta a CSV la tabla visible; sin PDF) |
-| Asistente de IA (todas las páginas con sesión) | `POST /api/ui/ai/chat` y `/voice` → API del backend (`POST /api/ai/chat` y `/voice`) → Gemini | Real con `GEMINI_API_KEY` en el backend; sin ella, o sin backend, avisa de que no está disponible |
+| Asistente de IA (todas las páginas con sesión) | `POST /api/ui/ai/chat` y `/voice` → API del backend (`POST /api/ai/chat` y `/voice`) → servicio de IA (con `AI_CHAT_VIA_SERVICE=true`) o proveedor interno | Real con un proveedor configurado; sin él responde con los datos de la finca (`source: local`); sin backend avisa de que no está disponible |
 | Configuración · perfil          | `AccountService.findProfile`                           | Parcial (solo lectura) |
 | Configuración · preferencias    | `localStorage` del navegador                           | Parcial (no se guardan en la cuenta) |
 | Configuración · cerrar sesión   | `POST /logout` con CSRF                                | Real            |
@@ -293,7 +502,7 @@ caso contrario (decisión 21).
 backend. Con el perfil `demo` esa base de datos está en memoria, contiene datos de ejemplo y el backend
 no interviene.
 
-## 5. Seguridad
+## 6. Seguridad
 
 Del frontend (la del backend está en la sección 1):
 
@@ -310,8 +519,14 @@ Del frontend (la del backend está en la sección 1):
 - Thymeleaf escapa todo el contenido (`th:text`); el JavaScript usa `textContent`, nunca `innerHTML`.
 - Validación con Bean Validation en `IrrigationForm`, tanto en el formulario como en el JSON.
 - El mensaje de error del login es el mismo para usuario inexistente y contraseña incorrecta.
+- Canal en vivo: el navegador recibe un token de 5 minutos que solo sirve para abrir su propio canal; nunca
+  recibe `INTERNAL_API_KEY`, `EVENTS_INTERNAL_KEY`, `EVENTS_STREAM_SECRET` ni ninguna otra llave de
+  servicio. La CSP solo añade a `connect-src` el origen de `EVENTS_PUBLIC_URL`, y los eventos se pintan con
+  `textContent`.
 
-## 6. Verificación realizada
+De los servicios nuevos, la sección 2 («Cada conexión en el código») resume cómo se asegura cada conexión.
+
+## 7. Verificación realizada
 
 - `mvnw test` en `frontend/` (11 de octubre de 2026): 76 pruebas (JUnit 5, Mockito, MockMvc); 74
   correctas y 2 omitidas, que son las de PostgreSQL. Incluyen las del cliente del backend contra un
@@ -368,7 +583,7 @@ Del frontend (la del backend está en la sección 1):
   CSP.
 - Sin desborde horizontal a 360, 768, 1024 y 1440 px en inicio, parcelas, alertas y configuración.
 
-## 7. Despliegue
+## 8. Despliegue
 
 | Componente    | Dónde                                   | Dirección                                      |
 |---------------|-----------------------------------------|------------------------------------------------|
@@ -376,6 +591,11 @@ Del frontend (la del backend está en la sección 1):
 | Frontend      | Vercel, proyecto `agrosense-frontend`, contenedor | `https://agrosense-frontend-iota.vercel.app` |
 | Backend       | Render, servicio `BACKEND-AGROSENSE`, Docker, plan gratuito | `https://backend-agrosense-u5mz.onrender.com` |
 | Predicción de riego | Render, servicio `ia-agrosense`, Docker, plan gratuito, misma región que el backend | `https://ia-agrosense.onrender.com` |
+| Manejador de eventos | Sin desplegar todavía; `event-service/render.yaml` lo describe | — |
+
+Los servicios nuevos de la rama `feature/arquitectura-servicios` (asistente por el servicio de IA,
+dispositivos, eventos en vivo) no están desplegados; el procedimiento está en la sección 2 («Desplegar en
+Render»).
 
 - **Base de datos.** Una sola para los dos componentes, con las tablas de `database/schema.sql` y los
   datos de `seed_demo.sql`. No hay base separada para pruebas: `PostgresCompatibilityTests` usa la misma,
@@ -417,12 +637,17 @@ Del frontend (la del backend está en la sección 1):
   (`https://agrosense-backend.vercel.app`) corre el mismo backend con `backend/Dockerfile.vercel` contra
   la misma base. Funciona, pero el frontend no lo usa.
 
-## 8. Pendiente
+## 9. Pendiente
 
-- Ampliar la API del backend (registro, edición, eliminación, listados completos) para que el frontend
-  pueda dejar de leer la base de datos directamente (ver decisión 21).
-- Ingesta de lecturas: el backend las recibe por REST y por MQTT, pero MQTT está apagado y no hay broker
-  ni dispositivos que envíen datos.
+- **Desviación del diagrama:** el frontend sigue leyendo y escribiendo la BD en 9 clases (sección 2,
+  decisión 27). Migrarlo a la API del backend, servicio por servicio, en una rama aparte.
+- Desplegar el manejador de eventos, aplicar la migración `001_devices.sql` en Neon y pasar el chat al
+  servicio de IA en producción (`AI_CHAT_VIA_SERVICE=true`), en el orden de la sección 2.
+- Retirar el Bearer `AI_SERVICE_TOKEN` cuando el backend desplegado envíe `X-Internal-Key`, y después la IA
+  interna del backend.
+- Programa real de la Raspberry: sustituir los sensores simulados de `raspberry/simulator.py` por la
+  lectura de los sensores físicos. MQTT queda apagado y sin broker.
+- Dispositivos: listado, desactivación y cambio de llave (hoy solo el alta).
 - El servicio de predicción de riego también duerme en el plan gratuito. El backend lo espera 60
   segundos y lo intenta dos veces (`AI_SERVICE_TIMEOUT_MS`, `AI_SERVICE_MAX_ATTEMPTS`); si aun así no
   responde, esa predicción no se guarda y hay que pedirla de nuevo.
