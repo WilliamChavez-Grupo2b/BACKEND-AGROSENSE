@@ -10,6 +10,34 @@
 Nombre y apellido: de 2 a 18 caracteres; contraseña: de 8 a 32. Los espacios cuentan.
 Los orígenes del navegador permitidos se indican en `CORS_ALLOWED_ORIGINS`, separados por comas.
 
+## Dispositivos y eventos en vivo
+
+Las Raspberry Pi envían sus eventos al servicio de eventos (`event-service/` del workspace), que los reenvía
+aquí. MQTT queda apagado por defecto (`MQTT_ENABLED=false`) y su código se conserva.
+
+| Método y ruta | Quién la llama | Respuesta |
+|---|---|---|
+| `POST /api/devices` `{cropId, deviceCode}` | Un usuario `ADMIN` o `FARMER`, sobre un cultivo suyo | 201 con el dispositivo y `deviceKey`, la única vez que se muestra · 404 cultivo ajeno · 409 código repetido |
+| `POST /api/internal/events` `{device_id, type, ts, data}` con `X-Internal-Key` y `X-Device-Key` | Solo el servicio de eventos; fuera del token de usuarios | 200 `{ownerEmail, event}` · 401 sin la llave interna, o dispositivo o llave incorrectos · 400 evento no válido, con el campo a corregir |
+| `GET /api/events/token` | Un usuario con su token | 200 `{token, expiresInSeconds: 300}` para abrir su canal en vivo · 503 sin `EVENTS_STREAM_SECRET` |
+
+- `type: "reading"`: `data` lleva las medidas, por ejemplo `{"soil_moisture": 31.5, "air_temperature": 24, "ph": 6.4}`
+  (los nombres son los tipos de sensor en minúsculas). Cada una se guarda en el sensor activo de ese tipo del
+  cultivo del dispositivo, con la misma lógica que REST y MQTT: validación, alertas por rango y aviso por
+  WebSocket. Si el cultivo tiene varios sensores activos de ese tipo, el evento debe decir cuál:
+  `{"soil_moisture": {"value": 31.5, "sensor_code": "AS-001"}}`; si no, responde 400 explicándolo. Un evento
+  con una medida rechazada no guarda ninguna.
+- `type: "alert"`: `data` es `{alert_type, message, severity?, value?}` y se guarda en el cultivo, con una
+  alerta abierta como máximo por cultivo y tipo.
+- `ts` es opcional (ISO-8601 o segundos desde 1970); más de 5 minutos en el futuro se rechaza.
+- La llave del dispositivo se compara con su SHA-256 guardado, en tiempo constante.
+
+| Variable | Descripción |
+|---|---|
+| `EVENTS_INTERNAL_KEY` | Llave que el servicio de eventos envía en `X-Internal-Key`. Sin ella, la ruta interna rechaza todo |
+| `EVENTS_STREAM_SECRET` | Secreto de al menos 32 bytes, compartido solo con el servicio de eventos, que firma los tokens del canal en vivo (HS256, 5 minutos) |
+| `SEED_DEVICE_KEY` | Llave que recibe al arrancar el dispositivo de ejemplo `RPI-DEMO-01`. Solo para bases locales y de prueba |
+
 ## Asistente de IA
 
 Código en `src/main/java/com/agrosense/backend/ai` (`controller`, `service`, `dto`). Responde preguntas

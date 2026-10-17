@@ -1,8 +1,10 @@
 package com.agrosense.backend.config;
 
+import com.agrosense.backend.security.InternalKeyFilter;
 import com.agrosense.backend.security.JwtFilter;
 import com.agrosense.backend.security.TokenAuthenticator;
 import jakarta.servlet.http.HttpServletResponse;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
@@ -27,8 +29,8 @@ import java.nio.charset.StandardCharsets;
 public class SecurityConfig {
 
     @Bean
-    public SecurityFilterChain securityFilterChain(HttpSecurity http, TokenAuthenticator tokenAuthenticator)
-            throws Exception {
+    public SecurityFilterChain securityFilterChain(HttpSecurity http, TokenAuthenticator tokenAuthenticator,
+            @Value("${events.internal-key:}") String eventsInternalKey) throws Exception {
         http
                 // The API is stateless and authenticates with a header, never a cookie, so CSRF does not apply.
                 .csrf(AbstractHttpConfigurer::disable)
@@ -45,8 +47,12 @@ public class SecurityConfig {
                         // Browsers cannot send headers on the WebSocket handshake; the token is checked on
                         // the STOMP CONNECT frame instead (see StompAuthChannelInterceptor).
                         .requestMatchers("/ws/**").permitAll()
+                        // Called by the event service, not by users: InternalKeyFilter lets in only the
+                        // requests with X-Internal-Key, and each event is checked against its device's key.
+                        .requestMatchers(HttpMethod.POST, "/api/internal/events").permitAll()
                         .anyRequest().authenticated())
                 .exceptionHandling(errors -> errors.authenticationEntryPoint(unauthorizedEntryPoint()))
+                .addFilterBefore(new InternalKeyFilter(eventsInternalKey), UsernamePasswordAuthenticationFilter.class)
                 .addFilterBefore(new JwtFilter(tokenAuthenticator),
                         UsernamePasswordAuthenticationFilter.class);
         return http.build();

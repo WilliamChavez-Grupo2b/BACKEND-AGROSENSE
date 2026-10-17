@@ -33,6 +33,11 @@ public class GlobalExceptionHandler {
         return respond(HttpStatus.CONFLICT, exception.getMessage());
     }
 
+    @ExceptionHandler(ApiException.class)
+    public ResponseEntity<ErrorResponse> handleApi(ApiException exception) {
+        return respond(exception.getStatus(), exception.getMessage());
+    }
+
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<ErrorResponse> handleValidation(MethodArgumentNotValidException exception) {
         // One message per field, in the order they were reported; the first one is also the summary.

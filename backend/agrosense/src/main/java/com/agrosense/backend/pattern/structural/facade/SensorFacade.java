@@ -2,6 +2,7 @@ package com.agrosense.backend.pattern.structural.facade;
 
 import com.agrosense.backend.domain.enums.AlertType;
 import com.agrosense.backend.domain.enums.SensorType;
+import com.agrosense.backend.domain.enums.Severity;
 import com.agrosense.backend.dto.response.AlertResponse;
 import com.agrosense.backend.dto.response.DashboardResponse;
 import com.agrosense.backend.dto.response.SensorReadingResponse;
@@ -31,6 +32,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.util.Optional;
 
 /**
  * Facade pattern: one entry point for "a reading arrived", used by both MQTT and REST. It hides the
@@ -53,8 +55,18 @@ public class SensorFacade {
     private final SensorReadingProcessor readingProcessor;
     private final ApplicationEventPublisher events;
 
+    /** A stored reading and the alert it raised, when it raised one. */
+    public record Recorded(SensorReading reading, Optional<Alert> alert) {
+    }
+
     @Transactional
     public SensorReading recordReading(SensorReadingData data) {
+        return record(data).reading();
+    }
+
+    /** Like {@link #recordReading}, also returning the alert the reading raised (used by device events). */
+    @Transactional
+    public Recorded record(SensorReadingData data) {
         Sensor sensor = sensorRepository.findBySensorCode(data.getSensorCode())
                 .orElseThrow(() -> new ResourceNotFoundException("Sensor not found: " + data.getSensorCode()));
         if (!Boolean.TRUE.equals(sensor.getActive())) {
@@ -83,13 +95,25 @@ public class SensorFacade {
         events.publishEvent(new SensorReadingRecordedEvent(ownerEmail, SensorReadingResponse.from(reading)));
 
         // An impossible value says the sensor is faulty, not that the crop is in trouble.
-        if (ValidationDecorator.QUALITY_OK.equals(reading.getQuality())) {
-            raiseAlertIfOutOfCropRange(sensor, reading, ownerEmail);
-        }
-        return reading;
+        Optional<Alert> alert = ValidationDecorator.QUALITY_OK.equals(reading.getQuality())
+                ? raiseAlertIfOutOfCropRange(sensor, reading, ownerEmail)
+                : Optional.empty();
+        return new Recorded(reading, alert);
     }
 
-    private void raiseAlertIfOutOfCropRange(Sensor sensor, SensorReading reading, String ownerEmail) {
+    /**
+     * An alert a device reports itself (a pest seen by a camera, for example), under the same rule as the
+     * alerts readings raise: one open alert per crop and type. Empty when one of that type is already open.
+     */
+    @Transactional
+    public Optional<Alert> raiseAlert(Crop crop, AlertType type, String message, Severity severity,
+            BigDecimal detectedValue) {
+        AlertBuilder alert = AlertBuilder.forCrop(crop).type(type).message(message).detectedValue(detectedValue);
+        return saveIfNoneOpen(crop, type, severity == null ? alert.automaticSeverity() : alert.severity(severity),
+                crop.getEstate().getUser().getEmail());
+    }
+
+    private Optional<Alert> raiseAlertIfOutOfCropRange(Sensor sensor, SensorReading reading, String ownerEmail) {
         Crop crop = sensor.getCrop();
         BigDecimal value = reading.getValue();
         AlertType type = switch (sensor.getSensorType()) {
@@ -102,22 +126,26 @@ public class SensorFacade {
             default -> null;
         };
         if (type == null) {
-            return;
+            return Optional.empty();
         }
-        // One open alert per crop and type is enough; more would only repeat the same warning. The crop
-        // row is locked first, so two readings arriving together cannot both find "no open alert".
-        cropRepository.findByIdForUpdate(crop.getIdCrop());
-        if (alertRepository.existsByCropIdCropAndAlertTypeAndAcknowledgedFalse(crop.getIdCrop(), type)) {
-            return;
-        }
-        Alert alert = alertRepository.save(AlertBuilder.forCrop(crop)
+        return saveIfNoneOpen(crop, type, AlertBuilder.forCrop(crop)
                 .sensor(sensor)
                 .type(type)
                 .detectedValue(value)
                 .message(describe(type, reading))
-                .automaticSeverity()
-                .build());
-        events.publishEvent(new AlertRaisedEvent(ownerEmail, AlertResponse.from(alert)));
+                .automaticSeverity(), ownerEmail);
+    }
+
+    private Optional<Alert> saveIfNoneOpen(Crop crop, AlertType type, AlertBuilder alert, String ownerEmail) {
+        // One open alert per crop and type is enough; more would only repeat the same warning. The crop
+        // row is locked first, so two readings arriving together cannot both find "no open alert".
+        cropRepository.findByIdForUpdate(crop.getIdCrop());
+        if (alertRepository.existsByCropIdCropAndAlertTypeAndAcknowledgedFalse(crop.getIdCrop(), type)) {
+            return Optional.empty();
+        }
+        Alert saved = alertRepository.save(alert.build());
+        events.publishEvent(new AlertRaisedEvent(ownerEmail, AlertResponse.from(saved)));
+        return Optional.of(saved);
     }
 
     /**
