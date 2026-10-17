@@ -3,3 +3,5 @@
 # Local copies of the backend repository, kept out of the workspace history.
 agrosense-export/
 temp_agrosense/
+# The examples hold no secret and document every variable.
+!.env.example

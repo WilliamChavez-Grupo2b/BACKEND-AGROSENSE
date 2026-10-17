@@ -1,0 +1,146 @@
+# AgroSense with every service on one machine:   docker compose up --build
+# Copy .env.example to .env first and fill in the secrets; nothing secret is written in this file.
+#
+#   browser ──▶ frontend :8080 ──▶ backend :9000 ──▶ postgres
+#      │                              ├──▶ ia-service :8000 (predictions and, with AI_CHAT_VIA_SERVICE=true, the chat)
+#      │                              ▲
+#      └── live events ◀── event-service :8100 ◀── Raspberry (raspberry/simulator.py, EVENTS_URL=http://localhost:8100/events)
+#
+# The frontend still reads the database itself for the pages the backend API does not cover yet; see
+# docs/ARQUITECTURA.md, "Desviación pendiente". The AI and event services have no database access.
+
+name: agrosense
+
+x-database: &database
+  DATABASE_URL: jdbc:postgresql://postgres:5432/agrosense
+  DATABASE_USERNAME: agrosense
+  DATABASE_PASSWORD: ${DATABASE_PASSWORD:?Set DATABASE_PASSWORD in .env}
+
+services:
+  postgres:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_DB: agrosense
+      POSTGRES_USER: agrosense
+      POSTGRES_PASSWORD: ${DATABASE_PASSWORD:?Set DATABASE_PASSWORD in .env}
+    volumes:
+      # PostgreSQL 18 keeps its data in a version folder under this path.
+      - pgdata:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U agrosense -d agrosense"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+
+  ia-service:
+    build: ./IA
+    environment:
+      PORT: "8000"
+      INTERNAL_API_KEY: ${INTERNAL_API_KEY:?Set INTERNAL_API_KEY in .env}
+      AI_CHAT_API_KEY: ${AI_CHAT_API_KEY:-}
+      AI_CHAT_BASE_URL: ${AI_CHAT_BASE_URL:-https://api.groq.com/openai/v1}
+      AI_CHAT_MODEL: ${AI_CHAT_MODEL:-qwen/qwen3.8-27b}
+      AI_TRANSCRIPTION_MODEL: ${AI_TRANSCRIPTION_MODEL:-whisper-large-v3-turbo}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-claude-haiku-5-5}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      AI_TIMEOUT_MS: ${AI_TIMEOUT_MS:-20000}
+      AI_MAX_OUTPUT_TOKENS: ${AI_MAX_OUTPUT_TOKENS:-2048}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=4)"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    ports:
+      - "8000:8000"
+    restart: unless-stopped
+
+  backend:
+    build:
+      context: .
+      dockerfile: backend/agrosense/Dockerfile
+    environment:
+      <<: *database
+      PORT: "9000"
+      # The "seed" profile applies database/schema.sql and seed_demo.sql (both idempotent) and gives the
+      # demo user SEED_USER_PASSWORD. Remove it for a database that must not get the sample rows.
+      SPRING_PROFILES_ACTIVE: seed
+      SEED_USER_PASSWORD: ${SEED_USER_PASSWORD:?Set SEED_USER_PASSWORD in .env}
+      SEED_DEVICE_KEY: ${SEED_DEVICE_KEY:-}
+      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in .env}
+      CORS_ALLOWED_ORIGINS: http://localhost:8080
+      # Every sign-in reaches the backend from the frontend's address.
+      LOGIN_MAX_ATTEMPTS_PER_ADDRESS: "0"
+      AI_SERVICE_URL: http://ia-service:8000
+      AI_SERVICE_KEY: ${INTERNAL_API_KEY}
+      AI_SERVICE_TIMEOUT_MS: "30000"
+      AI_CHAT_VIA_SERVICE: ${AI_CHAT_VIA_SERVICE:-true}
+      EVENTS_INTERNAL_KEY: ${EVENTS_INTERNAL_KEY:?Set EVENTS_INTERNAL_KEY in .env}
+      EVENTS_STREAM_SECRET: ${EVENTS_STREAM_SECRET:?Set EVENTS_STREAM_SECRET in .env}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      ia-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:9000/api/health > /dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      start_period: 90s
+      retries: 10
+    ports:
+      - "9000:9000"
+    restart: unless-stopped
+
+  event-service:
+    build: ./event-service
+    environment:
+      PORT: "8100"
+      BACKEND_URL: http://backend:9000
+      EVENTS_INTERNAL_KEY: ${EVENTS_INTERNAL_KEY}
+      EVENTS_STREAM_SECRET: ${EVENTS_STREAM_SECRET}
+      EVENTS_ALLOWED_ORIGINS: http://localhost:8080
+      BACKEND_TIMEOUT_MS: "30000"
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8100/health', timeout=4)"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    ports:
+      - "8100:8100"
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    environment:
+      <<: *database
+      PORT: "8080"
+      BACKEND_URL: http://backend:9000
+      BACKEND_JWT_SECRET: ${JWT_SECRET}
+      # The browser opens the stream itself, so this is the address it can reach, not the internal one.
+      EVENTS_PUBLIC_URL: http://localhost:8100
+      # Plain http on localhost: a Secure cookie would never be sent back.
+      SESSION_COOKIE_SECURE: "false"
+    depends_on:
+      backend:
+        condition: service_healthy
+      event-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/login > /dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      start_period: 90s
+      retries: 10
+    ports:
+      - "8080:8080"
+    restart: unless-stopped
+
+volumes:
+  pgdata:

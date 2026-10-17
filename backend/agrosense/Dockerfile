@@ -19,5 +19,9 @@ COPY --from=builder /app/target/*.jar app.jar
 COPY database/ /app/database/
 ENV DATABASE_DIR=/app/database
 USER agrosense
+# The port comes from PORT (application.properties), which Render and docker compose set.
+ENV PORT=9000
 EXPOSE 9000
+HEALTHCHECK --interval=30s --timeout=5s --start-period=90s --retries=3 \
+  CMD wget -qO- "http://127.0.0.1:${PORT}/api/health" > /dev/null || exit 1
 ENTRYPOINT ["java", "-jar", "app.jar"]
