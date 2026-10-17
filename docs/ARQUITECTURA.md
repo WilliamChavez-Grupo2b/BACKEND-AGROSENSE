@@ -240,7 +240,7 @@ docker compose up --build
 que necesita ya responden a su comprobación de salud. El frontend queda en `http://localhost:8080` y el
 webhook en `http://localhost:8100/events`, al que se apunta el simulador (`raspberry/`). Cada Dockerfile
 corre con un usuario sin privilegios, lee el puerto de `PORT` y se comprueba en `/health` (`/api/health`
-en el backend, `/login` en el frontend).
+en el backend; en el frontend, `/health` es público y no abre sesión ni consulta la base de datos).
 
 ### Desplegar en Render
 
