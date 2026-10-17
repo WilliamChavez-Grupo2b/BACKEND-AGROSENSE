@@ -1,5 +1,3 @@
-"""The simulator against a local server that plays the event service."""
-
 import json
 import random
 import threading
@@ -74,7 +72,7 @@ def test_a_measurement_is_sent_with_the_devices_key_and_its_time(service, config
     assert event["device_id"] == "RPI-DEMO-01"
     assert event["type"] == "reading"
     assert set(event["data"]) == {"soil_moisture", "air_temperature", "ph"}
-    assert event["ts"][-6] in "+-"  # ISO-8601 with the device's offset
+    assert event["ts"][-6] in "+-"
 
 
 def test_a_service_that_fails_for_a_moment_is_tried_again_with_growing_waits(service, config):

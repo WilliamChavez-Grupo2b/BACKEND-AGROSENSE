@@ -1,14 +1,3 @@
-"""AgroSense field device: measures every few seconds and sends the readings to the event service.
-
-On a test PC it simulates the sensors; on a Raspberry Pi, replace ``measure`` with the code that reads yours.
-Events that cannot be sent (no wifi, service asleep) wait in a file on disk and go out, oldest first, as soon
-as the service answers again. Each event carries the time it was measured, so a late one keeps its time.
-
-    python simulator.py                    # every INTERVAL_S seconds, until Ctrl+C
-    python simulator.py --once             # a single measurement
-    python simulator.py --config my.env    # settings from a file (environment variables win)
-"""
-
 import argparse
 import json
 import logging
@@ -26,7 +15,6 @@ log = logging.getLogger("agrosense.raspberry")
 
 DEFAULT_CONFIG_FILE = "simulator.env"
 
-# What the simulated sensors start at and the range they wander within.
 SIMULATED = {
     "soil_moisture": (55.0, 20.0, 90.0, 1.5, 1),
     "air_temperature": (22.0, 8.0, 36.0, 0.4, 1),
@@ -52,7 +40,6 @@ class Config:
 
 
 def read_config_file(path: Path) -> dict:
-    """KEY=VALUE lines; blank lines and those starting with # are ignored."""
     values = {}
     for line in path.read_text(encoding="utf-8").splitlines():
         line = line.strip()
@@ -93,8 +80,6 @@ def load_config(path: str | None = None, environ: dict | None = None) -> Config:
 
 
 class Sensors:
-    """Simulated sensors that drift slowly, like real ones. Replace ``measure`` on a real Raspberry Pi."""
-
     def __init__(self, names: tuple[str, ...], rng: random.Random | None = None):
         self.rng = rng or random.Random()
         unknown = [name for name in names if name not in SIMULATED]
@@ -110,8 +95,6 @@ class Sensors:
 
 
 class DiskQueue:
-    """Events waiting to be sent, one JSON per line. Rewritten whole each time: it stays small."""
-
     def __init__(self, path: str, limit: int):
         self.path = Path(path)
         self.limit = limit
@@ -138,7 +121,6 @@ class DiskQueue:
         temporary = self.path.with_suffix(self.path.suffix + ".tmp")
         temporary.write_text("".join(json.dumps(event, ensure_ascii=False) + "\n" for event in events),
                              encoding="utf-8")
-        # Replacing in one step, so a power cut leaves either the old queue or the new one.
         os.replace(temporary, self.path)
 
     def add(self, event: dict) -> None:
@@ -146,7 +128,6 @@ class DiskQueue:
 
 
 def send(session: requests.Session, config: Config, event: dict) -> str:
-    """One try: sent, worth trying again later, or refused for a reason retrying will not change."""
     try:
         answer = session.post(config.events_url, json=event, headers={"X-Device-Key": config.device_key},
                               timeout=config.timeout_s)
@@ -165,7 +146,6 @@ def send(session: requests.Session, config: Config, event: dict) -> str:
 
 def deliver(session: requests.Session, config: Config, event: dict, sleep=time.sleep,
             rng: random.Random | None = None) -> str:
-    """Tries a few times, waiting longer after each failure (1 s, 2 s, 4 s... up to MAX_BACKOFF_S)."""
     rng = rng or random.Random()
     outcome = RETRY
     for attempt in range(config.attempts):
@@ -173,7 +153,6 @@ def deliver(session: requests.Session, config: Config, event: dict, sleep=time.s
         if outcome != RETRY:
             return outcome
         if attempt + 1 < config.attempts:
-            # A little randomness keeps many devices from retrying at the same instant.
             sleep(backoff(config, attempt) * rng.uniform(0.8, 1.2))
     return outcome
 
@@ -183,7 +162,6 @@ def backoff(config: Config, attempt: int) -> float:
 
 
 def flush(session: requests.Session, config: Config, queue: DiskQueue) -> int:
-    """Sends what is waiting, oldest first; stops at the first one the service cannot take yet."""
     waiting = queue.load()
     sent = 0
     while waiting:
@@ -205,7 +183,6 @@ def run_once(session: requests.Session, config: Config, sensors: Sensors, queue:
     if queue.load():
         log.info("Sent %s events that were waiting in the queue", flush(session, config, queue))
     event = reading_event(config, sensors.measure())
-    # While older events still wait, the new one waits behind them, so they arrive in order.
     outcome = RETRY if queue.load() else deliver(session, config, event, sleep)
     if outcome == RETRY:
         queue.add(event)
