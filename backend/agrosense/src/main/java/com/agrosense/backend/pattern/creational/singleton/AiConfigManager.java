@@ -1,17 +1,11 @@
 package com.agrosense.backend.pattern.creational.singleton;
 
-/**
- * Singleton pattern: the one place that holds the AI service settings at runtime. It starts disabled and
- * is configured once at startup from the application properties (see AppConfig).
- */
 public final class AiConfigManager {
 
-    /** Initialization-on-demand holder: lazy and thread-safe without explicit locking. */
     private static final class Holder {
         private static final AiConfigManager INSTANCE = new AiConfigManager();
     }
 
-    /** Immutable snapshot, replaced atomically so readers never see half-updated settings. */
     public record Settings(String serviceUrl, int timeoutMs, boolean enabled, int maxAttempts) {
     }
 

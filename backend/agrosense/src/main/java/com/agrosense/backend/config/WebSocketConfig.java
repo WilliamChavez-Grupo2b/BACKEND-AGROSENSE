@@ -14,10 +14,6 @@ import org.springframework.web.socket.config.annotation.WebSocketTransportRegist
 
 import java.util.Arrays;
 
-/**
- * STOMP over WebSocket at /ws. Readings and alerts are pushed to per-user queues
- * (/user/queue/sensores, /user/queue/alertas), so one user never receives another user's data.
- */
 @Configuration
 @EnableWebSocketMessageBroker
 @RequiredArgsConstructor
@@ -37,7 +33,6 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
 
     @Override
     public void registerStompEndpoints(StompEndpointRegistry registry) {
-        // Same origins as CORS. With none configured, only same-origin pages may connect.
         String[] origins = Arrays.stream(allowedOrigins.split(","))
                 .map(String::trim)
                 .filter(origin -> !origin.isEmpty())
@@ -47,7 +42,6 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
 
     @Override
     public void configureWebSocketTransport(WebSocketTransportRegistration registration) {
-        // Lets the registry see every session, so it can close those whose token expires.
         registration.addDecoratorFactory(sessionRegistry);
     }
 

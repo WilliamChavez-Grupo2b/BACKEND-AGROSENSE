@@ -11,7 +11,6 @@ import org.springframework.mock.web.MockHttpServletResponse;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-/** The event routes when their secrets are missing or wrong: closed, never open. */
 class EventSecurityTests {
 
 	@Test

@@ -10,7 +10,6 @@ import lombok.Data;
 
 import java.math.BigDecimal;
 
-/** Data to register an irrigation cycle started by a user. */
 @Data
 public class IrrigationRequest {
 

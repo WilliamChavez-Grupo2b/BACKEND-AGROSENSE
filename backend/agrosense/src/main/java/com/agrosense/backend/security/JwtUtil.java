@@ -15,14 +15,12 @@ import java.time.Instant;
 import java.util.Date;
 import java.util.Optional;
 
-/** Issues and verifies the signed tokens that authenticate API and WebSocket clients. */
 @Slf4j
 @Component
 public class JwtUtil {
 
     private static final String ROLE_CLAIM = "role";
 
-    /** HS512 needs a key of at least 512 bits; a shorter secret would make tokens forgeable. */
     private static final int MIN_SECRET_BYTES = 64;
 
     private final SecretKey key;
@@ -52,22 +50,18 @@ public class JwtUtil {
                 .compact();
     }
 
-    /** The e-mail the token was issued for, or empty when it is malformed, tampered with or expired. */
     public Optional<String> extractEmail(String token) {
         return parseClaims(token).map(Claims::getSubject);
     }
 
-    /** The role the token was issued with, or empty when it is malformed, tampered with or expired. */
     public Optional<String> extractRole(String token) {
         return parseClaims(token).map(claims -> claims.get(ROLE_CLAIM, String.class));
     }
 
-    /** The moment the token stops being valid, or empty when it is malformed, tampered with or expired. */
     public Optional<Instant> extractExpiration(String token) {
         return parseClaims(token).map(Claims::getExpiration).map(Date::toInstant);
     }
 
-    /** Whether the token carries a valid signature, has not expired and names a user. */
     public boolean isTokenValid(String token) {
         return extractEmail(token).isPresent();
     }
@@ -80,7 +74,6 @@ public class JwtUtil {
                     .parseSignedClaims(token)
                     .getPayload());
         } catch (JwtException | IllegalArgumentException exception) {
-            // The reason is logged, never the token itself.
             log.debug("JWT rejected: {}", exception.getMessage());
             return Optional.empty();
         }

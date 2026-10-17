@@ -21,7 +21,6 @@ public class AlertService {
     private final AlertRepository alertRepository;
     private final CropRepository cropRepository;
 
-    /** The unacknowledged alerts of one of the user's crops, newest first. */
     @Transactional(readOnly = true)
     public List<AlertResponse> findOpenByCrop(String email, Integer cropId, int limit) {
         cropRepository.findByIdCropAndEstateUserEmail(cropId, email)
@@ -34,7 +33,6 @@ public class AlertService {
                 .toList();
     }
 
-    /** The user's unacknowledged alerts, newest first. */
     @Transactional(readOnly = true)
     public List<AlertResponse> findOpen(String email, int limit) {
         int size = Math.min(Math.max(limit, 1), MAX_ALERTS);

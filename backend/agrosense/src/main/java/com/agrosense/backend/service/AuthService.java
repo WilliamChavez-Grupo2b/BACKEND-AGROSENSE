@@ -28,7 +28,6 @@ import java.util.Locale;
 @RequiredArgsConstructor
 public class AuthService {
 
-    /** Role of every account created through sign-up; other roles are assigned by an administrator. */
     public static final String DEFAULT_ROLE = "farmer";
 
     private final AuthenticationManager authenticationManager;
@@ -37,15 +36,6 @@ public class AuthService {
     private final LoginAttemptService loginAttempts;
     private final PasswordEncoder passwordEncoder;
 
-    /**
-     * Checks the credentials and issues a token.
-     *
-     * @param clientAddress network address the request came from, used to limit failed attempts
-     * @throws org.springframework.security.core.AuthenticationException when they are wrong or the
-     *         account is disabled; the caller answers both cases the same way
-     * @throws TooManyLoginAttemptsException while the account or the address is locked after too many
-     *         failures; the password is not even checked then
-     */
     @Transactional
     public LoginResponse login(LoginRequest request, String clientAddress) {
         String email = request.getEmail().trim().toLowerCase(Locale.ROOT);
@@ -72,18 +62,12 @@ public class AuthService {
                 user.getIdUser());
     }
 
-    /**
-     * Creates the account with the password hashed.
-     *
-     * @throws BusinessRuleException when the e-mail already has an account (answered with 409)
-     */
     @Transactional
     public RegisterResponse register(RegisterRequest request) {
         String email = request.getEmail().trim().toLowerCase(Locale.ROOT);
         if (userRepository.existsByEmail(email)) {
             throw new BusinessRuleException("Ya existe una cuenta con ese correo.");
         }
-        // Two simultaneous sign-ups with one e-mail: the unique constraint rejects the second, also with 409.
         User user = userRepository.saveAndFlush(User.builder()
                 .name(request.getName().trim())
                 .lastName(request.getLastName().trim())

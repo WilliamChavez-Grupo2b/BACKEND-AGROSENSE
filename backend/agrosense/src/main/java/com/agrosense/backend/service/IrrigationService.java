@@ -30,7 +30,6 @@ public class IrrigationService {
     private final CropRepository cropRepository;
     private final UserRepository userRepository;
 
-    /** Registers a manual irrigation cycle that starts now on one of the user's crops. */
     @Transactional
     public IrrigationResponse register(String email, IrrigationRequest request) {
         Crop crop = ownedCrop(email, request.getCropId());
@@ -52,7 +51,6 @@ public class IrrigationService {
         return IrrigationResponse.from(irrigation);
     }
 
-    /** The irrigation cycles of one of the user's crops, newest first. */
     @Transactional(readOnly = true)
     public List<IrrigationResponse> findHistory(String email, Integer cropId, int limit) {
         ownedCrop(email, cropId);
@@ -62,7 +60,6 @@ public class IrrigationService {
                 .toList();
     }
 
-    /** Another user's crop is reported as missing, so its existence is not revealed. */
     private Crop ownedCrop(String email, Integer cropId) {
         return cropRepository.findByIdCropAndEstateUserEmail(cropId, email)
                 .orElseThrow(() -> new ResourceNotFoundException("Crop not found"));

@@ -10,7 +10,6 @@ import org.springframework.context.annotation.Configuration;
 @Configuration
 public class SensorReadingProcessingConfig {
 
-    /** The processing chain: validation runs first, then normalization wraps its result. */
     @Bean
     public SensorReadingProcessor sensorReadingProcessor() {
         return new NormalizationDecorator(new ValidationDecorator(new BaseSensorReadingProcessor()));

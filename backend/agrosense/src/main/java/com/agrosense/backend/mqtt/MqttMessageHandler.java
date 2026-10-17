@@ -15,15 +15,10 @@ import tools.jackson.databind.ObjectMapper;
 import java.nio.charset.StandardCharsets;
 import java.util.Optional;
 
-/**
- * Handles one MQTT message: parse, adapt, check where it came from, record. Nothing a device sends may
- * crash the listener, so every failure is logged and the message is dropped.
- */
 @Slf4j
 @Component
 public class MqttMessageHandler {
 
-    /** A reading is a few dozen bytes; anything much larger is not one. */
     static final int MAX_PAYLOAD_BYTES = 2048;
 
     private static final String SINGLE_LEVEL_WILDCARD = "+";
@@ -33,10 +28,6 @@ public class MqttMessageHandler {
     private final SensorFacade sensorFacade;
     private final String[] topicFilterLevels;
 
-    /**
-     * @param topicFilter the subscription, for example {@code agrosense/sensors/+/readings}; the level
-     *        under its {@code +} is the code of the sensor that publishes there
-     */
     public MqttMessageHandler(ObjectMapper objectMapper, MqttAdapter adapter, SensorFacade sensorFacade,
             @Value("${mqtt.topic:agrosense/sensors/+/readings}") String topicFilter) {
         this.objectMapper = objectMapper;
@@ -54,20 +45,16 @@ public class MqttMessageHandler {
             MessageMqtt message = objectMapper.readValue(new String(payload, StandardCharsets.UTF_8), MessageMqtt.class);
             message.setTopic(topic);
             SensorReadingData reading = adapter.adapt(message);
-            // A device may only report for the sensor whose topic it publishes on. With one topic per
-            // sensor, the broker's access rules then decide who can speak for each sensor.
             Optional<String> topicSensorCode = sensorCodeOf(topic);
             if (topicSensorCode.isEmpty() || !topicSensorCode.get().equalsIgnoreCase(reading.getSensorCode())) {
                 log.warn("MQTT message dropped: sensor {} cannot publish on {}",
                         reading.getSensorCode(), topic);
                 return;
             }
-            // The facade accepts it only for a registered, active sensor of an active crop and account.
             sensorFacade.recordReading(reading);
         } catch (ResourceNotFoundException exception) {
             log.warn("MQTT message from an unregistered sensor on {}", topic);
         } catch (JacksonException exception) {
-            // Not JSON, or not the expected shape: the device's fault, not a failure of the application.
             log.warn("Unreadable MQTT message dropped on {}", topic);
         } catch (BusinessRuleException | IllegalArgumentException exception) {
             log.warn("MQTT message rejected on {}: {}", topic, exception.getMessage());
@@ -76,7 +63,6 @@ public class MqttMessageHandler {
         }
     }
 
-    /** The topic level that sits under the filter's {@code +}; empty when the topic does not fit the filter. */
     private Optional<String> sensorCodeOf(String topic) {
         String[] levels = topic == null ? new String[0] : topic.split("/", -1);
         if (levels.length != topicFilterLevels.length) {

@@ -9,12 +9,10 @@ import lombok.Data;
 import java.util.ArrayList;
 import java.util.List;
 
-/** A question for the assistant and, optionally, the turns of the conversation that came before it. */
 @Data
 public class AiRequestDto {
 
     public static final int MAX_MESSAGE_LENGTH = 1000;
-    /** Older turns are dropped by the client; more than this is refused so a request cannot grow without limit. */
     public static final int MAX_HISTORY_TURNS = 12;
     public static final int MAX_TURN_LENGTH = 4000;
 

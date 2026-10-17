@@ -14,19 +14,12 @@ import java.time.Instant;
 import java.util.Date;
 import java.util.Optional;
 
-/**
- * Short tokens that open a user's live event stream in the event service. They are signed with a secret
- * of their own ({@code EVENTS_STREAM_SECRET}, HS256), shared with the event service only, and say nothing
- * but who the user is and when the token stops working. Being short-lived limits the harm of the token
- * travelling in the stream's address, where an access log could keep it.
- */
 @Component
 public class EventStreamTokens {
 
     public static final String AUDIENCE = "agrosense-events";
     public static final Duration TIME_TO_LIVE = Duration.ofMinutes(5);
 
-    /** HS256 needs a key of at least 256 bits. */
     private static final int MIN_SECRET_BYTES = 32;
 
     private final SecretKey key;
@@ -46,7 +39,6 @@ public class EventStreamTokens {
         this.clock = clock;
     }
 
-    /** A token for the user's stream, or empty when live events are not configured. */
     public Optional<String> issue(String email) {
         if (key == null) {
             return Optional.empty();

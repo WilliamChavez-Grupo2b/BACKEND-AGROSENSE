@@ -34,7 +34,6 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
-/** The assistant against a local server that plays the part of Gemini; no request leaves the machine. */
 class AiAssistantTests {
 
 	private static final String EMAIL = "demo@agrosense.co";
@@ -89,17 +88,14 @@ class AiAssistantTests {
 
 		assertThat(response.reply()).isEqualTo("Riega 20 minutos al amanecer.");
 		assertThat(response.transcript()).isNull();
-		// The key goes in a header and never in the address, where it would end up in logs.
 		assertThat(receivedKey.get()).isEqualTo(KEY);
 		assertThat(receivedPath.get()).isEqualTo("/v1beta/models/test-model:generateContent").doesNotContain(KEY);
 		JsonNode sent = JSON.readTree(receivedBody.get());
 		assertThat(sent.path("system_instruction").path("parts").path(0).path("text").asString())
-				// The prompt kept in ai/prompts/system-es.txt: open to farming and to the app, redirecting the rest.
 				.startsWith("Eres el asistente de AgroSense")
 				.contains("Preguntas generales de agricultura", "Preguntas sobre cómo funciona AgroSense",
 						"Nunca inventes lecturas", "redirige con amabilidad", "nunca tablas");
 		assertThat(sent.path("system_instruction").path("parts").path(1).path("text").asString())
-				// Without today's date, "hoy" and "ayer" mean nothing next to the dates of alerts and irrigations.
 				.matches("(?s)Fecha y hora actual: \\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}\\.\n.*")
 				.contains("2 cultivos", "5 sensores", "1 alertas",
 						"Cultivo Café: humedad del suelo 31.5 % (rango 40–80 %), temperatura 24 °C (rango 15–35 °C).",
@@ -145,7 +141,6 @@ class AiAssistantTests {
 		status.set(200);
 		answer.set("{\"candidates\":[{\"finishReason\":\"MAX_TOKENS\",\"content\":{\"parts\":[]}}]}");
 		assertThat(assistant.chat(EMAIL, question("¿Riego?")).source()).isEqualTo("local");
-		// The model declining a question is an answer about the question, not a fault to work around.
 		answer.set("{\"promptFeedback\":{\"blockReason\":\"SAFETY\"}}");
 		assertStatus(() -> assistant.chat(EMAIL, question("Hola")), HttpStatus.UNPROCESSABLE_ENTITY);
 
@@ -157,7 +152,6 @@ class AiAssistantTests {
 	void answersGivenWithoutTheModelCountTowardsTheLimitAndVoiceNeedsTheModelToListen() {
 		AiAssistantService assistant = answeringOnItsOwn("", 2);
 
-		// What was said, already as text, is answered like any written question.
 		AiResponseDto spoken = assistant.voice(EMAIL, null, null, " ¿Riego hoy? ");
 		assertThat(spoken.transcript()).isEqualTo("¿Riego hoy?");
 		assertThat(spoken.source()).isEqualTo("local");
@@ -177,7 +171,6 @@ class AiAssistantTests {
 	void withoutLocalAnswersAModelThatIsDownOrOutOfAllowanceIsA503TheUserCanRead() {
 		AiAssistantService assistant = assistant(KEY, 0, Clock.systemUTC());
 
-		// Out of allowance: still a 503, so a 429 only ever means the user's own limit per minute.
 		status.set(429);
 		assertThatThrownBy(() -> assistant.chat(EMAIL, question("Hola")))
 				.isInstanceOfSatisfying(AiException.class, error -> {
@@ -186,7 +179,6 @@ class AiAssistantTests {
 				});
 		status.set(500);
 		assertStatus(() -> assistant.chat(EMAIL, question("Hola")), HttpStatus.SERVICE_UNAVAILABLE);
-		// A key Gemini refuses is a fault of this server's settings, not of the request.
 		status.set(403);
 		answer.set("{\"error\":{\"message\":\"API key not valid: " + KEY + "\"}}");
 		assertThatThrownBy(() -> assistant.chat(EMAIL, question("Hola")))
@@ -211,7 +203,6 @@ class AiAssistantTests {
 					assertThat(error.getStatus()).isEqualTo(HttpStatus.SERVICE_UNAVAILABLE);
 					assertThat(error.getMessage()).contains("tardó demasiado");
 				});
-		// Nothing can stand in for the model that listens, even when written questions are answered locally.
 		assertStatus(() -> answeringOnItsOwn(KEY, 0).voice(EMAIL, new byte[] {1}, "audio/webm", null),
 				HttpStatus.SERVICE_UNAVAILABLE);
 	}
@@ -226,7 +217,6 @@ class AiAssistantTests {
 		assistant(KEY, 10, Clock.systemUTC()).chat(EMAIL, request);
 
 		JsonNode contents = JSON.readTree(receivedBody.get()).path("contents");
-		// Turns 5 to 12 are sent, then the question: 9 alternating turns, starting with the user's.
 		assertThat(contents).hasSize(AiAssistantService.MAX_HISTORY_SENT + 1);
 		assertThat(contents.path(0).path("parts").path(0).path("text").asString()).isEqualTo("Mensaje 5");
 		assertThat(receivedBody.get()).doesNotContain("Mensaje 4\"", "Mensaje 1\"");
@@ -260,13 +250,11 @@ class AiAssistantTests {
 		assistant.chat(EMAIL, question("Dos"));
 		assertStatus(() -> assistant.chat(EMAIL, question("Tres")), HttpStatus.TOO_MANY_REQUESTS);
 		assertThat(calls.get()).isEqualTo(2);
-		// The limit is per user, and it lifts once the minute has passed.
 		assistant.chat("other@agrosense.co", question("Uno"));
 		now.set(now.get().plus(Duration.ofSeconds(61)));
 		assistant.chat(EMAIL, question("Tres"));
 		assertThat(calls.get()).isEqualTo(4);
 
-		// Users who stopped asking are forgotten, so the count does not grow with every account.
 		assistant.forgetIdleUsers();
 		assertThat(assistant.trackedUsers()).isEqualTo(1);
 		now.set(now.get().plus(Duration.ofSeconds(61)));
@@ -277,7 +265,6 @@ class AiAssistantTests {
 	@Test
 	void theConversationSentAlwaysStartsWithTheUserAndAlternates() {
 		AiRequestDto request = question("¿Y mañana?");
-		// What a browser may keep: an answer whose question was dropped, and questions left unanswered.
 		request.setHistory(List.of(turn("assistant", "Hola"), turn("user", "¿Riego hoy?"),
 				turn("user", "¿Sigues ahí?"), turn("assistant", "Sí, riega hoy."), turn("user", "Gracias")));
 
@@ -308,7 +295,6 @@ class AiAssistantTests {
 		assertThat(inline.path("data").asString()).isEqualTo(Base64.getEncoder().encodeToString(audio));
 		assertThat(sent.path("generationConfig").path("responseMimeType").asString()).isEqualTo("application/json");
 
-		// An answer that ignores the requested shape is still shown rather than lost.
 		answer.set(candidate("Riega hoy."));
 		assertThat(assistant(KEY, 10, Clock.systemUTC()).voice(EMAIL, audio, "audio/ogg", null).reply())
 				.isEqualTo("Riega hoy.");
@@ -343,14 +329,10 @@ class AiAssistantTests {
 		assertThat(receivedBody.get()).contains("No hay datos de la finca").doesNotContain("database down");
 	}
 
-	// ---------- helpers ----------
-
-	/** An assistant that refuses a question when the model cannot answer it, to see each refusal. */
 	private AiAssistantService assistant(String key, int requestsPerMinute, Clock clock) {
 		return assistant(key, requestsPerMinute, clock, false);
 	}
 
-	/** The assistant as it runs: without the model it answers from the farm's figures. */
 	private AiAssistantService answeringOnItsOwn(String key, int requestsPerMinute) {
 		return assistant(key, requestsPerMinute, Clock.systemUTC(), true);
 	}
@@ -378,7 +360,6 @@ class AiAssistantTests {
 		return turn;
 	}
 
-	/** A Gemini answer whose only candidate says {@code text} (already escaped for JSON). */
 	private static String candidate(String text) {
 		return "{\"candidates\":[{\"content\":{\"role\":\"model\",\"parts\":[{\"text\":\"" + text + "\"}]}}]}";
 	}

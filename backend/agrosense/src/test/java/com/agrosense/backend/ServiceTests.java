@@ -121,14 +121,12 @@ class ServiceTests {
 
 		Map<String, Object> conditions = service.currentConditions("ana@agrosense.co", 7);
 
-		// No readings yet: no measurement is made up, and the limits still travel.
 		assertThat(conditions).doesNotContainKeys("soil_moisture", "air_temperature", "ph")
 				.containsEntry("humidity_min", new BigDecimal("70.0"))
 				.containsEntry("humidity_max", new BigDecimal("95.0"))
 				.containsEntry("ph_min", new BigDecimal("5.5"))
 				.containsEntry("ph_max", new BigDecimal("7.0"));
 
-		// A range stored the wrong way round is left out rather than sent to be refused.
 		rice.setPhMin(new BigDecimal("8.0"));
 		assertThat(service.currentConditions("ana@agrosense.co", 7)).doesNotContainKeys("ph_min", "ph_max")
 				.containsKey("humidity_min");
@@ -198,7 +196,6 @@ class ServiceTests {
 			}
 		};
 
-		// Per account: the third failure locks it, whatever address the next attempt comes from.
 		LoginAttemptService perAccount = new LoginAttemptService(3, 0, Duration.ofMinutes(15), clock);
 		perAccount.recordFailure("a@agrosense.test", "10.0.0.1");
 		perAccount.recordFailure("a@agrosense.test", "10.0.0.1");
@@ -215,12 +212,10 @@ class ServiceTests {
 		assertThat(perAccount.remainingLock("a@agrosense.test", "10.0.0.1")).contains(Duration.ofMinutes(5));
 		now[0] = now[0].plus(Duration.ofMinutes(5));
 		assertThat(perAccount.remainingLock("a@agrosense.test", "10.0.0.1")).isEmpty();
-		// The lock is over and so is the count: it takes three new failures to lock again.
 		perAccount.recordFailure("a@agrosense.test", "10.0.0.1");
 		perAccount.recordFailure("a@agrosense.test", "10.0.0.1");
 		assertThat(perAccount.remainingLock("a@agrosense.test", "10.0.0.1")).isEmpty();
 
-		// Failures spread over more than the lock time never add up.
 		now[0] = now[0].plus(Duration.ofMinutes(16));
 		perAccount.recordFailure("a@agrosense.test", "10.0.0.1");
 		perAccount.recordFailure("a@agrosense.test", "10.0.0.1");
@@ -228,7 +223,6 @@ class ServiceTests {
 		perAccount.purgeExpired();
 		assertThat(perAccount.remainingLock("a@agrosense.test", "10.0.0.1")).isEmpty();
 
-		// Per address: guessing across many accounts from one place locks that place only.
 		LoginAttemptService perAddress = new LoginAttemptService(0, 4, Duration.ofMinutes(15), clock);
 		for (int i = 0; i < 4; i++) {
 			perAddress.recordFailure("user" + i + "@agrosense.test", "10.0.0.2");

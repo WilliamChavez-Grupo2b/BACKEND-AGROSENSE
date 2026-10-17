@@ -27,21 +27,15 @@ public class AuthController {
 
     @PostMapping("/login")
     public LoginResponse login(@Valid @RequestBody LoginRequest request, HttpServletRequest httpRequest) {
-        // Behind a reverse proxy this is the proxy's address unless server.forward-headers-strategy is set.
         return authService.login(request, httpRequest.getRemoteAddr());
     }
 
-    /** Creates a farmer account. 409 when the e-mail already has one, 400 with the rejected fields otherwise. */
     @PostMapping("/register")
     @ResponseStatus(HttpStatus.CREATED)
     public RegisterResponse register(@Valid @RequestBody RegisterRequest request) {
         return authService.register(request);
     }
 
-    /**
-     * Lets the sign-up form tell whether an e-mail address is taken, before it is submitted.
-     * {@code /email-available} is the older name of the same check and is kept for deployed clients.
-     */
     @GetMapping({"/check-user", "/email-available"})
     public UserCheckResponse checkUser(@RequestParam String email) {
         return UserCheckResponse.of(authService.userExists(email));

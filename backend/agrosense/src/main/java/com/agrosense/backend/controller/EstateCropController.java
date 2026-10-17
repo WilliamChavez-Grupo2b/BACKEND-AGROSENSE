@@ -41,7 +41,6 @@ public class EstateCropController {
         return estateCropService.createEstate(authentication.getName(), request);
     }
 
-    /** Active crops of one estate, or of all the user's estates when {@code estateId} is left out. */
     @GetMapping("/cultivos")
     public List<CropResponse> crops(@RequestParam(required = false) Integer estateId,
             Authentication authentication) {

@@ -10,7 +10,6 @@ import java.util.Optional;
 
 public interface SensorRepository extends JpaRepository<Sensor, Integer> {
 
-    /** Loads the sensor with its crop, estate and owner, which ingestion needs to check ranges and notify. */
     @EntityGraph(attributePaths = {"crop", "crop.estate", "crop.estate.user"})
     Optional<Sensor> findBySensorCode(String sensorCode);
 

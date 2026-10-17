@@ -18,7 +18,6 @@ import org.springframework.web.multipart.MultipartFile;
 import java.io.IOException;
 import java.security.Principal;
 
-/** The conversational assistant: written questions and spoken ones. */
 @RestController
 @RequestMapping("/api/ai")
 @RequiredArgsConstructor
@@ -32,7 +31,6 @@ public class AiController {
         return assistant.chat(principal.getName(), request);
     }
 
-    /** Multipart form with {@code audio} (the recording), {@code transcript} (its text), or both. */
     @PostMapping(value = "/voice", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public AiResponseDto voice(@RequestParam(value = "audio", required = false) MultipartFile audio,
             @RequestParam(value = "transcript", required = false) String transcript, Principal principal)

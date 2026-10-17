@@ -22,30 +22,18 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
-/**
- * A language model reached through the API that OpenAI defined and many providers offer (Groq,
- * OpenRouter, Mistral, OpenAI itself...): {@code /chat/completions} for answers and
- * {@code /audio/transcriptions} to turn a recording into text. Which provider it is depends only on the
- * base address, the key and the model names, all of which come from the environment.
- */
 @Slf4j
 public class OpenAiCompatibleClient implements ChatModel {
 
-    /** The file name tells the provider how to read the recording; the type alone is not enough for it. */
     private static final Map<String, String> EXTENSIONS = Map.of(
             "audio/webm", "webm", "audio/ogg", "ogg", "audio/wav", "wav", "audio/x-wav", "wav",
             "audio/mp4", "mp4", "audio/mpeg", "mp3", "audio/mp3", "mp3", "audio/flac", "flac", "audio/aac", "aac");
 
     private final WebClient client;
-    /** Tried in this order: when one is out of allowance or no longer exists, the next one answers. */
     private final List<String> models;
     private final String transcriptionModel;
     private final int maxOutputTokens;
 
-    /**
-     * @param models one model name, or several separated by commas. Providers limit each model on its
-     *               own and retire names over time, so a second one keeps the assistant answering.
-     */
     public OpenAiCompatibleClient(String apiKey, String baseUrl, String models, String transcriptionModel,
             int timeoutMs, int maxOutputTokens) {
         this.models = Arrays.stream(models.split(",")).map(String::trim).filter(name -> !name.isEmpty()).toList();
@@ -58,7 +46,6 @@ public class OpenAiCompatibleClient implements ChatModel {
                 .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, timeoutMs)
                 .responseTimeout(Duration.ofMillis(timeoutMs));
         this.client = WebClient.builder()
-                // Without the trailing slash, so the paths below are appended to whatever the address ends with.
                 .baseUrl(baseUrl.trim().replaceAll("/+$", ""))
                 .defaultHeader(HttpHeaders.AUTHORIZATION, "Bearer " + apiKey.trim())
                 .clientConnector(new ReactorClientHttpConnector(httpClient))
@@ -82,9 +69,6 @@ public class OpenAiCompatibleClient implements ChatModel {
             try {
                 return complete(model, messages);
             } catch (AiException failure) {
-                // Out of allowance, gone, or broken for this model: another model may still answer. A
-                // refusal is about the question, and a provider that does not respond will not respond
-                // for the next model either; trying again would only make the user wait twice.
                 if (failure.getStatus() != HttpStatus.TOO_MANY_REQUESTS && failure.getStatus() != HttpStatus.BAD_GATEWAY) {
                     throw failure;
                 }
@@ -139,10 +123,6 @@ public class OpenAiCompatibleClient implements ChatModel {
         return heard;
     }
 
-    /**
-     * Runs a call and turns each way it can fail into an answer the user can read; shared with the other
-     * providers reached over HTTP, so every one of them fails in the same terms.
-     */
     static JsonNode send(java.util.function.Supplier<JsonNode> call, String model) {
         try {
             JsonNode answer = call.get();
@@ -153,7 +133,6 @@ public class OpenAiCompatibleClient implements ChatModel {
             return answer;
         } catch (WebClientResponseException exception) {
             int status = exception.getStatusCode().value();
-            // The provider's own text may quote the key or the request; only its status is logged.
             log.warn("The AI provider answered {} to model {}", status, model);
             if (status == 429) {
                 throw new AiException(HttpStatus.TOO_MANY_REQUESTS,
@@ -164,7 +143,6 @@ public class OpenAiCompatibleClient implements ChatModel {
         } catch (AiException exception) {
             throw exception;
         } catch (RuntimeException exception) {
-            // Timeouts and connection failures; the key travels in a header and is not part of the cause.
             log.warn("Could not reach the AI provider: {}", exception.getClass().getSimpleName());
             throw new AiException(HttpStatus.GATEWAY_TIMEOUT,
                     "El asistente tardó demasiado en responder. Inténtalo de nuevo.");

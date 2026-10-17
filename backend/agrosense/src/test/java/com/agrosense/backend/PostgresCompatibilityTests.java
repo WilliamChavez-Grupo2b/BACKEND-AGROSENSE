@@ -45,19 +45,6 @@ import java.util.concurrent.TimeUnit;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 
-/**
- * The schema script, the sample data, the entity mappings and the row lock on a real PostgreSQL; the rest
- * of the suite runs on H2 emulating it. Skipped unless POSTGRES_TEST_URL is set, for example:
- *
- * <pre>
- * POSTGRES_TEST_URL=jdbc:postgresql://localhost:5432/postgres
- * POSTGRES_TEST_USERNAME=postgres
- * POSTGRES_TEST_PASSWORD=...
- * </pre>
- *
- * Everything happens inside a schema created for the run and dropped at the end, so the database the
- * URL points at is left as it was.
- */
 @EnabledIfEnvironmentVariable(named = "POSTGRES_TEST_URL", matches = ".+")
 @SpringBootTest(properties = {
 		"cors.allowed-origins=",
@@ -96,8 +83,6 @@ class PostgresCompatibilityTests {
 		execute("CREATE SCHEMA " + SCHEMA);
 		requireThePrivateSchema();
 		registry.add("spring.datasource.url", () -> url);
-		// Every pooled connection selects the schema itself. The currentSchema URL parameter is not enough:
-		// hosted PostgreSQL behind a proxy (Neon) ignores it and the run would write into public.
 		registry.add("spring.datasource.hikari.connection-init-sql", () -> SELECT_SCHEMA);
 		registry.add("spring.datasource.username", PostgresCompatibilityTests::username);
 		registry.add("spring.datasource.password", PostgresCompatibilityTests::password);
@@ -109,7 +94,6 @@ class PostgresCompatibilityTests {
 		execute("DROP SCHEMA IF EXISTS " + SCHEMA + " CASCADE");
 	}
 
-	/** Starting the context already applied schema.sql and seed_demo.sql and validated every entity. */
 	@Test
 	void schemaSampleDataAndEntitiesAgreeOnPostgres() throws SQLException {
 		try (Connection connection = dataSource.getConnection()) {
@@ -117,7 +101,6 @@ class PostgresCompatibilityTests {
 		}
 		assertThat(userRepository.findByEmail("demo@agrosense.co")).isPresent();
 		assertThat(sensorRepository.findBySensorCode("AS-001")).isPresent();
-		// Applying the script again, as a restart with SQL_INIT_MODE=always does, changes nothing.
 		assertThatCode(() -> new ResourceDatabasePopulator(new FileSystemResource(databaseDir + "/schema.sql"))
 				.execute(dataSource)).doesNotThrowAnyException();
 	}
@@ -149,7 +132,6 @@ class PostgresCompatibilityTests {
 			for (int i = 0; i < simultaneous; i++) {
 				results.add(pool.submit(() -> {
 					start.await();
-					// Below the crop's minimum humidity (40): every one of them wants to raise the alert.
 					return sensorFacade.recordReading(SensorReadingData.builder()
 							.sensorCode("PG-RACE-1").value(new BigDecimal("10")).build());
 				}));
@@ -165,7 +147,6 @@ class PostgresCompatibilityTests {
 		assertThat(alertRepository.findByCropIdCropAndAcknowledgedFalse(crop.getIdCrop())).hasSize(1);
 	}
 
-	/** Stops the run before the application starts unless the server really switches to the private schema. */
 	private static void requireThePrivateSchema() throws SQLException {
 		try (Connection connection = DriverManager.getConnection(
 				System.getenv("POSTGRES_TEST_URL"), username(), password());

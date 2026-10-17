@@ -8,7 +8,6 @@ import lombok.NoArgsConstructor;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
-/** A reading in the application's own terms, whatever channel it came from (MQTT or REST). */
 @Data
 @Builder
 @NoArgsConstructor

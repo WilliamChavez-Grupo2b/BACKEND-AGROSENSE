@@ -9,11 +9,6 @@ import org.springframework.stereotype.Component;
 import java.util.Map;
 import java.util.Optional;
 
-/**
- * Proxy pattern: stands in front of the real AI client. It skips the call when the service is not
- * configured, retries a failed call up to the configured number of attempts, and never lets a failure
- * of the AI service reach the caller.
- */
 @Slf4j
 @Component
 @RequiredArgsConstructor

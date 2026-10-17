@@ -24,7 +24,6 @@ public interface CropRepository extends JpaRepository<Crop, Integer> {
 
     long countByEstateUserEmailAndActiveTrue(String email);
 
-    /** Locks the crop's row until the transaction ends, so concurrent work on one crop runs in turn. */
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select c from Crop c where c.idCrop = :idCrop")
     Optional<Crop> findByIdForUpdate(@Param("idCrop") Integer idCrop);

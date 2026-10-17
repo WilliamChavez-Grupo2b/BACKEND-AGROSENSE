@@ -38,7 +38,6 @@ import java.util.regex.Pattern;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/** Field devices over real HTTP, on the schema and sample data from /database. */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT, properties = {
 		"spring.datasource.url=jdbc:h2:mem:agrosense-devices;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;DEFAULT_NULL_ORDERING=HIGH;DB_CLOSE_DELAY=-1",
 		"spring.datasource.username=sa",
@@ -134,15 +133,12 @@ class DeviceIntegrationTests {
 		assertThat(deviceRepository.findByDeviceCode(DEMO_DEVICE).orElseThrow().getCrop().getName()).isEqualTo("Café");
 	}
 
-	// ---------- events from the event service ----------
-
 	@Test
 	void theInternalRouteOnlyLetsInTheEventServiceAndEachEventOnlyWithItsDevicesKey() throws Exception {
 		String event = "{\"device_id\":\"" + DEMO_DEVICE + "\",\"type\":\"reading\",\"data\":{\"ph\":6.4}}";
 
 		assertThat(internal(null, DEMO_KEY, event).statusCode()).isEqualTo(401);
 		assertThat(internal("another-key", DEMO_KEY, event).statusCode()).isEqualTo(401);
-		// A user's token is not a way in either.
 		assertThat(send("POST", "/api/internal/events", token(EMAIL, PASSWORD), event).statusCode()).isEqualTo(401);
 		HttpResponse<String> wrongDevice = internal(INTERNAL_KEY, "not-the-key", event);
 		assertThat(wrongDevice.statusCode()).isEqualTo(401);
@@ -168,7 +164,6 @@ class DeviceIntegrationTests {
 		assertThat(event.path("cropName").asString()).isEqualTo("Café");
 		assertThat(event.path("readings")).hasSize(3);
 		assertThat(event.path("readings").findValuesAsString("sensorCode")).containsExactly("AS-001", "AS-002", "AS-003");
-		// pH 9.1 is outside the coffee's range (5.5–7.0): the same alert a REST or MQTT reading raises.
 		assertThat(event.path("alerts").findValuesAsString("alertType")).contains("PH_OUT_OF_RANGE");
 		assertThat(readingRepository.count()).isEqualTo(before + 3);
 		assertThat(deviceRepository.findByDeviceCode(DEMO_DEVICE).orElseThrow().getLastEventAt()).isNotNull();
@@ -196,7 +191,6 @@ class DeviceIntegrationTests {
 		assertThat(JSON.readTree(named.body()).path("event").path("readings").path(0).path("sensorCode").asString())
 				.isEqualTo("FR-02");
 
-		// A sensor of another crop, even of the same owner, cannot be named.
 		assertThat(internal(INTERNAL_KEY, key, "{\"device_id\":\"RPI-FRESA\",\"type\":\"reading\","
 				+ "\"data\":{\"soil_moisture\":{\"value\":50,\"sensor_code\":\"AS-001\"}}}").statusCode()).isEqualTo(400);
 	}
@@ -259,8 +253,6 @@ class DeviceIntegrationTests {
 		assertThat(Duration.between(claims.getIssuedAt().toInstant(), claims.getExpiration().toInstant()))
 				.isEqualTo(Duration.ofMinutes(5));
 	}
-
-	// ---------- helpers ----------
 
 	private HttpResponse<String> internal(String internalKey, String deviceKey, String body) throws Exception {
 		HttpRequest.Builder request = HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/api/internal/events"))

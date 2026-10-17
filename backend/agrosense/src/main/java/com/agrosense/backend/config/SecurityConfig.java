@@ -32,23 +32,17 @@ public class SecurityConfig {
     public SecurityFilterChain securityFilterChain(HttpSecurity http, TokenAuthenticator tokenAuthenticator,
             @Value("${events.internal-key:}") String eventsInternalKey) throws Exception {
         http
-                // The API is stateless and authenticates with a header, never a cookie, so CSRF does not apply.
                 .csrf(AbstractHttpConfigurer::disable)
                 .cors(Customizer.withDefaults())
                 .sessionManagement(session ->
                         session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
-                        // Also with HEAD, which is what uptime monitors and some hosts send.
                         .requestMatchers(HttpMethod.GET, "/", "/api/health").permitAll()
                         .requestMatchers(HttpMethod.HEAD, "/", "/api/health").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/auth/login", "/api/auth/register").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/auth/check-user", "/api/auth/email-available")
                         .permitAll()
-                        // Browsers cannot send headers on the WebSocket handshake; the token is checked on
-                        // the STOMP CONNECT frame instead (see StompAuthChannelInterceptor).
                         .requestMatchers("/ws/**").permitAll()
-                        // Called by the event service, not by users: InternalKeyFilter lets in only the
-                        // requests with X-Internal-Key, and each event is checked against its device's key.
                         .requestMatchers(HttpMethod.POST, "/api/internal/events").permitAll()
                         .anyRequest().authenticated())
                 .exceptionHandling(errors -> errors.authenticationEntryPoint(unauthorizedEntryPoint()))
@@ -63,7 +57,6 @@ public class SecurityConfig {
         return new BCryptPasswordEncoder();
     }
 
-    /** Used by the login endpoint; built from the UserDetailsService and PasswordEncoder beans. */
     @Bean
     public AuthenticationManager authenticationManager(AuthenticationConfiguration configuration) throws Exception {
         return configuration.getAuthenticationManager();

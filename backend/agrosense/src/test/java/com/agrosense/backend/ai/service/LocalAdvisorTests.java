@@ -9,7 +9,6 @@ import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/** What the assistant answers on its own, from the farm's figures, when the model cannot be reached. */
 class LocalAdvisorTests {
 
 	private static final CropStatus COFFEE = crop("Café", "22.5000", "33.0", "6.15");
@@ -30,7 +29,6 @@ class LocalAdvisorTests {
 				"**Plátano**: no hace falta regar. La humedad (64.74 %) está en su rango (40–80 %).",
 				"**Arroz**: no riegues. La humedad (92 %) supera su máximo (80 %); revisa el drenaje.",
 				"**Papa**: no tiene lecturas de humedad; no puedo decirte si regar.");
-		// A crop with its own limits is judged by them: 65 % is dry for rice grown at 70 to 95 %.
 		CropStatus paddy = new CropStatus("Arroz", new BigDecimal("65"), new BigDecimal("70.0"),
 				new BigDecimal("95.0"), null, null, null, null, null, null);
 		assertThat(LocalAdvisor.answer("riego", new FarmSnapshot(1, 1, 0, List.of(paddy), List.of())))
@@ -107,7 +105,6 @@ class LocalAdvisorTests {
 				Alerta en Papa: Posible presencia de plaga reportada en la parcela.""");
 	}
 
-	/** A crop with the default limits and these latest readings; {@code null} is a measurement never taken. */
 	private static CropStatus crop(String name, String humidity, String temperature, String ph) {
 		return new CropStatus(name,
 				decimal(humidity), new BigDecimal("40.0"), new BigDecimal("80.0"),

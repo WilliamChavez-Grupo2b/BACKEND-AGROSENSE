@@ -8,10 +8,6 @@ import com.agrosense.backend.models.Sensor;
 
 import java.math.BigDecimal;
 
-/**
- * Builder pattern: assembles an {@link Alert} step by step and can derive its severity from the value
- * that triggered it. Each alert uses its own builder instance, so it is safe across threads.
- */
 public final class AlertBuilder {
 
     private Crop crop;
@@ -55,7 +51,6 @@ public final class AlertBuilder {
         return this;
     }
 
-    /** Sets the severity from the alert type and the detected value. Call it after both are set. */
     public AlertBuilder automaticSeverity() {
         if (alertType == null) {
             return this;

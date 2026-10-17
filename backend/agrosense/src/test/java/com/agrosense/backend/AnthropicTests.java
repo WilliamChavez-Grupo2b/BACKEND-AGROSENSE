@@ -32,7 +32,6 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
-/** The assistant answered by Claude, against a local server that plays Anthropic's part; nothing leaves the machine. */
 class AnthropicTests {
 
 	private static final String EMAIL = "demo@agrosense.co";
@@ -77,7 +76,6 @@ class AnthropicTests {
 
 	@Test
 	void aQuestionReachesClaudeWithItsHeadersThePromptTheFarmAndTheConversation() {
-		// What the model thought is not part of the answer; only its text blocks are.
 		answer.set("{\"type\":\"message\",\"role\":\"assistant\",\"stop_reason\":\"end_turn\",\"content\":["
 				+ "{\"type\":\"thinking\",\"thinking\":\"\",\"signature\":\"x\"},"
 				+ "{\"type\":\"text\",\"text\":\"El **café** necesita \"},{\"type\":\"text\",\"text\":\"riego hoy.\"}]}");
@@ -96,7 +94,6 @@ class AnthropicTests {
 		assertThat(sent.path("model").asString()).isEqualTo("claude-test");
 		assertThat(sent.path("max_tokens").asInt()).isEqualTo(256);
 		assertThat(sent.path("output_config").path("effort").asString()).isEqualTo("low");
-		// Current Claude models refuse sampling settings.
 		assertThat(sent.has("temperature")).isFalse();
 		assertThat(sent.path("system").asString()).startsWith("Eres el asistente de AgroSense")
 				.contains("Fecha y hora actual:", "Cultivo Café: humedad del suelo 31.5 % (rango 40–80 %).",
@@ -113,7 +110,6 @@ class AnthropicTests {
 	void whenClaudeIsOutOfAllowanceOverloadedBrokenOrSilentTheFarmsFiguresAnswer() {
 		AiAssistantService assistant = assistant(true);
 
-		// 529 is Anthropic's "overloaded".
 		for (int failure : new int[] {429, 529, 500, 401}) {
 			status.set(failure);
 			answer.set("{\"type\":\"error\",\"error\":{\"type\":\"x\",\"message\":\"" + KEY + "\"}}");
@@ -125,7 +121,6 @@ class AnthropicTests {
 		answer.set(message("", "max_tokens"));
 		assertThat(assistant.chat(EMAIL, question("¿Riego?")).source()).isEqualTo("local");
 
-		// Declining a question is an answer about the question, not a fault to work around.
 		answer.set("{\"type\":\"message\",\"stop_reason\":\"refusal\",\"content\":[]}");
 		assertStatus(() -> assistant.chat(EMAIL, question("Hola")), HttpStatus.UNPROCESSABLE_ENTITY);
 
@@ -174,7 +169,6 @@ class AnthropicTests {
 		assertThat(AiAssistantService.chosenModel(" ", "http://127.0.0.1:9", "chat-test", "",
 				"", claudeAddress, "claude-test", "low", 2000, 256)).isNull();
 
-		// With a Gemini key as well, Claude is the one asked (the Gemini address answers nothing).
 		assertThat(assistant(true).chat(EMAIL, question("¿Riego?")).source()).isEqualTo("model");
 		assertThat(paths).containsExactly("/v1/messages");
 	}
@@ -188,9 +182,6 @@ class AnthropicTests {
 		assertThat(JSON.readTree(bodies.get(0)).has("output_config")).isFalse();
 	}
 
-	// ---------- helpers ----------
-
-	/** An assistant answered by Claude, with a Gemini key too that must not be used. */
 	private AiAssistantService assistant(boolean localAnswers) {
 		return new AiAssistantService(farm, JSON, Clock.systemUTC(), "a-gemini-key", "gemini-test",
 				"http://127.0.0.1:9", 2000, 256, 0, localAnswers,

@@ -16,7 +16,6 @@ public class SensorReadingRequest {
     @Size(max = 255, message = "El código del sensor es demasiado largo.")
     private String sensorCode;
 
-    // The column holds eight integer digits; a larger value would only fail in the database.
     @NotNull(message = "El valor es obligatorio.")
     @DecimalMin(value = "-99999999", message = "El valor está fuera del rango admitido.")
     @DecimalMax(value = "99999999", message = "El valor está fuera del rango admitido.")

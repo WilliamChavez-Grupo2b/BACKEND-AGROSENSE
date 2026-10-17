@@ -34,7 +34,6 @@ public class DashboardService {
     private final AlertService alertService;
     private final SensorFacade sensorFacade;
 
-    /** The summary of one of the user's crops. Another user's crop is reported as missing. */
     @Transactional(readOnly = true)
     public DashboardResponse buildForCrop(String email, Integer cropId) {
         cropRepository.findByIdCropAndEstateUserEmail(cropId, email)

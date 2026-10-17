@@ -11,10 +11,6 @@ import java.time.LocalDateTime;
 import java.util.EnumMap;
 import java.util.Map;
 
-/**
- * Prototype pattern: keeps one template reading per sensor type and creates new readings by copying it,
- * so every reading of a type starts with the same unit and quality.
- */
 @Component
 public class SensorReadingPrototype {
 
@@ -32,7 +28,6 @@ public class SensorReadingPrototype {
         }
     }
 
-    /** Copies the template of the sensor's type and fills in the sensor, the value and the current time. */
     public SensorReading cloneFor(Sensor sensor, BigDecimal value) {
         SensorReading template = prototypes.get(sensor.getSensorType());
         return SensorReading.builder()

@@ -21,7 +21,6 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/** The client of the prediction service against a local server that plays its part. */
 class AiClientServiceTests {
 
 	private HttpServer service;
@@ -77,7 +76,6 @@ class AiClientServiceTests {
 
 	@Test
 	void theCropsLimitsTravelWithTheReadingsAndTheCredentialsWithEveryCall() {
-		// The client as the application builds it, pointed at the local server.
 		WebClient withToken = new WebClientConfig().aiWebClient(AiConfigManager.getInstance(), " internal-key ",
 						" service-secret ")
 				.mutate().baseUrl("http://127.0.0.1:" + service.getAddress().getPort()).build();

@@ -20,10 +20,6 @@ import java.util.HexFormat;
 import java.util.Locale;
 import java.util.Optional;
 
-/**
- * Field devices and their keys. A key is 32 random bytes, given to the user once; only its SHA-256 is stored,
- * so a copy of the database does not let anyone send events in a device's name.
- */
 @Service
 @RequiredArgsConstructor
 public class DeviceService {
@@ -33,7 +29,6 @@ public class DeviceService {
     private final DeviceRepository deviceRepository;
     private final CropRepository cropRepository;
 
-    /** Registers a device on one of the user's crops and returns it with its key, which is not kept. */
     @Transactional
     public DeviceResponse create(String email, Integer cropId, String deviceCode) {
         Crop crop = cropRepository.findByIdCropAndEstateUserEmail(cropId, email)
@@ -47,10 +42,6 @@ public class DeviceService {
         return DeviceResponse.from(device, key);
     }
 
-    /**
-     * The active device with this code whose key is the one given; empty for any other case, without saying
-     * which, so a caller cannot tell an unknown device from a wrong key.
-     */
     @Transactional(readOnly = true)
     public Optional<Device> authenticate(String deviceCode, String key) {
         if (deviceCode == null || key == null || deviceCode.isBlank() || key.isBlank()) {
@@ -59,11 +50,9 @@ public class DeviceService {
         byte[] sent = hash(key.trim()).getBytes(StandardCharsets.US_ASCII);
         return deviceRepository.findByDeviceCode(normalize(deviceCode))
                 .filter(Device::getActive)
-                // Compared in constant time, so the stored hash cannot be found out byte by byte.
                 .filter(device -> MessageDigest.isEqual(sent, device.getKeyHash().trim().getBytes(StandardCharsets.US_ASCII)));
     }
 
-    /** Gives an existing device a new key; used to make the demo device usable with a known key. */
     @Transactional
     public boolean setKey(String deviceCode, String key) {
         return deviceRepository.findByDeviceCode(normalize(deviceCode))
@@ -84,7 +73,6 @@ public class DeviceService {
         return Base64.getUrlEncoder().withoutPadding().encodeToString(key);
     }
 
-    /** SHA-256 of the key, as 64 lower-case hexadecimal characters. */
     public static String hash(String key) {
         try {
             return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(key.getBytes(StandardCharsets.UTF_8)));

@@ -6,7 +6,6 @@ import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 import lombok.Data;
 
-/** Lengths are counted on the text as typed: a space is one more character. */
 @Data
 public class RegisterRequest {
 
@@ -33,7 +32,6 @@ public class RegisterRequest {
             message = "La contraseña debe tener entre 8 y 32 caracteres.")
     private String password;
 
-    /** Surrounding spaces are a common paste artefact, so they are dropped before validation. */
     public void setEmail(String email) {
         this.email = email == null ? null : email.trim();
     }

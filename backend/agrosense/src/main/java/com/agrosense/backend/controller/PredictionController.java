@@ -32,15 +32,10 @@ public class PredictionController {
         return predictionService.findHistory(principal.getName(), cropId, limit);
     }
 
-    /**
-     * Starts an irrigation prediction from the crop's latest readings and answers at once: the result
-     * shows up in the history when the AI service replies.
-     */
     @PostMapping
     @ResponseStatus(HttpStatus.ACCEPTED)
     @PreAuthorize(Roles.MANAGER)
     public void request(@PathVariable Integer cropId, Principal principal) {
-        // Ownership is checked here, on the request thread, so a foreign crop gets a 404.
         Map<String, Object> conditions = predictionService.currentConditions(principal.getName(), cropId);
         predictionService.requestIrrigationPrediction(cropId, conditions);
     }

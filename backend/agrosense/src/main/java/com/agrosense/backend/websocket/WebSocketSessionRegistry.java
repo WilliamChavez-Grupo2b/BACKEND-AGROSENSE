@@ -17,11 +17,6 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
-/**
- * Keeps track of the open WebSocket sessions and of the token each one connected with. A token is only
- * presented once, on connect, so without this a session would keep receiving data after its token
- * expired or its account was disabled. Such sessions are closed by a periodic check.
- */
 @Slf4j
 @Component
 @RequiredArgsConstructor
@@ -54,12 +49,10 @@ public class WebSocketSessionRegistry implements WebSocketHandlerDecoratorFactor
         };
     }
 
-    /** Records who a session authenticated as and until when its token is valid. */
     public void authenticated(String sessionId, String email, Instant expiresAt) {
         credentials.put(sessionId, new Credentials(email, expiresAt));
     }
 
-    /** Whether the session's token has expired. A session that never authenticated counts as expired. */
     public boolean isExpired(String sessionId) {
         Credentials session = credentials.get(sessionId);
         return session == null || !Instant.now().isBefore(session.expiresAt());
@@ -70,11 +63,6 @@ public class WebSocketSessionRegistry implements WebSocketHandlerDecoratorFactor
         closeInvalidSessions(Instant.now());
     }
 
-    /**
-     * Closes the sessions whose token has expired by {@code now} or whose account is no longer enabled.
-     *
-     * @return how many sessions were closed
-     */
     public int closeInvalidSessions(Instant now) {
         Map<String, Boolean> activeAccounts = new HashMap<>();
         int closed = 0;

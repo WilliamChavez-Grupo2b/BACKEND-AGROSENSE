@@ -14,18 +14,11 @@ import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Stream;
 
-/**
- * Slows down password guessing: after too many failed logins for one account, or from one network
- * address, further attempts are refused until the lock expires. Counters live in memory, so they are
- * per application instance and start empty after a restart.
- */
 @Component
 public class LoginAttemptService {
 
-    /** Above this many tracked keys, expired ones are dropped before a new one is added. */
     private static final int MAX_TRACKED_KEYS = 100_000;
 
-    /** Failures seen since {@code windowStart}; {@code lockedUntil} is set once the limit is reached. */
     private record Attempts(int failures, Instant windowStart, Instant lockedUntil) {
     }
 
@@ -42,10 +35,6 @@ public class LoginAttemptService {
         this(maxAttemptsPerAccount, maxAttemptsPerAddress, Duration.ofMinutes(lockMinutes), Clock.systemUTC());
     }
 
-    /**
-     * @param maxAttemptsPerAccount failed logins allowed for one e-mail before it is locked; 0 turns it off
-     * @param maxAttemptsPerAddress failed logins allowed from one address before it is locked; 0 turns it off
-     */
     public LoginAttemptService(int maxAttemptsPerAccount, int maxAttemptsPerAddress, Duration lockDuration,
             Clock clock) {
         if (maxAttemptsPerAccount < 0 || maxAttemptsPerAddress < 0 || lockDuration.isNegative()
@@ -58,7 +47,6 @@ public class LoginAttemptService {
         this.clock = clock;
     }
 
-    /** How much longer logins for this account or from this address stay refused; empty when allowed. */
     public Optional<Duration> remainingLock(String email, String address) {
         Instant now = clock.instant();
         return Stream.of(accountKey(email), addressKey(address))
@@ -76,7 +64,6 @@ public class LoginAttemptService {
         recordFailure(addressKey(address), maxAttemptsPerAddress);
     }
 
-    /** A successful login clears the account's failures. The address keeps its own until they expire. */
     public void recordSuccess(String email) {
         attempts.remove(accountKey(email));
     }
@@ -102,7 +89,6 @@ public class LoginAttemptService {
         });
     }
 
-    /** An entry stops counting when its lock has expired or, if it never locked, when its window has. */
     private boolean isOver(Attempts entry, Instant now) {
         Instant end = entry.lockedUntil() != null ? entry.lockedUntil() : entry.windowStart().plus(lockDuration);
         return !end.isAfter(now);

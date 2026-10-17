@@ -13,10 +13,6 @@ import org.springframework.messaging.support.MessageHeaderAccessor;
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Component;
 
-/**
- * Guards the STOMP channel: a client must present a valid token when it connects, may only subscribe to
- * its own private queues while that token is valid, and cannot publish anything.
- */
 @Component
 @RequiredArgsConstructor
 public class StompAuthChannelInterceptor implements ChannelInterceptor {
@@ -38,7 +34,6 @@ public class StompAuthChannelInterceptor implements ChannelInterceptor {
                 Authentication user = tokenAuthenticator.authenticate(authorization)
                         .orElseThrow(() -> new MessageDeliveryException("Authentication required"));
                 accessor.setUser(user);
-                // From here on the registry closes the session when this token expires.
                 sessionRegistry.authenticated(accessor.getSessionId(), user.getName(),
                         tokenAuthenticator.expiration(authorization)
                                 .orElseThrow(() -> new MessageDeliveryException("Authentication required")));
@@ -53,7 +48,6 @@ public class StompAuthChannelInterceptor implements ChannelInterceptor {
             }
             case SEND -> throw new MessageDeliveryException("Clients cannot publish messages");
             default -> {
-                // DISCONNECT, UNSUBSCRIBE, ACK... need no extra checks.
             }
         }
         return message;

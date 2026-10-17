@@ -5,7 +5,6 @@ import com.agrosense.backend.models.SensorReading;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
-/** Marks readings whose value is physically impossible for the sensor type. */
 @Slf4j
 @RequiredArgsConstructor
 public class ValidationDecorator implements SensorReadingProcessor {

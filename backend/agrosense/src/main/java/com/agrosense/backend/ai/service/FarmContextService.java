@@ -21,12 +21,10 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.util.List;
 
-/** Reads what the assistant needs to know about one user's farm. Only that user's own data is read. */
 @Service
 @RequiredArgsConstructor
 public class FarmContextService {
 
-    /** Crops described one by one; a farm with more gets the first ones by name and a count of the rest. */
     public static final int MAX_CROPS = 8;
     public static final int MAX_ALERTS = 5;
     public static final int MAX_ATTENDED_ALERTS = 3;

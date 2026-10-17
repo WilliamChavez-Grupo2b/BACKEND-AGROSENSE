@@ -23,7 +23,6 @@ import java.time.LocalDateTime;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/** Starts like a real "seed" run: tables and rows come from /database, entities are only validated. */
 @SpringBootTest(properties = {
 		"spring.datasource.url=jdbc:h2:mem:agrosense-seed;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;DEFAULT_NULL_ORDERING=HIGH;DB_CLOSE_DELAY=-1",
 		"spring.datasource.username=sa",
@@ -72,7 +71,6 @@ class DataSeederTests {
 		assertThat(readingRepository.findAll())
 				.allMatch(reading -> !reading.getRecordedAt().isAfter(LocalDateTime.now().plusMinutes(1)));
 
-		// Applying both scripts again must not duplicate or change anything.
 		new ResourceDatabasePopulator(
 				new FileSystemResource("../../database/schema.sql"),
 				new FileSystemResource("../../database/seed_demo.sql")).execute(dataSource);
@@ -91,7 +89,6 @@ class DataSeederTests {
 		assertThat(irrigationRepository.count()).isEqualTo(4);
 		assertThat(predictionRepository.count()).isEqualTo(2);
 		assertThat(deviceRepository.count()).isEqualTo(1);
-		// Like the demo user's password, the demo device's key is not in the script.
 		assertThat(deviceRepository.findAll()).allMatch(device -> device.getKeyHash().equals("DISABLED"));
 	}
 }

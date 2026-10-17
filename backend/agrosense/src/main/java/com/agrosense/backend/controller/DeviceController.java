@@ -24,7 +24,6 @@ public class DeviceController {
 
     private final DeviceService deviceService;
 
-    /** Registers a device on one of the user's crops. The answer carries its key, the only time it is shown. */
     @PostMapping
     @PreAuthorize(Roles.MANAGER)
     public ResponseEntity<DeviceResponse> create(@Valid @RequestBody DeviceRequest request, Principal principal) {

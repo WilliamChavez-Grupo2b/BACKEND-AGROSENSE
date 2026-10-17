@@ -25,16 +25,9 @@ import java.util.Map;
 import java.util.Set;
 import java.util.function.Supplier;
 
-/**
- * The AI service (IA-AGROSENSE) answering the assistant: {@code POST /chat} and {@code POST /voice}. The
- * backend sends the question, the earlier turns and the description of the caller's own farm; the service
- * never reads the database. Every call carries {@code X-Internal-Key} ({@code AI_SERVICE_KEY}) and, while the
- * service still accepts it, the bearer token predictions already used ({@code AI_SERVICE_TOKEN}).
- */
 @Slf4j
 public class AiServiceClient {
 
-    /** Statuses whose message the service writes for the end user and that keep their meaning here. */
     private static final Set<Integer> PASSED_ON = Set.of(400, 413, 415, 422, 429, 503, 504);
 
     private static final JsonMapper JSON = JsonMapper.builder().build();
@@ -57,7 +50,6 @@ public class AiServiceClient {
         this.client = builder.build();
     }
 
-    /** The answer to a written question. */
     public String chat(String farmContext, List<AiRequestDto.Turn> history, String question) {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("message", question);
@@ -68,7 +60,6 @@ public class AiServiceClient {
         return replyOf(answer);
     }
 
-    /** The answer to a recording, with what the service understood from it. */
     public AiResponseDto voice(byte[] audio, String mimeType, String farmContext) {
         MultipartBodyBuilder form = new MultipartBodyBuilder();
         form.part("audio", new ByteArrayResource(audio) {
@@ -93,11 +84,6 @@ public class AiServiceClient {
         return reply;
     }
 
-    /**
-     * Runs a call and turns each way it can fail into an {@link AiException}. The statuses the service
-     * shares with the backend (out of allowance, no provider, too slow, refused) keep their meaning and
-     * the service's own message; anything else means the service is not working as it should.
-     */
     private static JsonNode send(Supplier<JsonNode> call) {
         try {
             JsonNode answer = call.get();
@@ -116,7 +102,6 @@ public class AiServiceClient {
         } catch (AiException exception) {
             throw exception;
         } catch (RuntimeException exception) {
-            // Timeouts and connection failures; the key travels in a header and is not part of the cause.
             log.warn("Could not reach the AI service: {}", exception.getClass().getSimpleName());
             throw new AiException(HttpStatus.GATEWAY_TIMEOUT, "El asistente tardó demasiado en responder. Inténtalo de nuevo.");
         }

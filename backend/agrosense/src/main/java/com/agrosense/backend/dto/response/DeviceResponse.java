@@ -7,7 +7,6 @@ import lombok.Data;
 
 import java.time.LocalDateTime;
 
-/** A registered device. {@code deviceKey} is only present in the answer that registers it, and never again. */
 @Data
 @Builder
 public class DeviceResponse {

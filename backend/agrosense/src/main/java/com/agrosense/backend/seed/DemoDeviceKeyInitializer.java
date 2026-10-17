@@ -8,11 +8,6 @@ import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.stereotype.Component;
 
-/**
- * /database/seed_demo.sql creates the demo device without a usable key, like the demo user. With
- * SEED_DEVICE_KEY set this gives it that key, so the Raspberry simulator can send events in its name.
- * Without the variable nothing happens; it is meant for local and test databases, not production.
- */
 @Slf4j
 @Component
 @RequiredArgsConstructor

@@ -12,10 +12,6 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 
-/**
- * Lets into {@code /api/internal/**} only the callers that send {@code X-Internal-Key} with the configured
- * key ({@code EVENTS_INTERNAL_KEY}), before the body is read. Without a configured key nobody gets in.
- */
 @Slf4j
 public class InternalKeyFilter extends OncePerRequestFilter {
 
@@ -40,7 +36,6 @@ public class InternalKeyFilter extends OncePerRequestFilter {
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
             throws ServletException, IOException {
         String sent = request.getHeader(HEADER);
-        // Compared in constant time, so the key cannot be found out byte by byte.
         if (key.length > 0 && sent != null
                 && MessageDigest.isEqual(key, sent.trim().getBytes(StandardCharsets.UTF_8))) {
             chain.doFilter(request, response);

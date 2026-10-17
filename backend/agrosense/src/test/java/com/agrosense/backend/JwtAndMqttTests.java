@@ -39,9 +39,7 @@ class JwtAndMqttTests {
 		assertThat(jwt.extractEmail(token + "x")).isEmpty();
 		assertThat(jwt.extractEmail("")).isEmpty();
 		assertThat(jwt.extractEmail("a.b.c")).isEmpty();
-		// Signed with a different key: a forged token.
 		assertThat(new JwtUtil("another-secret-of-at-least-64-bytes-for-hs512-signatures-0123456789", 60).extractEmail(token)).isEmpty();
-		// Unsigned token with "alg":"none".
 		String unsigned = "eyJhbGciOiJub25lIn0.eyJzdWIiOiJmYXJtZXJAYWdyb3NlbnNlLnRlc3QifQ.";
 		assertThat(jwt.extractEmail(unsigned)).isEmpty();
 	}
@@ -50,7 +48,6 @@ class JwtAndMqttTests {
 	void weakOrMissingSecretsStopTheApplicationFromStarting() {
 		assertThatThrownBy(() -> new JwtUtil("", 60)).isInstanceOf(IllegalStateException.class);
 		assertThatThrownBy(() -> new JwtUtil("too-short", 60)).isInstanceOf(IllegalStateException.class);
-		// Long enough for HS256 but not for HS512.
 		assertThatThrownBy(() -> new JwtUtil("a-secret-of-thirty-two-bytes-only", 60))
 				.isInstanceOf(IllegalStateException.class);
 		assertThatThrownBy(() -> new JwtUtil(SECRET, 0)).isInstanceOf(IllegalStateException.class);
@@ -70,7 +67,6 @@ class JwtAndMqttTests {
 		assertThat(recorded.getValue().getValue()).isEqualByComparingTo("52.3");
 		assertThat(recorded.getValue().getUnit()).isEqualTo("%");
 
-		// A device cannot report for another sensor, nor from a topic outside the subscription.
 		byte[] spoofed = "{\"code\":\"as-001\",\"value\":1}".getBytes(StandardCharsets.UTF_8);
 		handler.handle("agrosense/sensors/as-002/readings", spoofed);
 		handler.handle("agrosense/sensors/as-001/readings/extra", spoofed);
@@ -94,7 +90,6 @@ class JwtAndMqttTests {
 		}).doesNotThrowAnyException();
 		verify(facade, never()).recordReading(any());
 
-		// Failures inside the application (unknown sensor, database down) are contained too.
 		when(facade.recordReading(any())).thenThrow(new ResourceNotFoundException("unknown"))
 				.thenThrow(new IllegalStateException("database down"));
 		byte[] valid = "{\"code\":\"A\",\"value\":1}".getBytes(StandardCharsets.UTF_8);

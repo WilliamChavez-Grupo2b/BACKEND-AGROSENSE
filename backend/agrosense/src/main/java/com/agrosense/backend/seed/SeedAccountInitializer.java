@@ -11,10 +11,6 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
-/**
- * The sample data itself lives in /database/seed_demo.sql, which creates the demo user without a usable
- * password. With the "seed" profile this sets that user's password from SEED_USER_PASSWORD.
- */
 @Slf4j
 @Component
 @Profile("seed")

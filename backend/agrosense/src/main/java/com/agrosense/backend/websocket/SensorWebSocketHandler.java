@@ -9,10 +9,6 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
 
-/**
- * Pushes new readings and alerts to their owner's connected clients. It listens after the transaction
- * commits, so clients are never told about data that was rolled back.
- */
 @Slf4j
 @Component
 @RequiredArgsConstructor
@@ -37,7 +33,6 @@ public class SensorWebSocketHandler {
         try {
             messagingTemplate.convertAndSendToUser(ownerEmail, queue, payload);
         } catch (Exception exception) {
-            // A push that fails must not affect the reading that was already stored.
             log.warn("Could not send the WebSocket notification: {}", exception.getMessage());
         }
     }

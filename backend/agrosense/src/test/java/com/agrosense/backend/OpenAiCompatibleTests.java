@@ -32,10 +32,6 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
-/**
- * The assistant answered by a provider that speaks the OpenAI API (Groq, OpenRouter, Mistral...), against
- * a local server that plays its part; no request leaves the machine.
- */
 class OpenAiCompatibleTests {
 
 	private static final String EMAIL = "demo@agrosense.co";
@@ -50,7 +46,6 @@ class OpenAiCompatibleTests {
 	private final List<String> bodies = new CopyOnWriteArrayList<>();
 	private final List<String> authorizations = new CopyOnWriteArrayList<>();
 	private final List<String> contentTypes = new CopyOnWriteArrayList<>();
-	/** Models the provider answers with {@code modelStatus} instead of an answer. */
 	private final List<String> unavailableModels = new CopyOnWriteArrayList<>();
 	private final AtomicInteger modelStatus = new AtomicInteger(429);
 	private final FarmContextService farm = mock(FarmContextService.class);
@@ -63,7 +58,6 @@ class OpenAiCompatibleTests {
 			paths.add(path);
 			authorizations.add(String.valueOf(exchange.getRequestHeaders().getFirst("Authorization")));
 			contentTypes.add(String.valueOf(exchange.getRequestHeaders().getFirst("Content-Type")));
-			// ISO-8859-1 keeps every byte of a recording as one character, so the form can be searched as text.
 			bodies.add(new String(exchange.getRequestBody().readAllBytes(),
 					path.endsWith("/audio/transcriptions") ? StandardCharsets.ISO_8859_1 : StandardCharsets.UTF_8));
 			byte[] body = (path.endsWith("/audio/transcriptions") ? heard.get() : chatAnswer.get())
@@ -99,7 +93,6 @@ class OpenAiCompatibleTests {
 
 		assertThat(response.reply()).isEqualTo("Riega el **café** hoy.");
 		assertThat(response.source()).isEqualTo("model");
-		// The address given ends with a slash and with /v1: the path is appended once, cleanly.
 		assertThat(paths).containsExactly("/openai/v1/chat/completions");
 		assertThat(authorizations).containsExactly("Bearer " + KEY);
 		JsonNode sent = JSON.readTree(bodies.get(0));
@@ -110,7 +103,6 @@ class OpenAiCompatibleTests {
 		assertThat(messages.path(0).path("role").asString()).isEqualTo("system");
 		assertThat(messages.path(0).path("content").asString()).startsWith("Eres el asistente de AgroSense")
 				.contains("Cultivo Café: humedad del suelo 31.5 % (rango 40–80 %).", "Alerta en Café: Humedad baja.");
-		// The answer with nothing before it is dropped; the provider calls the other side "assistant".
 		assertThat(messages.path(1).path("role").asString()).isEqualTo("user");
 		assertThat(messages.path(2).path("role").asString()).isEqualTo("assistant");
 		assertThat(messages.path(3).path("content").asString()).isEqualTo("¿Y mañana?");
@@ -126,7 +118,6 @@ class OpenAiCompatibleTests {
 		assertThat(response.transcript()).isEqualTo("¿Cuándo riego el café?");
 		assertThat(response.reply()).isEqualTo("Riega el **café** hoy.");
 		assertThat(response.source()).isEqualTo("model");
-		// Two calls, counted as one question: a limit of one a minute did not stop the second step.
 		assertThat(paths).containsExactly("/openai/v1/audio/transcriptions", "/openai/v1/chat/completions");
 		assertThat(contentTypes.get(0)).startsWith("multipart/form-data");
 		assertThat(bodies.get(0)).contains("name=\"file\"; filename=\"voice.webm\"", "Content-Type: audio/webm",
@@ -151,7 +142,6 @@ class OpenAiCompatibleTests {
 		chatAnswer.set(completion("", "content_filter"));
 		assertStatus(() -> assistant.chat(EMAIL, question("Hola")), HttpStatus.UNPROCESSABLE_ENTITY);
 
-		// A recording heard, and then a provider that cannot answer: the text is still answered.
 		chatAnswer.set(completion("no llega", "stop"));
 		AiAssistantService flaky = assistant("whisper-test", 0);
 		provider.removeContext("/");
@@ -182,7 +172,6 @@ class OpenAiCompatibleTests {
 		assertThat(assistant.chat(EMAIL, question("¿Riego?")).source()).isEqualTo("model");
 		assertThat(modelsAsked()).containsExactly("first-model");
 
-		// Out of its allowance for this minute, and then retired by the provider: the second one answers.
 		for (int failure : new int[] {429, 404}) {
 			bodies.clear();
 			unavailableModels.add("first-model");
@@ -193,14 +182,12 @@ class OpenAiCompatibleTests {
 			assertThat(modelsAsked()).containsExactly("first-model", "second-model");
 		}
 
-		// Every model unavailable: all are tried once, and the farm's figures answer.
 		bodies.clear();
 		unavailableModels.addAll(List.of("second-model", "third-model"));
 		AiResponseDto onItsOwn = assistant.chat(EMAIL, question("¿Cuándo conviene regar?"));
 		assertThat(onItsOwn.source()).isEqualTo("local");
 		assertThat(modelsAsked()).containsExactly("first-model", "second-model", "third-model");
 
-		// A refusal is an answer about the question: no other model is asked to go around it.
 		bodies.clear();
 		unavailableModels.clear();
 		chatAnswer.set(completion("", "content_filter"));
@@ -216,14 +203,12 @@ class OpenAiCompatibleTests {
 					assertThat(error.getStatus()).isEqualTo(HttpStatus.UNPROCESSABLE_ENTITY);
 					assertThat(error.getMessage()).contains("escribe tu pregunta");
 				});
-		// A provider that cannot listen right now leaves nothing to answer with: the contract's 503.
 		for (int failure : new int[] {500, 429}) {
 			status.set(failure);
 			assertStatus(() -> assistant("whisper-test", 0).voice(EMAIL, new byte[] {1}, "audio/webm", null),
 					HttpStatus.SERVICE_UNAVAILABLE);
 		}
 
-		// A provider configured without a transcription model: recordings are not sent anywhere.
 		status.set(200);
 		int before = paths.size();
 		assertThatThrownBy(() -> assistant("  ", 0).voice(EMAIL, new byte[] {1}, "audio/webm", null))
@@ -232,13 +217,9 @@ class OpenAiCompatibleTests {
 					assertThat(error.getMessage()).contains("Escribe tu pregunta");
 				});
 		assertThat(paths).hasSize(before);
-		// What was said, sent as text, is answered as always.
 		assertThat(assistant("  ", 0).voice(EMAIL, null, null, "¿Riego hoy?").transcript()).isEqualTo("¿Riego hoy?");
 	}
 
-	// ---------- helpers ----------
-
-	/** An assistant with this provider and a Gemini key too: the provider is the one that answers. */
 	private AiAssistantService assistant(String transcriptionModel, int requestsPerMinute) {
 		return assistant(transcriptionModel, requestsPerMinute, " chat-test ");
 	}
@@ -250,7 +231,6 @@ class OpenAiCompatibleTests {
 				new OpenAiCompatibleClient(KEY, address, models, transcriptionModel, 2000, 256));
 	}
 
-	/** The model named in each chat request the provider received, in order. */
 	private List<String> modelsAsked() {
 		return bodies.stream().map(body -> JSON.readTree(body).path("model").asString()).toList();
 	}
@@ -273,7 +253,6 @@ class OpenAiCompatibleTests {
 		return turn;
 	}
 
-	/** A chat completion whose only choice says {@code text} (already escaped for JSON). */
 	private static String completion(String text, String finishReason) {
 		return "{\"choices\":[{\"index\":0,\"finish_reason\":\"" + finishReason
 				+ "\",\"message\":{\"role\":\"assistant\",\"content\":\"" + text + "\"}}]}";

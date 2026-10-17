@@ -4,10 +4,6 @@ import jakarta.persistence.*;
 import lombok.*;
 import java.time.LocalDateTime;
 
-/**
- * A field device (a Raspberry Pi) that sends the readings of one crop's sensors through the event service.
- * Only the SHA-256 of its key is stored; the key itself is shown once, when the device is registered.
- */
 @Entity
 @Table(name = "devices")
 @Getter

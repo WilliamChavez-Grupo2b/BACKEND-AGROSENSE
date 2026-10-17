@@ -37,10 +37,6 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-/**
- * The assistant answered through the AI service (IA-AGROSENSE), against a local server that plays its part:
- * what the backend sends, how each failure of the service is answered, and which path wins.
- */
 class AiServiceGatewayTests {
 
 	private static final String EMAIL = "demo@agrosense.co";
@@ -243,8 +239,6 @@ class AiServiceGatewayTests {
 		assertThat(response.transcript()).isEqualTo("¿Riego hoy?");
 		assertThat(paths).containsExactly("/chat");
 	}
-
-	// ---------- helpers ----------
 
 	private AiServiceClient client() {
 		return new AiServiceClient("http://127.0.0.1:" + service.getAddress().getPort() + "/", KEY, TOKEN, 2000);

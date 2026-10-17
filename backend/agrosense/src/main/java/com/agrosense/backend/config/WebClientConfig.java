@@ -17,11 +17,6 @@ import java.util.concurrent.TimeUnit;
 @Configuration
 public class WebClientConfig {
 
-    /**
-     * Client for the AI service. One timeout bounds connecting, each read and the whole response. With
-     * {@code AI_SERVICE_KEY} set, every call carries it as {@code X-Internal-Key}, and with
-     * {@code AI_SERVICE_TOKEN} as a bearer token, for a service that only answers its backend.
-     */
     @Bean
     public WebClient aiWebClient(AiConfigManager aiConfig, @Value("${ai.service.key:}") String key,
             @Value("${ai.service.token:}") String token) {

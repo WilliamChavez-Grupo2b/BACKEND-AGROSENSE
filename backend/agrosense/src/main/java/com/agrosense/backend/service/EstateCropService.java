@@ -17,7 +17,6 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 
-/** Estates and their crops. Every operation is limited to what belongs to the authenticated user. */
 @Service
 @RequiredArgsConstructor
 public class EstateCropService {
@@ -47,11 +46,6 @@ public class EstateCropService {
                 .build()));
     }
 
-    /**
-     * The user's active crops, ordered by name.
-     *
-     * @param estateId limits the list to one estate; {@code null} lists the crops of every estate
-     */
     @Transactional(readOnly = true)
     public List<CropResponse> findActiveCrops(String email, Integer estateId) {
         List<Crop> crops = estateId == null
@@ -70,7 +64,6 @@ public class EstateCropService {
                         ? null : request.getVariety().trim())
                 .sowingDate(request.getSowingDate())
                 .build();
-        // A range left out keeps the entity's default; the request guarantees both ends come together.
         if (request.getHumidityMin() != null) {
             crop.setHumidityMin(request.getHumidityMin());
             crop.setHumidityMax(request.getHumidityMax());
@@ -86,7 +79,6 @@ public class EstateCropService {
         return CropResponse.from(cropRepository.save(crop));
     }
 
-    /** Another user's estate is reported as missing, so its existence is not revealed. */
     private Estate ownedEstate(String email, Integer estateId) {
         return estateRepository.findByIdEstateAndUserEmail(estateId, email)
                 .orElseThrow(() -> new ResourceNotFoundException("Estate not found"));

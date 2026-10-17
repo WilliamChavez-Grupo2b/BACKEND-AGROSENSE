@@ -13,10 +13,6 @@ import lombok.Data;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 
-/**
- * Data to register a crop on an estate. Each range (humidity, temperature, pH) is optional as a whole:
- * leave both ends out to get the default range, or send both with the minimum below the maximum.
- */
 @Data
 public class CropRequest {
 

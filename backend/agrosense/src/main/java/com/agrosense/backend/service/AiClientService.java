@@ -13,10 +13,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
-/**
- * The real HTTP client of the AI service. It blocks and lets errors propagate; callers go through
- * AiServiceProxy, which decides whether to call at all and what to do when the call fails.
- */
 @Slf4j
 @Service
 public class AiClientService implements AiService {
@@ -34,16 +30,12 @@ public class AiClientService implements AiService {
 
     @Override
     public Optional<IrrigationPrediction> predictIrrigation(Integer cropId, Map<String, Object> sensorData) {
-        // The decision rests on the soil moisture: without a reading of it there is nothing to predict
-        // from, and a made-up value would come back as advice about a measurement nobody took.
         if (sensorData.get(SOIL_MOISTURE) == null) {
             log.info("Irrigation prediction skipped: crop {} has no soil moisture readings", cropId);
             return Optional.empty();
         }
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("id_crop", cropId);
-        // Only what was measured is sent; the service works without the temperature and the pH, and
-        // falls back to average limits for a crop that comes without its own.
         for (String measurement : List.of(SOIL_MOISTURE, "air_temperature", "ph",
                 "humidity_min", "humidity_max", "ph_min", "ph_max")) {
             if (sensorData.get(measurement) != null) {
@@ -66,7 +58,6 @@ public class AiClientService implements AiService {
                 model == null ? null : model.toString()));
     }
 
-    /** A confidence between 0 and 1 with the four decimals the database keeps; anything else is dropped. */
     private static BigDecimal confidence(Object value) {
         if (value == null) {
             return null;

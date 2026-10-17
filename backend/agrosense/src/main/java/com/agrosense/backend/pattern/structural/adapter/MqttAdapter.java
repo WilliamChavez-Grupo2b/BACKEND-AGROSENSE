@@ -8,24 +8,14 @@ import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.Locale;
 
-/**
- * Adapter pattern: converts the device format ({@link MessageMqtt}) into the format the application
- * works with ({@link SensorReadingData}). Range checks are not done here; the decorators do them once
- * the sensor type is known.
- */
 @Component
 public class MqttAdapter {
 
     private static final int MAX_CODE_LENGTH = 255;
     private static final int MAX_UNIT_LENGTH = 20;
-    /** The readings column holds eight integer digits. */
     private static final double MAX_ABSOLUTE_VALUE = 99_999_999;
-    /** Clocks on field devices drift; anything further ahead than this is treated as "now". */
     private static final long MAX_FUTURE_SKEW_MINUTES = 5;
 
-    /**
-     * @throws IllegalArgumentException when the message has no usable sensor code or value
-     */
     public SensorReadingData adapt(MessageMqtt message) {
         if (message == null || message.getCode() == null || message.getCode().isBlank()
                 || message.getCode().length() > MAX_CODE_LENGTH) {

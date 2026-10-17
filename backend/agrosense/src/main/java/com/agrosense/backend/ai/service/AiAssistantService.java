@@ -39,32 +39,20 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Supplier;
 
-/**
- * The conversational assistant. Each question travels with the system prompt and a compact summary of
- * the caller's own farm, so answers refer to real figures while the request stays small. With
- * {@code AI_CHAT_VIA_SERVICE=true} it is answered by the AI service (see {@link #chosenService}); otherwise by
- * the first provider with a key: OpenAI-compatible, Claude, Gemini (see {@link #chosenModel}). Those
- * providers are the older path, kept for a backend without the service. Whenever no model answers, the
- * question is answered from the farm's own figures.
- */
 @Slf4j
 @Service
 public class AiAssistantService {
 
-    /** Kept as a text file so it can be reworded without touching the code. */
     static final String SYSTEM_PROMPT_RESOURCE = "ai/prompts/system-es.txt";
 
     static final String SYSTEM_PROMPT = readResource(SYSTEM_PROMPT_RESOURCE);
 
-    /** Asked of a voice message: what was said, so the conversation can show it, and the answer to it. */
     static final String VOICE_INSTRUCTION = "Transcribe el audio en español y responde a lo que pregunta.";
 
     public static final int MAX_AUDIO_BYTES = 3 * 1024 * 1024;
 
-    /** Earlier turns sent to the model with a question; the request may carry more, the oldest are left out. */
     public static final int MAX_HISTORY_SENT = 8;
 
-    /** What browsers record (WebM, Ogg, MP4) and the formats Gemini documents for audio. */
     private static final Set<String> AUDIO_TYPES = Set.of("audio/webm", "audio/ogg", "audio/wav",
             "audio/x-wav", "audio/mp4", "audio/mpeg", "audio/mp3", "audio/aac", "audio/flac");
 
@@ -72,24 +60,17 @@ public class AiAssistantService {
 
     private static final DateTimeFormatter NOW = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
 
-    /** Failures of the model that say nothing about the question: it can still be answered without it. */
     private static final Set<HttpStatus> MODEL_UNAVAILABLE = Set.of(HttpStatus.TOO_MANY_REQUESTS,
             HttpStatus.BAD_GATEWAY, HttpStatus.GATEWAY_TIMEOUT);
 
-    /**
-     * What the AI service answers with when it cannot answer: the question can still be answered from the
-     * farm's figures. Its 503 means it has no provider configured.
-     */
     private static final Set<HttpStatus> SERVICE_UNAVAILABLE = Set.of(HttpStatus.TOO_MANY_REQUESTS,
             HttpStatus.BAD_GATEWAY, HttpStatus.SERVICE_UNAVAILABLE, HttpStatus.GATEWAY_TIMEOUT);
 
     private final FarmContextService farmContext;
-    /** The AI service (IA-AGROSENSE), when the assistant goes through it; {@code null} for the providers below. */
     private final AiServiceClient service;
     private final boolean localAnswers;
     private final ObjectMapper objectMapper;
     private final Clock clock;
-    /** An OpenAI-compatible provider or Claude, when one is configured; it is then used instead of Gemini. */
     private final ChatModel chatModel;
     private final WebClient gemini;
     private final String apiKey;
@@ -127,10 +108,6 @@ public class AiAssistantService {
                 chosenService(viaService, serviceUrl, serviceKey, serviceToken, serviceTimeoutMs));
     }
 
-    /**
-     * The AI service, when the assistant is to go through it: only with {@code AI_CHAT_VIA_SERVICE=true} and
-     * {@code AI_SERVICE_URL} set, so turning predictions on does not move the assistant to another provider.
-     */
     public static AiServiceClient chosenService(boolean viaService, String serviceUrl, String serviceKey,
             String serviceToken, int timeoutMs) {
         if (!viaService) {
@@ -144,11 +121,6 @@ public class AiAssistantService {
         return new AiServiceClient(serviceUrl, serviceKey, serviceToken, timeoutMs);
     }
 
-    /**
-     * The provider that answers, by priority: one that speaks the OpenAI API ({@code AI_CHAT_API_KEY}),
-     * then Claude ({@code ANTHROPIC_API_KEY}); {@code null} leaves it to Gemini ({@code GEMINI_API_KEY})
-     * and, without that key either, to the farm's own figures.
-     */
     public static ChatModel chosenModel(String chatApiKey, String chatBaseUrl, String chatModels, String transcriptionModel,
             String anthropicApiKey, String anthropicBaseUrl, String anthropicModel, String anthropicEffort,
             int timeoutMs, int maxOutputTokens) {
@@ -163,7 +135,6 @@ public class AiAssistantService {
         return null;
     }
 
-    /** Answered by Gemini, or by nobody when {@code apiKey} is empty. */
     public AiAssistantService(FarmContextService farmContext, ObjectMapper objectMapper, Clock clock,
             String apiKey, String model, String baseUrl, int timeoutMs, int maxOutputTokens,
             int requestsPerMinute, boolean localAnswers) {
@@ -171,13 +142,6 @@ public class AiAssistantService {
                 requestsPerMinute, localAnswers, null);
     }
 
-    /**
-     * With the clock given, so the limit on requests per minute can be tested without waiting.
-     *
-     * @param localAnswers whether a written question is answered from the farm's figures when the model
-     *                     is not configured or does not respond, instead of being refused
-     * @param chatModel    an OpenAI-compatible provider or Claude, used instead of Gemini; {@code null} for none
-     */
     public AiAssistantService(FarmContextService farmContext, ObjectMapper objectMapper, Clock clock,
             String apiKey, String model, String baseUrl, int timeoutMs, int maxOutputTokens,
             int requestsPerMinute, boolean localAnswers, ChatModel chatModel) {
@@ -185,10 +149,6 @@ public class AiAssistantService {
                 requestsPerMinute, localAnswers, chatModel, null);
     }
 
-    /**
-     * @param service the AI service; when given it answers every question and the providers above are not
-     *                used. They stay as the assistant's own answer for a backend without that service.
-     */
     public AiAssistantService(FarmContextService farmContext, ObjectMapper objectMapper, Clock clock,
             String apiKey, String model, String baseUrl, int timeoutMs, int maxOutputTokens,
             int requestsPerMinute, boolean localAnswers, ChatModel chatModel, AiServiceClient service) {
@@ -211,17 +171,11 @@ public class AiAssistantService {
                 .build();
     }
 
-    /**
-     * Answers a written question, taking the earlier turns of the conversation into account. When the
-     * model is not configured or fails for reasons of its own, the question is answered from the farm's
-     * figures instead, and the answer says so in its {@code source}.
-     */
     public AiResponseDto chat(String email, AiRequestDto request) {
         countRequest(email);
         return answer(email, request.getMessage().trim(), latest(request.getHistory()));
     }
 
-    /** The last {@link #MAX_HISTORY_SENT} turns: older ones cost tokens and rarely change the answer. */
     static List<AiRequestDto.Turn> latest(List<AiRequestDto.Turn> history) {
         if (history == null) {
             return List.of();
@@ -229,7 +183,6 @@ public class AiAssistantService {
         return history.subList(Math.max(0, history.size() - MAX_HISTORY_SENT), history.size());
     }
 
-    /** Answers a question that has already been counted against the user's allowance. */
     private AiResponseDto answer(String email, String question, List<AiRequestDto.Turn> history) {
         FarmSnapshot farm = farmOf(email);
         if (service != null) {
@@ -251,7 +204,6 @@ public class AiAssistantService {
             String reply = chatModel != null
                     ? chatModel.chat(SYSTEM_PROMPT + "\n\n" + describe(farm), conversation)
                     : textOf(generate(farm, conversation.stream()
-                            // Gemini calls the assistant's side "model".
                             .map(turn -> content(ChatModel.USER.equals(turn.role()) ? "user" : "model",
                                     Map.of("text", turn.text())))
                             .toList(), false));
@@ -271,10 +223,6 @@ public class AiAssistantService {
         return new AiResponseDto(LocalAdvisor.answer(question, farm), null, AiResponseDto.SOURCE_LOCAL);
     }
 
-    /**
-     * A model that is down, slow or out of allowance is a 503 with its own explanation: a 429 is kept for
-     * the user's own limit of questions per minute, which waiting a minute does lift.
-     */
     private static AiException unavailable(AiException reason) {
         return reason.getStatus() == HttpStatus.SERVICE_UNAVAILABLE ? reason
                 : new AiException(HttpStatus.SERVICE_UNAVAILABLE, reason.getMessage());
@@ -284,7 +232,6 @@ public class AiAssistantService {
         return new AiException(HttpStatus.SERVICE_UNAVAILABLE, "El asistente de IA no está configurado todavía.");
     }
 
-    /** The caller's farm, or {@code null} when it cannot be read: the question is still worth answering. */
     private FarmSnapshot farmOf(String email) {
         try {
             return farmContext.snapshot(email);
@@ -294,20 +241,12 @@ public class AiAssistantService {
         }
     }
 
-    /** The farm, after the current date and time: without them "hoy" and "ayer" mean nothing to the model. */
     private String describe(FarmSnapshot farm) {
-        // Stored times are the server's local time, so "now" is said in the same terms.
         String now = "Fecha y hora actual: "
                 + LocalDateTime.now(clock.withZone(ZoneId.systemDefault())).format(NOW) + ".\n";
         return now + (farm == null ? "No hay datos de la finca disponibles en este momento." : farm.describe());
     }
 
-    /**
-     * The turns in the shape models accept: the first one is the user's and the two sides alternate. A
-     * conversation kept by a browser does not always look like that (a question left without an answer,
-     * or older turns dropped from the start), so answers with nothing before them are left out and turns
-     * in a row from the same side become one.
-     */
     private static List<ChatModel.Said> conversation(List<AiRequestDto.Turn> history, String question) {
         List<String> roles = new ArrayList<>();
         List<StringBuilder> texts = new ArrayList<>();
@@ -335,10 +274,6 @@ public class AiAssistantService {
         texts.add(new StringBuilder(text));
     }
 
-    /**
-     * Answers a spoken question. The browser sends either what it recorded or, when it could transcribe
-     * the speech itself, the text; with both, the text is used and the audio is not sent anywhere.
-     */
     public AiResponseDto voice(String email, byte[] audio, String contentType, String transcript) {
         String spoken = transcript == null ? "" : transcript.trim();
         if (!spoken.isEmpty()) {
@@ -360,14 +295,11 @@ public class AiAssistantService {
             throw new AiException(HttpStatus.UNSUPPORTED_MEDIA_TYPE, "Ese formato de audio no es compatible.");
         }
         if (service != null) {
-            // The service transcribes and answers; a recording has no answer without a model to listen.
             countRequest(email);
             String farm = describe(farmOf(email));
             return listening(() -> service.voice(audio, mimeType, farm));
         }
         if (chatModel != null && chatModel.listens()) {
-            // This kind of provider listens and answers in two steps; once the recording is text, it is a
-            // written question like any other, also for the answers given without the model.
             countRequest(email);
             String heard = listening(() -> chatModel.transcribe(audio, mimeType));
             if (heard.length() > AiRequestDto.MAX_MESSAGE_LENGTH) {
@@ -375,7 +307,6 @@ public class AiAssistantService {
             }
             return answer(email, heard, List.of()).heard(heard);
         }
-        // Only a model can listen: without one a recording cannot be turned into a question.
         if (chatModel != null || apiKey.isEmpty()) {
             throw localAnswers
                     ? new AiException(HttpStatus.SERVICE_UNAVAILABLE,
@@ -398,14 +329,9 @@ public class AiAssistantService {
         } catch (JacksonException exception) {
             log.warn("The assistant did not return the requested JSON for a voice message");
         }
-        // The model ignored the requested shape: its text is still an answer worth showing.
         return new AiResponseDto(answer, null, AiResponseDto.SOURCE_MODEL);
     }
 
-    /**
-     * A recording only a model can turn into words, so when it is unavailable there is no answer to fall
-     * back on: that is a 503, whether or not written questions are answered without the model.
-     */
     private static <T> T listening(Supplier<T> call) {
         try {
             return call.get();
@@ -436,7 +362,6 @@ public class AiAssistantService {
         try {
             JsonNode answer = gemini.post()
                     .uri("/v1beta/models/{model}:generateContent", model)
-                    // In a header, not in the address, so the key never reaches a log of requested URLs.
                     .header("x-goog-api-key", apiKey)
                     .bodyValue(body)
                     .retrieve()
@@ -457,13 +382,11 @@ public class AiAssistantService {
         } catch (AiException exception) {
             throw exception;
         } catch (RuntimeException exception) {
-            // Timeouts and connection failures; the cause never carries the key, which travels in a header.
             log.warn("Could not reach Gemini: {}", exception.getClass().getSimpleName());
             throw new AiException(HttpStatus.GATEWAY_TIMEOUT, "El asistente tardó demasiado en responder. Inténtalo de nuevo.");
         }
     }
 
-    /** The text of the first candidate; a blocked or empty answer becomes an error the user can read. */
     private static String textOf(JsonNode answer) {
         StringBuilder text = new StringBuilder();
         for (JsonNode part : answer.path("candidates").path(0).path("content").path("parts")) {
@@ -479,14 +402,12 @@ public class AiAssistantService {
         throw new AiException(HttpStatus.BAD_GATEWAY, "El asistente no generó una respuesta. Inténtalo de nuevo.");
     }
 
-    /** Counts one more question of this user and refuses it when the minute's allowance is spent. */
     private void countRequest(String email) {
         if (requestsPerMinute <= 0) {
             return;
         }
         Instant now = clock.instant();
         boolean[] refused = {false};
-        // compute runs once at a time per user, so two questions sent together are both counted.
         recentRequests.compute(email, (key, known) -> {
             Deque<Instant> requests = known == null ? new ArrayDeque<>() : known;
             dropOlderThanTheWindow(requests, now);
@@ -503,7 +424,6 @@ public class AiAssistantService {
         }
     }
 
-    /** Forgets the users who asked nothing in the last minute, so the map does not grow with every user. */
     @Scheduled(fixedDelay = 60_000)
     public void forgetIdleUsers() {
         Instant now = clock.instant();
@@ -515,7 +435,6 @@ public class AiAssistantService {
         }
     }
 
-    /** How many users the limit is keeping count of. */
     public int trackedUsers() {
         return recentRequests.size();
     }
@@ -531,12 +450,10 @@ public class AiAssistantService {
         return Map.of("role", role, "parts", List.of(parts));
     }
 
-    /** {@code audio/webm;codecs=opus} is {@code audio/webm}. */
     private static String baseTypeOf(String contentType) {
         return contentType == null ? "" : contentType.split(";", 2)[0].trim().toLowerCase(Locale.ROOT);
     }
 
-    /** A text file packaged with the application; a missing one stops it from starting rather than answering blind. */
     static String readResource(String path) {
         try {
             return new ClassPathResource(path).getContentAsString(StandardCharsets.UTF_8).strip();

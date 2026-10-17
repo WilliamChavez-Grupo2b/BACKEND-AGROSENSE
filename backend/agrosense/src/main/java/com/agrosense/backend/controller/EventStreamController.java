@@ -15,7 +15,6 @@ import org.springframework.web.bind.annotation.RestController;
 import java.security.Principal;
 import java.util.Map;
 
-/** The token a signed-in user's browser presents to the event service to receive that user's live events. */
 @RestController
 @RequestMapping("/api/events")
 @RequiredArgsConstructor

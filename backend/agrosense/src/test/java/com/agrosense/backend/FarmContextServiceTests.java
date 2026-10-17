@@ -40,7 +40,6 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-/** What the assistant is told about a farm: only the caller's, with each crop's readings and limits. */
 class FarmContextServiceTests {
 
 	private static final String EMAIL = "ana@agrosense.co";
@@ -101,7 +100,6 @@ class FarmContextServiceTests {
 				"Alerta atendida en Café (pH fuera de rango, severidad media, valor 4.9, 2026-10-12 08:00): "
 						+ "pH fuera del rango del cultivo.",
 				"Riego manual en Café el 2026-10-14 05:45, 20 min, 150 L, motivo: Suelo seco.");
-		// Only what the caller owns is asked for.
 		verify(alerts).findByCropEstateUserEmailAndAcknowledgedTrueOrderByCreatedAtDesc(eq(EMAIL), any());
 		verify(irrigations).findByCropEstateUserEmailOrderByStartedAtDesc(eq(EMAIL), any());
 	}
@@ -172,7 +170,6 @@ class FarmContextServiceTests {
 		assertThat(farm.totalCrops()).isEqualTo(11);
 		assertThat(farm.crops()).hasSize(FarmContextService.MAX_CROPS);
 		assertThat(farm.describe()).contains("Hay 3 cultivos más que no se detallan.");
-		// The crops left out are not read at all.
 		verify(readings, never()).findFirstBySensorCropIdCropAndSensorSensorTypeOrderByRecordedAtDesc(eq(9), any());
 	}
 

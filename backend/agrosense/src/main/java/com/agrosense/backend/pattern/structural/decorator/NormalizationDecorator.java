@@ -6,7 +6,6 @@ import lombok.RequiredArgsConstructor;
 
 import java.math.RoundingMode;
 
-/** Rounds the value to two decimals and fills in the unit when the device did not send one. */
 @RequiredArgsConstructor
 public class NormalizationDecorator implements SensorReadingProcessor {
 

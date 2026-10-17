@@ -26,7 +26,6 @@ public class Irrigation {
     @JoinColumn(name = "id_crop", nullable = false)
     private Crop crop;
 
-    // "start" and "end" are reserved words in SQL, so the columns use explicit names.
     @Column(name = "started_at")
     private LocalDateTime startedAt;
 
@@ -44,7 +43,6 @@ public class Irrigation {
     @Builder.Default
     private IrrigationType type = IrrigationType.AUTOMATIC;
 
-    /** Why a user started it; empty for automatic cycles. */
     private String reason;
 
     @ManyToOne(fetch = FetchType.LAZY)

@@ -2,7 +2,6 @@ package com.agrosense.backend.exception;
 
 import java.time.Duration;
 
-/** Logins for an account or from an address are temporarily refused after too many failures. */
 public class TooManyLoginAttemptsException extends RuntimeException {
 
     private final Duration retryAfter;

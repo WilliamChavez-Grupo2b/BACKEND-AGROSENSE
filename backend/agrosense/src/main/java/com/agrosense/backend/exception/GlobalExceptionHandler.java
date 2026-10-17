@@ -40,7 +40,6 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<ErrorResponse> handleValidation(MethodArgumentNotValidException exception) {
-        // One message per field, in the order they were reported; the first one is also the summary.
         Map<String, String> fields = new LinkedHashMap<>();
         for (FieldError error : exception.getBindingResult().getFieldErrors()) {
             fields.putIfAbsent(error.getField(), error.getDefaultMessage());
@@ -49,17 +48,12 @@ public class GlobalExceptionHandler {
         return ResponseEntity.badRequest().body(new ErrorResponse(message, fields));
     }
 
-    /** Arguments the business layer refuses. Its own message is for developers, so it is not sent. */
     @ExceptionHandler(IllegalArgumentException.class)
     public ResponseEntity<ErrorResponse> handleIllegalArgument(IllegalArgumentException exception) {
         log.warn("Request rejected for invalid data: {}", exception.getMessage());
         return respond(HttpStatus.BAD_REQUEST, "Los datos enviados no son válidos.");
     }
 
-    /**
-     * The database refused the change, typically because two requests created the same thing at the same
-     * moment and the second one hit a unique constraint.
-     */
     @ExceptionHandler(DataIntegrityViolationException.class)
     public ResponseEntity<ErrorResponse> handleDataIntegrity(DataIntegrityViolationException exception) {
         log.warn("Operation rejected by the database: {}", exception.getMostSpecificCause().getMessage());
@@ -71,7 +65,6 @@ public class GlobalExceptionHandler {
         return respond(HttpStatus.BAD_REQUEST, "Los datos enviados no son válidos.");
     }
 
-    /** Wrong e-mail, wrong password and disabled accounts all get the same answer on purpose. */
     @ExceptionHandler(AuthenticationException.class)
     public ResponseEntity<ErrorResponse> handleAuthentication() {
         return respond(HttpStatus.UNAUTHORIZED, "Credenciales incorrectas.");
@@ -87,7 +80,6 @@ public class GlobalExceptionHandler {
                         + (minutes == 1 ? " minuto." : " minutos.")));
     }
 
-    /** The assistant could not answer; the exception carries the status and a message for the user. */
     @ExceptionHandler(AiException.class)
     public ResponseEntity<ErrorResponse> handleAi(AiException exception) {
         return respond(exception.getStatus(), exception.getMessage());
@@ -100,7 +92,6 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ErrorResponse> handleUnexpected(Exception exception) {
-        // Spring MVC's own client errors (404, 405, 415...) carry their status code.
         if (exception instanceof org.springframework.web.ErrorResponse response
                 && response.getStatusCode().is4xxClientError()) {
             return respond(HttpStatus.valueOf(response.getStatusCode().value()), "La solicitud no es válida.");

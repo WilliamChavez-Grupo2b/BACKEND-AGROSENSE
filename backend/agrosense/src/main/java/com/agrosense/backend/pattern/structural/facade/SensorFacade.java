@@ -34,11 +34,6 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.util.Optional;
 
-/**
- * Facade pattern: one entry point for "a reading arrived", used by both MQTT and REST. It hides the
- * steps behind it: find the sensor, build and process the reading, store it, raise an alert when the
- * value leaves the crop's range, and announce what happened.
- */
 @Component
 @RequiredArgsConstructor
 public class SensorFacade {
@@ -55,7 +50,6 @@ public class SensorFacade {
     private final SensorReadingProcessor readingProcessor;
     private final ApplicationEventPublisher events;
 
-    /** A stored reading and the alert it raised, when it raised one. */
     public record Recorded(SensorReading reading, Optional<Alert> alert) {
     }
 
@@ -64,7 +58,6 @@ public class SensorFacade {
         return record(data).reading();
     }
 
-    /** Like {@link #recordReading}, also returning the alert the reading raised (used by device events). */
     @Transactional
     public Recorded record(SensorReadingData data) {
         Sensor sensor = sensorRepository.findBySensorCode(data.getSensorCode())
@@ -72,7 +65,6 @@ public class SensorFacade {
         if (!Boolean.TRUE.equals(sensor.getActive())) {
             throw new BusinessRuleException("El sensor está inactivo y no puede registrar lecturas.");
         }
-        // A sensor only counts while it hangs from a crop in use and from an account that is enabled.
         if (!Boolean.TRUE.equals(sensor.getCrop().getActive())
                 || !Boolean.TRUE.equals(sensor.getCrop().getEstate().getUser().getActive())) {
             throw new BusinessRuleException("El sensor pertenece a un cultivo o a una cuenta inactivos.");
@@ -86,7 +78,6 @@ public class SensorFacade {
             reading.setRecordedAt(data.getRecordedAt());
         }
         reading = readingRepository.save(readingProcessor.process(reading));
-        // MQTT messages can arrive late; an older reading must not move the sensor's last reading back.
         if (sensor.getLastReadingAt() == null || reading.getRecordedAt().isAfter(sensor.getLastReadingAt())) {
             sensor.setLastReadingAt(reading.getRecordedAt());
         }
@@ -94,17 +85,12 @@ public class SensorFacade {
         String ownerEmail = sensor.getCrop().getEstate().getUser().getEmail();
         events.publishEvent(new SensorReadingRecordedEvent(ownerEmail, SensorReadingResponse.from(reading)));
 
-        // An impossible value says the sensor is faulty, not that the crop is in trouble.
         Optional<Alert> alert = ValidationDecorator.QUALITY_OK.equals(reading.getQuality())
                 ? raiseAlertIfOutOfCropRange(sensor, reading, ownerEmail)
                 : Optional.empty();
         return new Recorded(reading, alert);
     }
 
-    /**
-     * An alert a device reports itself (a pest seen by a camera, for example), under the same rule as the
-     * alerts readings raise: one open alert per crop and type. Empty when one of that type is already open.
-     */
     @Transactional
     public Optional<Alert> raiseAlert(Crop crop, AlertType type, String message, Severity severity,
             BigDecimal detectedValue) {
@@ -137,8 +123,6 @@ public class SensorFacade {
     }
 
     private Optional<Alert> saveIfNoneOpen(Crop crop, AlertType type, AlertBuilder alert, String ownerEmail) {
-        // One open alert per crop and type is enough; more would only repeat the same warning. The crop
-        // row is locked first, so two readings arriving together cannot both find "no open alert".
         cropRepository.findByIdForUpdate(crop.getIdCrop());
         if (alertRepository.existsByCropIdCropAndAlertTypeAndAcknowledgedFalse(crop.getIdCrop(), type)) {
             return Optional.empty();
@@ -148,10 +132,6 @@ public class SensorFacade {
         return Optional.of(saved);
     }
 
-    /**
-     * Everything the dashboard shows about one crop, gathered from the repositories behind the facade.
-     * The caller is responsible for checking that the crop belongs to the user.
-     */
     @Transactional(readOnly = true)
     public DashboardResponse summarizeCrop(Integer cropId) {
         return DashboardResponse.builder()

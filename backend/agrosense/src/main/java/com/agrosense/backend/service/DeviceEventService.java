@@ -35,12 +35,6 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
-/**
- * Stores an event a field device sent through the event service: readings of the crop's sensors, or an
- * alert the device reports itself. Readings go through {@link SensorFacade}, the same path MQTT and REST
- * use, so they are validated, stored and compared with the crop's range in the same way. The whole event
- * is one transaction: when one of its readings is refused, none is stored.
- */
 @Service
 @RequiredArgsConstructor
 public class DeviceEventService {
@@ -48,9 +42,7 @@ public class DeviceEventService {
     public static final String READING = "reading";
     public static final String ALERT = "alert";
 
-    /** A Raspberry keeps a few measurements per event; more is not a reading but a mistake. */
     static final int MAX_MEASUREMENTS = 16;
-    /** Clocks of field devices drift; an event a few minutes ahead is still believed. */
     static final Duration ALLOWED_CLOCK_AHEAD = Duration.ofMinutes(5);
 
     private static final String MEASUREMENTS = Arrays.stream(SensorType.values())
@@ -61,10 +53,6 @@ public class DeviceEventService {
     private final SensorFacade sensorFacade;
     private final Clock clock = Clock.systemDefaultZone();
 
-    /**
-     * Checks the device's key, stores the event and answers with the owner's e-mail, so the event service
-     * can deliver it to that user only, and with what was stored, which is what it delivers.
-     */
     @Transactional
     public Map<String, Object> receive(String deviceCode, String deviceKey, String type, JsonNode ts, JsonNode data) {
         Device device = deviceService.authenticate(deviceCode, deviceKey)
@@ -121,10 +109,6 @@ public class DeviceEventService {
         }
     }
 
-    /**
-     * The crop's sensor a measurement belongs to: the one named, or the only active one of its type. With
-     * several of that type the device must say which, because guessing would put a reading on the wrong one.
-     */
     private Sensor sensorFor(Crop crop, List<Sensor> active, SensorType type, String name, BigDecimal value,
             String sensorCode) {
         if (sensorCode != null) {
@@ -173,7 +157,6 @@ public class DeviceEventService {
         return sensorFacade.raiseAlert(crop, type, message, severity, value);
     }
 
-    /** {@code soil_moisture} is {@link SensorType#SOIL_MOISTURE}. */
     static String measurementName(SensorType type) {
         return type.name().toLowerCase(Locale.ROOT);
     }
@@ -201,10 +184,6 @@ public class DeviceEventService {
         return value;
     }
 
-    /**
-     * When the measurement was taken, in the server's local time like every stored time: an ISO-8601 date
-     * (with or without offset) or seconds or milliseconds since 1970. Without it, now.
-     */
     private LocalDateTime timeOf(JsonNode ts) {
         if (ts == null || ts.isNull()) {
             return LocalDateTime.now(clock);

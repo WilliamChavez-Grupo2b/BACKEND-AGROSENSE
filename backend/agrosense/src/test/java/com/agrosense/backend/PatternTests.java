@@ -116,7 +116,6 @@ class PatternTests {
 		assertThat(data.getUnit()).isEqualTo("%");
 		assertThat(data.getRecordedAt()).isBetween(LocalDateTime.now().minusMinutes(61), LocalDateTime.now().minusMinutes(59));
 
-		// No timestamp, or one from the future, falls back to the arrival time.
 		long tomorrow = System.currentTimeMillis() + 86_400_000;
 		assertThat(adapter.adapt(new MessageMqtt("A", 1.0, null, null, null)).getRecordedAt())
 				.isBeforeOrEqualTo(LocalDateTime.now());

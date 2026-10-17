@@ -16,10 +16,6 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.scheduling.annotation.Scheduled;
 
-/**
- * Subscribes to the sensors topic of an MQTT broker. Only active with {@code mqtt.enabled=true}. The
- * application starts even when the broker is down and keeps trying to connect in the background.
- */
 @Slf4j
 @Configuration
 @ConditionalOnProperty(name = "mqtt.enabled", havingValue = "true")
@@ -47,7 +43,6 @@ public class MqttConfig implements MqttCallbackExtended {
 
     private MqttClient client;
 
-    /** Connects at startup and retries every 30 seconds until the first connection succeeds. */
     @Scheduled(initialDelay = 0, fixedDelay = 30_000)
     public synchronized void ensureConnected() {
         try {
@@ -98,7 +93,6 @@ public class MqttConfig implements MqttCallbackExtended {
 
     @Override
     public void deliveryComplete(IMqttDeliveryToken token) {
-        // This client only subscribes.
     }
 
     @PreDestroy

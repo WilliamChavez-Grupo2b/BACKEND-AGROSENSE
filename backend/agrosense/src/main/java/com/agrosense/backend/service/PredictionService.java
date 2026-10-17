@@ -36,7 +36,6 @@ public class PredictionService {
     private final CropRepository cropRepository;
     private final SensorReadingRepository readingRepository;
 
-    /** The stored predictions of one of the user's crops, newest first. */
     @Transactional(readOnly = true)
     public List<PredictionResponse> findHistory(String email, Integer cropId, int limit) {
         requireOwnedCrop(email, cropId);
@@ -46,11 +45,6 @@ public class PredictionService {
                 .toList();
     }
 
-    /**
-     * The latest soil moisture, air temperature and pH of one of the user's crops, with the crop's own
-     * humidity and pH limits, in the shape the AI service expects. A measurement the crop has no reading
-     * for is left out.
-     */
     @Transactional(readOnly = true)
     public Map<String, Object> currentConditions(String email, Integer cropId) {
         Crop crop = cropRepository.findByIdCropAndEstateUserEmail(cropId, email)
@@ -59,13 +53,11 @@ public class PredictionService {
         putLatest(conditions, "soil_moisture", cropId, SensorType.SOIL_MOISTURE);
         putLatest(conditions, "air_temperature", cropId, SensorType.AIR_TEMPERATURE);
         putLatest(conditions, "ph", cropId, SensorType.PH);
-        // Without them the service judges every crop by the same average limits.
         putRange(conditions, "humidity_min", "humidity_max", crop.getHumidityMin(), crop.getHumidityMax());
         putRange(conditions, "ph_min", "ph_max", crop.getPhMin(), crop.getPhMax());
         return conditions;
     }
 
-    /** A range only means something whole and in order; the AI service refuses anything else. */
     private static void putRange(Map<String, Object> conditions, String minimumKey, String maximumKey,
             BigDecimal minimum, BigDecimal maximum) {
         if (minimum != null && maximum != null && minimum.compareTo(maximum) < 0) {
@@ -74,17 +66,12 @@ public class PredictionService {
         }
     }
 
-    /**
-     * Asks the AI service for an irrigation prediction and stores it. Runs on the async pool, so the
-     * caller never waits for the AI service; when it gives no answer, nothing is stored.
-     */
     @Async(AppConfig.ASYNC_EXECUTOR)
     public void requestIrrigationPrediction(Integer cropId, Map<String, Object> sensorData) {
         if (!cropRepository.existsById(cropId)) {
             log.warn("Irrigation prediction skipped: crop {} does not exist", cropId);
             return;
         }
-        // The HTTP call happens outside any transaction; only the save below opens one.
         aiServiceProxy.predictIrrigation(cropId, sensorData).ifPresent(prediction -> {
             predictionRepository.save(AiPrediction.builder()
                     .crop(cropRepository.getReferenceById(cropId))
@@ -97,7 +84,6 @@ public class PredictionService {
         });
     }
 
-    /** Another user's crop is reported as missing, so its existence is not revealed. */
     private void requireOwnedCrop(String email, Integer cropId) {
         cropRepository.findByIdCropAndEstateUserEmail(cropId, email)
                 .orElseThrow(() -> new ResourceNotFoundException("Crop not found"));

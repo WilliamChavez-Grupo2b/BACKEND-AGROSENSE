@@ -17,7 +17,6 @@ public class LoginRequest {
     @Size(max = 72, message = "La contraseña es demasiado larga.")
     private String password;
 
-    /** Surrounding spaces are a common paste artefact, so they are dropped before validation. */
     public void setEmail(String email) {
         this.email = email == null ? null : email.trim();
     }

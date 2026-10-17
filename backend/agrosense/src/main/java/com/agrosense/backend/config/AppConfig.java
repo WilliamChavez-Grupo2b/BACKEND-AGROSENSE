@@ -11,10 +11,8 @@ import java.util.concurrent.ThreadPoolExecutor;
 @Configuration
 public class AppConfig {
 
-    /** Name of the pool that runs {@code @Async} methods; reference it as {@code @Async(ASYNC_EXECUTOR)}. */
     public static final String ASYNC_EXECUTOR = "asyncExecutor";
 
-    /** Loads the AI settings into the singleton once, at startup, and exposes it for injection. */
     @Bean
     public AiConfigManager aiConfigManager(
             @Value("${ai.service.url:}") String serviceUrl,
@@ -32,7 +30,6 @@ public class AppConfig {
         executor.setMaxPoolSize(8);
         executor.setQueueCapacity(100);
         executor.setThreadNamePrefix("agrosense-async-");
-        // When the pool and its queue are full the caller runs the task itself, so none is dropped.
         executor.setRejectedExecutionHandler(new ThreadPoolExecutor.CallerRunsPolicy());
         executor.setWaitForTasksToCompleteOnShutdown(true);
         executor.setAwaitTerminationSeconds(10);

@@ -34,7 +34,6 @@ public class SensorService {
     private final SensorReadingRepository readingRepository;
     private final CropRepository cropRepository;
 
-    /** Records a reading sent over REST. The sensor must belong to the authenticated user. */
     @Transactional
     public SensorReadingResponse record(String email, SensorReadingRequest request) {
         String sensorCode = request.getSensorCode().trim().toUpperCase(Locale.ROOT);
@@ -48,7 +47,6 @@ public class SensorService {
                 .build()));
     }
 
-    /** Most recent readings of one of the user's sensors, newest first. */
     @Transactional(readOnly = true)
     public List<SensorReadingResponse> findLatest(String email, Integer sensorId, int limit) {
         sensorRepository.findByIdSensorAndCropEstateUserEmail(sensorId, email)
@@ -60,7 +58,6 @@ public class SensorService {
                 .toList();
     }
 
-    /** Registers a sensor on one of the user's crops. Sensor codes are unique across the system. */
     @Transactional
     public SensorResponse create(String email, Integer cropId, SensorType type, String sensorCode,
             String location) {
@@ -71,7 +68,6 @@ public class SensorService {
         return SensorResponse.from(sensorRepository.save(sensor));
     }
 
-    /** Every sensor of one of the user's crops, ordered by code. */
     @Transactional(readOnly = true)
     public List<SensorResponse> findByCrop(String email, Integer cropId) {
         ownedCrop(email, cropId);
@@ -80,7 +76,6 @@ public class SensorService {
                 .toList();
     }
 
-    /** Another user's crop is reported as missing, so its existence is not revealed. */
     private Crop ownedCrop(String email, Integer cropId) {
         return cropRepository.findByIdCropAndEstateUserEmail(cropId, email)
                 .orElseThrow(() -> new ResourceNotFoundException("Crop not found"));

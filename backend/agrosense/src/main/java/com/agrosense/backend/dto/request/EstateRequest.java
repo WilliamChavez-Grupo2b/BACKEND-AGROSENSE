@@ -13,7 +13,6 @@ import lombok.Data;
 
 import java.math.BigDecimal;
 
-/** Data to register an estate. The coordinates are optional, but they only make sense as a pair. */
 @Data
 public class EstateRequest {
 

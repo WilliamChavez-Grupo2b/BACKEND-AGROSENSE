@@ -7,10 +7,8 @@ import org.springframework.core.io.DefaultResourceLoader;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/** Checks what database/datasource.properties resolves to with and without the "seed" profile. */
 class DatabaseConfigTests {
 
-	/** Where the settings are read from: DATABASE_DIR when the developer has set it, else the default. */
 	private static final String DATABASE_DIR =
 			System.getenv("DATABASE_DIR") == null ? "../../database" : System.getenv("DATABASE_DIR");
 

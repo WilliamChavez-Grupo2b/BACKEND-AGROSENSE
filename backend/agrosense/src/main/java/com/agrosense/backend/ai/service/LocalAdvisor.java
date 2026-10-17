@@ -12,15 +12,8 @@ import java.util.stream.Collectors;
 
 import static com.agrosense.backend.ai.service.FarmSnapshot.number;
 
-/**
- * Answers a question from the farm's figures alone, for when the language model cannot be reached. It
- * recognises what the question is about by its words (irrigation, alerts, temperature, pH, sensors, the
- * farm in general) and states what the readings say against each crop's own limits. It does not reason
- * and does not pretend to: what it cannot answer, it says, along with what it can.
- */
 final class LocalAdvisor {
 
-    /** Air temperature from which watering in the middle of the day loses much of the water. */
     private static final BigDecimal HOT_C = new BigDecimal("30");
 
     private static final Pattern ALERTS = words("alert\\w*|aviso\\w*|problema\\w*|plaga\\w*|riesgo\\w*");
@@ -40,7 +33,6 @@ final class LocalAdvisor {
     private LocalAdvisor() {
     }
 
-    /** @param farm {@code null} when the farm's data could not be read */
     static String answer(String question, FarmSnapshot farm) {
         if (farm == null) {
             return "Ahora no puedo leer los datos de tu finca. Inténtalo de nuevo en un momento.";
@@ -179,7 +171,6 @@ final class LocalAdvisor {
         return answer.toString().trim();
     }
 
-    /** "64.74 %" followed by a note when it is outside the crop's range. */
     private static void figure(StringBuilder line, String label, BigDecimal value, String unit,
             BigDecimal minimum, BigDecimal maximum) {
         if (value == null) {
@@ -223,7 +214,6 @@ final class LocalAdvisor {
         return maximum != null && value.compareTo(maximum) > 0;
     }
 
-    /** Lower case and without accents, so "¿Cuándo riego el CAFÉ?" reads "¿cuando riego el cafe?". */
     private static String normalise(String text) {
         return Normalizer.normalize(text == null ? "" : text, Normalizer.Form.NFD)
                 .replaceAll("\\p{M}", "")
