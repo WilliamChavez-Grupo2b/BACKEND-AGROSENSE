@@ -1,0 +1,7 @@
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+simulator.env
+queue.jsonl
+queue.jsonl.tmp
