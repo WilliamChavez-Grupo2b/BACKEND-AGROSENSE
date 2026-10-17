@@ -4,6 +4,7 @@ import com.agrosense.backend.models.User;
 import com.agrosense.backend.repository.AiPredictionRepository;
 import com.agrosense.backend.repository.AlertRepository;
 import com.agrosense.backend.repository.CropRepository;
+import com.agrosense.backend.repository.DeviceRepository;
 import com.agrosense.backend.repository.EstateRepository;
 import com.agrosense.backend.repository.IrrigationRepository;
 import com.agrosense.backend.repository.SensorReadingRepository;
@@ -54,6 +55,8 @@ class DataSeederTests {
 	@Autowired
 	private AiPredictionRepository predictionRepository;
 	@Autowired
+	private DeviceRepository deviceRepository;
+	@Autowired
 	private PasswordEncoder passwordEncoder;
 
 	@Test
@@ -87,5 +90,8 @@ class DataSeederTests {
 		assertThat(alertRepository.count()).isEqualTo(4);
 		assertThat(irrigationRepository.count()).isEqualTo(4);
 		assertThat(predictionRepository.count()).isEqualTo(2);
+		assertThat(deviceRepository.count()).isEqualTo(1);
+		// Like the demo user's password, the demo device's key is not in the script.
+		assertThat(deviceRepository.findAll()).allMatch(device -> device.getKeyHash().equals("DISABLED"));
 	}
 }

@@ -30,9 +30,9 @@ class DatabaseSchemaTests {
 
 	@Test
 	void entitiesMatchTheSchemaScriptAndConstraintsAreEnforced() {
-		// Reaching this point means Hibernate validated all eight entities against schema.sql.
+		// Reaching this point means Hibernate validated all nine entities against schema.sql.
 		// The script also creates the frontend's two session tables, which no backend entity maps.
-		assertEquals(8, jdbc.queryForObject(
+		assertEquals(9, jdbc.queryForObject(
 				"select count(*) from information_schema.tables where table_schema = 'public'"
 						+ " and table_name not like 'spring_session%'", Integer.class));
 		assertEquals(2, jdbc.queryForObject(
