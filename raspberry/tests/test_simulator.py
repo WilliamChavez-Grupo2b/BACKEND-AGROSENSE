@@ -11,7 +11,7 @@ import requests
 import simulator
 from simulator import DROP, RETRY, SENT, Config, DiskQueue, Sensors
 
-KEY = "llave-del-dispositivo"
+KEY = "device-key"
 
 
 class FakeService:
@@ -135,17 +135,17 @@ def test_settings_come_from_a_file_and_the_environment_wins(tmp_path):
     file.write_text("# comentario\nEVENTS_URL=http://pi.local:8100/events\nDEVICE_KEY='del-archivo'\nINTERVAL_S=30\n",
                     encoding="utf-8")
 
-    config = simulator.load_config(str(file), {"DEVICE_KEY": "del-entorno", "READINGS": "ph, soil_moisture"})
+    config = simulator.load_config(str(file), {"DEVICE_KEY": "from-the-environment", "READINGS": "ph, soil_moisture"})
 
     assert config.events_url == "http://pi.local:8100/events"
-    assert config.device_key == "del-entorno"
+    assert config.device_key == "from-the-environment"
     assert config.interval_s == 30
     assert config.readings == ("ph", "soil_moisture")
-    assert "del-entorno" not in repr(config)
+    assert "from-the-environment" not in repr(config)
 
     with pytest.raises(SystemExit):
         simulator.load_config(str(tmp_path / "missing.env"), {})
-    without_key = tmp_path / "sin-llave.env"
+    without_key = tmp_path / "no-key.env"
     without_key.write_text("EVENTS_URL=http://x\n", encoding="utf-8")
     with pytest.raises(SystemExit):
         simulator.load_config(str(without_key), {})

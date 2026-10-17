@@ -124,12 +124,12 @@ class DiskQueue:
             try:
                 events.append(json.loads(line))
             except ValueError:
-                log.warning("Línea dañada en la cola, se descarta")
+                log.warning("Damaged line in the queue, dropped")
         return events
 
     def save(self, events: list[dict]) -> None:
         if len(events) > self.limit:
-            log.warning("La cola superó %s eventos: se descartan los %s más antiguos", self.limit,
+            log.warning("The queue went over %s events: dropping the %s oldest", self.limit,
                         len(events) - self.limit)
             events = events[-self.limit:]
         if not events:
@@ -151,15 +151,15 @@ def send(session: requests.Session, config: Config, event: dict) -> str:
         answer = session.post(config.events_url, json=event, headers={"X-Device-Key": config.device_key},
                               timeout=config.timeout_s)
     except requests.RequestException as error:
-        log.warning("Sin conexión con el servicio de eventos (%s)", type(error).__name__)
+        log.warning("No connection to the event service (%s)", type(error).__name__)
         return RETRY
     if answer.status_code == 200:
         return SENT
     message = _message_of(answer)
     if answer.status_code in (408, 429) or answer.status_code >= 500:
-        log.warning("El servicio respondió %s: %s", answer.status_code, message)
+        log.warning("The service answered %s: %s", answer.status_code, message)
         return RETRY
-    log.error("Evento rechazado (%s): %s", answer.status_code, message)
+    log.error("Event rejected (%s): %s", answer.status_code, message)
     return DROP
 
 
@@ -203,15 +203,15 @@ def reading_event(config: Config, values: dict[str, float]) -> dict:
 
 def run_once(session: requests.Session, config: Config, sensors: Sensors, queue: DiskQueue, sleep=time.sleep) -> str:
     if queue.load():
-        log.info("Enviados %s eventos que esperaban en la cola", flush(session, config, queue))
+        log.info("Sent %s events that were waiting in the queue", flush(session, config, queue))
     event = reading_event(config, sensors.measure())
     # While older events still wait, the new one waits behind them, so they arrive in order.
     outcome = RETRY if queue.load() else deliver(session, config, event, sleep)
     if outcome == RETRY:
         queue.add(event)
-        log.info("Evento guardado en la cola (%s esperando)", len(queue.load()))
+        log.info("Event saved in the queue (%s waiting)", len(queue.load()))
     elif outcome == SENT:
-        log.info("Enviado: %s", event["data"])
+        log.info("Sent: %s", event["data"])
     return outcome
 
 
@@ -223,7 +223,7 @@ def main(argv: list[str] | None = None) -> None:
     logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO").upper(),
                         format="%(asctime)s %(levelname)s %(message)s")
     config = load_config(args.config)
-    log.info("Dispositivo %s enviando a %s cada %s s", config.device_id, config.events_url, config.interval_s)
+    log.info("Device %s sending to %s every %s s", config.device_id, config.events_url, config.interval_s)
     sensors = Sensors(config.readings)
     queue = DiskQueue(config.queue_file, config.max_queue)
     with requests.Session() as session:
@@ -234,7 +234,7 @@ def main(argv: list[str] | None = None) -> None:
                     return
                 time.sleep(config.interval_s)
         except KeyboardInterrupt:
-            log.info("Detenido")
+            log.info("Stopped")
 
 
 def _message_of(answer: requests.Response) -> str:
