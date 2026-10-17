@@ -10,8 +10,9 @@ modifican tablas ni contienen datos de ejemplo: leen estos archivos y solo valid
 | Archivo         | Descripción                                                                          |
 |-----------------|--------------------------------------------------------------------------------------|
 | `schema.sql`    | Tablas, claves, restricciones e índices. Fuente de verdad del esquema.               |
-| `seed_demo.sql` | Datos de ejemplo: 1 usuario, 2 fincas, 3 cultivos, 6 sensores, 120 lecturas, 4 alertas, 4 riegos y 2 predicciones. |
+| `seed_demo.sql` | Datos de ejemplo: 1 usuario, 2 fincas, 3 cultivos, 6 sensores, 120 lecturas, 4 alertas, 4 riegos, 2 predicciones y 1 dispositivo. |
 | `reset.sql`     | **Destructivo.** Borra todas las tablas y sus datos. Solo para desarrollo.           |
+| `migrations/`   | Cambios de esquema para bases que ya existían, numerados y para ejecutar a mano (ver «Migraciones»). |
 | `datasource.properties` | Configuración de base de datos que cargan el backend y el frontend: conexión, validación del esquema, ejecución de los scripts y perfiles `seed` y `demo`. |
 | `.env.example`  | Variables de entorno que usa `datasource.properties`.                                |
 
@@ -36,7 +37,8 @@ de esta carpeta es posible, pero cambia cómo se compilan los dos proyectos y es
 users ─┬─< estates ─< crops ─┬─< sensors ─< sensor_readings
        │                     ├─< alerts        (id_sensor opcional)
        │                     ├─< irrigations   (activated_by → users, opcional)
-       │                     └─< ai_predictions
+       │                     ├─< ai_predictions
+       │                     └─< devices       (Raspberry Pi; llave guardada como SHA-256)
        └───────────────────────── irrigations.activated_by
 ```
 
@@ -50,6 +52,7 @@ users ─┬─< estates ─< crops ─┬─< sensors ─< sensor_readings
 | `alerts`          | Alertas de un cultivo, con severidad y estado de atención.             |
 | `irrigations`     | Riegos automáticos y manuales.                                         |
 | `ai_predictions`  | Predicciones del servicio de IA (solo las usa el backend).             |
+| `devices`         | Dispositivos de campo (Raspberry Pi) de un cultivo. `device_code` único; de la llave solo se guarda su SHA-256 (`key_hash`). Solo los usa el backend. |
 | `spring_session`, `spring_session_attributes` | Sesiones de inicio de sesión del frontend (solo las usa el frontend). |
 
 Las dos tablas de sesiones las lee y escribe la biblioteca Spring Session, no una entidad: sus columnas
@@ -147,6 +150,45 @@ defecto. Para una instancia de producción deja `SQL_INIT_MODE` sin definir (su 
 `never`) y no actives el perfil `seed`, que carga datos de ejemplo. Si necesitas datos de ejemplo,
 ejecuta `seed_demo.sql` de forma intencional y configura `SEED_USER_PASSWORD` solo si vas a usar el
 perfil `seed`.
+
+## Migraciones
+
+`schema.sql` crea una base completa desde cero. Cuando el esquema cambia, el cambio va también en
+`migrations/`, con un número correlativo, para aplicarlo a una base que ya existe (la de producción). Cada
+archivo es idempotente: se puede ejecutar varias veces sin efecto adicional.
+
+| Archivo | Fecha | Cambio |
+|---------|-------|--------|
+| `migrations/001_devices.sql` | 2026-10-16 | Tabla `devices` (dispositivos de campo y el SHA-256 de su llave) e índice `idx_devices_crop` |
+
+**Antes de desplegar** un backend que use la tabla nueva, ejecuta la migración a mano en la base de
+producción (Neon, la que usan el backend de Render y el frontend de Vercel). El backend valida sus tablas
+al arrancar (`ddl-auto=validate`) y no arranca si falta `devices`.
+
+1. En la consola SQL de Neon (proyecto `agrosense-db`, rama de producción), pega el contenido de
+   `migrations/001_devices.sql` y ejecútalo. O, con `psql`:
+
+   ```sh
+   psql "postgresql://<usuario>:<contraseña>@<host>/<base>?sslmode=require" -f migrations/001_devices.sql
+   ```
+
+2. Comprueba que la tabla existe:
+
+   ```sql
+   SELECT column_name, data_type FROM information_schema.columns WHERE table_name = 'devices';
+   ```
+
+3. Despliega el backend. Volver a ejecutar la migración más tarde no cambia nada.
+
+La migración no inserta filas. El dispositivo de ejemplo (`RPI-DEMO-01`) solo lo crea `seed_demo.sql`.
+
+## El dispositivo de ejemplo y su llave
+
+`seed_demo.sql` crea el dispositivo `RPI-DEMO-01` en el cultivo Café, cuyos sensores `AS-001` (humedad del
+suelo), `AS-002` (temperatura del aire) y `AS-003` (pH) reciben sus lecturas. Igual que el usuario de
+ejemplo, se crea con un `key_hash` (`DISABLED`) que no corresponde a ninguna llave. El backend le asigna
+una al arrancar si se define `SEED_DEVICE_KEY`; es para bases locales y de pruebas, no para producción.
+Los dispositivos reales se registran con `POST /api/devices`, que devuelve la llave una sola vez.
 
 ## Variables de conexión
 

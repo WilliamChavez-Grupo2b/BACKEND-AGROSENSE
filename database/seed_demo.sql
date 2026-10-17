@@ -175,3 +175,14 @@ JOIN (VALUES
         ('Plátano', 0.6400, 'No se requiere riego en las próximas 12 horas.')
     ) AS v(crop_name, confidence, recommendation) ON v.crop_name = c.name
 WHERE NOT EXISTS (SELECT 1 FROM ai_predictions p WHERE p.id_crop = c.id_crop);
+
+-- A sample device (Raspberry Pi) on the coffee crop, whose sensors AS-001 (soil moisture), AS-002 (air
+-- temperature) and AS-003 (pH) receive its readings. Like the demo user, it is created with a key hash that
+-- matches no key, so it cannot send events until the backend sets one from SEED_DEVICE_KEY.
+INSERT INTO devices (id_crop, device_code, key_hash)
+SELECT c.id_crop, 'RPI-DEMO-01', 'DISABLED'
+FROM crops c
+JOIN estates e ON e.id_estate = c.id_estate
+JOIN users u ON u.id_user = e.id_user AND u.email = 'demo@agrosense.co'
+WHERE c.name = 'Café'
+  AND NOT EXISTS (SELECT 1 FROM devices d WHERE d.device_code = 'RPI-DEMO-01');
