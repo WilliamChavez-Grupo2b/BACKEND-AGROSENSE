@@ -27,7 +27,7 @@ public class InternalKeyFilter extends OncePerRequestFilter {
     public InternalKeyFilter(String key) {
         this.key = key == null ? new byte[0] : key.trim().getBytes(StandardCharsets.UTF_8);
         if (this.key.length == 0) {
-            log.info("EVENTS_INTERNAL_KEY sin valor: las rutas internas de eventos rechazan toda llamada");
+            log.info("EVENTS_INTERNAL_KEY is empty: the internal event routes reject every call");
         }
     }
 
@@ -46,7 +46,7 @@ public class InternalKeyFilter extends OncePerRequestFilter {
             chain.doFilter(request, response);
             return;
         }
-        log.warn("Llamada interna rechazada: {} {} sin la llave interna válida", request.getMethod(), request.getRequestURI());
+        log.warn("Internal call rejected: {} {} without a valid internal key", request.getMethod(), request.getRequestURI());
         response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
         response.setContentType(MediaType.APPLICATION_JSON_VALUE);
         response.setCharacterEncoding(StandardCharsets.UTF_8.name());

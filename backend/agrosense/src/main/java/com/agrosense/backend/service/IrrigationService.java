@@ -1,7 +1,7 @@
 package com.agrosense.backend.service;
 
 import com.agrosense.backend.domain.enums.IrrigationType;
-import com.agrosense.backend.dto.request.RiegoRequest;
+import com.agrosense.backend.dto.request.IrrigationRequest;
 import com.agrosense.backend.dto.response.IrrigationResponse;
 import com.agrosense.backend.exception.ResourceNotFoundException;
 import com.agrosense.backend.models.Crop;
@@ -22,7 +22,7 @@ import java.util.List;
 @Slf4j
 @Service
 @RequiredArgsConstructor
-public class RiegoService {
+public class IrrigationService {
 
     private static final int MAX_IRRIGATIONS = 200;
 
@@ -32,7 +32,7 @@ public class RiegoService {
 
     /** Registers a manual irrigation cycle that starts now on one of the user's crops. */
     @Transactional
-    public IrrigationResponse register(String email, RiegoRequest request) {
+    public IrrigationResponse register(String email, IrrigationRequest request) {
         Crop crop = ownedCrop(email, request.getCropId());
         User user = userRepository.findByEmail(email)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
@@ -47,7 +47,7 @@ public class RiegoService {
                 .reason(request.getReason().trim())
                 .activatedBy(user)
                 .build());
-        log.info("Riego manual registrado para el cultivo {}: {} L en {} min",
+        log.info("Manual irrigation recorded for crop {}: {} L in {} min",
                 crop.getIdCrop(), irrigation.getWaterLiters(), irrigation.getDurationMin());
         return IrrigationResponse.from(irrigation);
     }

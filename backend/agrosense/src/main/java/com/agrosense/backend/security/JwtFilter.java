@@ -26,7 +26,7 @@ public class JwtFilter extends OncePerRequestFilter {
         if (authorizationHeader != null && SecurityContextHolder.getContext().getAuthentication() == null) {
             tokenAuthenticator.authenticate(authorizationHeader).ifPresentOrElse(
                     authentication -> SecurityContextHolder.getContext().setAuthentication(authentication),
-                    () -> log.debug("Credenciales rechazadas en {} {}",
+                    () -> log.debug("Credentials rejected on {} {}",
                             request.getMethod(), request.getRequestURI()));
         }
         chain.doFilter(request, response);

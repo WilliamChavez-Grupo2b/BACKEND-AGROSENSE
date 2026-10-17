@@ -154,7 +154,7 @@ public class OpenAiCompatibleClient implements ChatModel {
         } catch (WebClientResponseException exception) {
             int status = exception.getStatusCode().value();
             // The provider's own text may quote the key or the request; only its status is logged.
-            log.warn("El proveedor de IA respondió {} al modelo {}", status, model);
+            log.warn("The AI provider answered {} to model {}", status, model);
             if (status == 429) {
                 throw new AiException(HttpStatus.TOO_MANY_REQUESTS,
                         "El asistente está recibiendo muchas consultas. Inténtalo de nuevo en un minuto.");
@@ -165,7 +165,7 @@ public class OpenAiCompatibleClient implements ChatModel {
             throw exception;
         } catch (RuntimeException exception) {
             // Timeouts and connection failures; the key travels in a header and is not part of the cause.
-            log.warn("No se pudo contactar al proveedor de IA: {}", exception.getClass().getSimpleName());
+            log.warn("Could not reach the AI provider: {}", exception.getClass().getSimpleName());
             throw new AiException(HttpStatus.GATEWAY_TIMEOUT,
                     "El asistente tardó demasiado en responder. Inténtalo de nuevo.");
         }

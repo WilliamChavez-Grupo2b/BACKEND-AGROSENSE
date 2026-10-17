@@ -81,7 +81,7 @@ public class JwtUtil {
                     .getPayload());
         } catch (JwtException | IllegalArgumentException exception) {
             // The reason is logged, never the token itself.
-            log.debug("Token JWT rechazado: {}", exception.getMessage());
+            log.debug("JWT rejected: {}", exception.getMessage());
             return Optional.empty();
         }
     }

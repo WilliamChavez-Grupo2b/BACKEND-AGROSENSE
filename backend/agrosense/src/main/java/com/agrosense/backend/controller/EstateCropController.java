@@ -1,11 +1,11 @@
 package com.agrosense.backend.controller;
 
-import com.agrosense.backend.dto.request.CultivoRequest;
-import com.agrosense.backend.dto.request.FincaRequest;
+import com.agrosense.backend.dto.request.CropRequest;
+import com.agrosense.backend.dto.request.EstateRequest;
 import com.agrosense.backend.dto.response.CropResponse;
 import com.agrosense.backend.dto.response.EstateResponse;
 import com.agrosense.backend.security.Roles;
-import com.agrosense.backend.service.FincaCultivoService;
+import com.agrosense.backend.service.EstateCropService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -25,33 +25,33 @@ import java.util.List;
 @RequestMapping("/api")
 @RequiredArgsConstructor
 @PreAuthorize(Roles.ANY)
-public class FincaCultivoController {
+public class EstateCropController {
 
-    private final FincaCultivoService fincaCultivoService;
+    private final EstateCropService estateCropService;
 
     @GetMapping("/fincas")
     public List<EstateResponse> estates(Authentication authentication) {
-        return fincaCultivoService.findEstates(authentication.getName());
+        return estateCropService.findEstates(authentication.getName());
     }
 
     @PostMapping("/fincas")
     @ResponseStatus(HttpStatus.CREATED)
     @PreAuthorize(Roles.MANAGER)
-    public EstateResponse createEstate(@Valid @RequestBody FincaRequest request, Authentication authentication) {
-        return fincaCultivoService.createEstate(authentication.getName(), request);
+    public EstateResponse createEstate(@Valid @RequestBody EstateRequest request, Authentication authentication) {
+        return estateCropService.createEstate(authentication.getName(), request);
     }
 
     /** Active crops of one estate, or of all the user's estates when {@code estateId} is left out. */
     @GetMapping("/cultivos")
     public List<CropResponse> crops(@RequestParam(required = false) Integer estateId,
             Authentication authentication) {
-        return fincaCultivoService.findActiveCrops(authentication.getName(), estateId);
+        return estateCropService.findActiveCrops(authentication.getName(), estateId);
     }
 
     @PostMapping("/cultivos")
     @ResponseStatus(HttpStatus.CREATED)
     @PreAuthorize(Roles.MANAGER)
-    public CropResponse createCrop(@Valid @RequestBody CultivoRequest request, Authentication authentication) {
-        return fincaCultivoService.createCrop(authentication.getName(), request);
+    public CropResponse createCrop(@Valid @RequestBody CropRequest request, Authentication authentication) {
+        return estateCropService.createCrop(authentication.getName(), request);
     }
 }

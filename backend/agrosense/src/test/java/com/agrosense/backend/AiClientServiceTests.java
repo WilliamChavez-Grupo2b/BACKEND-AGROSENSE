@@ -78,8 +78,8 @@ class AiClientServiceTests {
 	@Test
 	void theCropsLimitsTravelWithTheReadingsAndTheCredentialsWithEveryCall() {
 		// The client as the application builds it, pointed at the local server.
-		WebClient withToken = new WebClientConfig().aiWebClient(AiConfigManager.getInstance(), " llave-interna ",
-						" secreto-del-servicio ")
+		WebClient withToken = new WebClientConfig().aiWebClient(AiConfigManager.getInstance(), " internal-key ",
+						" service-secret ")
 				.mutate().baseUrl("http://127.0.0.1:" + service.getAddress().getPort()).build();
 
 		new AiClientService(withToken, "/predict/irrigation").predictIrrigation(7, Map.of(
@@ -88,8 +88,8 @@ class AiClientServiceTests {
 
 		assertThat(receivedBody.get()).contains("\"humidity_min\":70.0", "\"humidity_max\":95.0",
 				"\"ph_min\":5.5", "\"ph_max\":7.0");
-		assertThat(receivedAuthorization.get()).isEqualTo("Bearer secreto-del-servicio");
-		assertThat(receivedKey.get()).isEqualTo("llave-interna");
+		assertThat(receivedAuthorization.get()).isEqualTo("Bearer service-secret");
+		assertThat(receivedKey.get()).isEqualTo("internal-key");
 	}
 
 	@Test

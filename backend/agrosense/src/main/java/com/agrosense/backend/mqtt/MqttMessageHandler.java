@@ -47,7 +47,7 @@ public class MqttMessageHandler {
 
     public void handle(String topic, byte[] payload) {
         if (payload == null || payload.length == 0 || payload.length > MAX_PAYLOAD_BYTES) {
-            log.warn("Mensaje MQTT descartado por tamaño en {}", topic);
+            log.warn("MQTT message dropped for its size on {}", topic);
             return;
         }
         try {
@@ -58,21 +58,21 @@ public class MqttMessageHandler {
             // sensor, the broker's access rules then decide who can speak for each sensor.
             Optional<String> topicSensorCode = sensorCodeOf(topic);
             if (topicSensorCode.isEmpty() || !topicSensorCode.get().equalsIgnoreCase(reading.getSensorCode())) {
-                log.warn("Mensaje MQTT descartado: el sensor {} no puede publicar en {}",
+                log.warn("MQTT message dropped: sensor {} cannot publish on {}",
                         reading.getSensorCode(), topic);
                 return;
             }
             // The facade accepts it only for a registered, active sensor of an active crop and account.
             sensorFacade.recordReading(reading);
         } catch (ResourceNotFoundException exception) {
-            log.warn("Mensaje MQTT de un sensor no registrado en {}", topic);
+            log.warn("MQTT message from an unregistered sensor on {}", topic);
         } catch (JacksonException exception) {
             // Not JSON, or not the expected shape: the device's fault, not a failure of the application.
-            log.warn("Mensaje MQTT ilegible descartado en {}", topic);
+            log.warn("Unreadable MQTT message dropped on {}", topic);
         } catch (BusinessRuleException | IllegalArgumentException exception) {
-            log.warn("Mensaje MQTT rechazado en {}: {}", topic, exception.getMessage());
+            log.warn("MQTT message rejected on {}: {}", topic, exception.getMessage());
         } catch (Exception exception) {
-            log.error("Error al procesar un mensaje MQTT en {}: {}", topic, exception.getMessage());
+            log.error("Error processing an MQTT message on {}: {}", topic, exception.getMessage());
         }
     }
 

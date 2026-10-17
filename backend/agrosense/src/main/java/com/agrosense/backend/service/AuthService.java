@@ -50,7 +50,7 @@ public class AuthService {
     public LoginResponse login(LoginRequest request, String clientAddress) {
         String email = request.getEmail().trim().toLowerCase(Locale.ROOT);
         loginAttempts.remainingLock(email, clientAddress).ifPresent(remaining -> {
-            log.warn("Inicio de sesión bloqueado por demasiados intentos fallidos desde {}", clientAddress);
+            log.warn("Sign-in blocked after too many failed attempts from {}", clientAddress);
             throw new TooManyLoginAttemptsException(remaining);
         });
         try {
@@ -91,7 +91,7 @@ public class AuthService {
                 .passwordHash(passwordEncoder.encode(request.getPassword()))
                 .role(DEFAULT_ROLE)
                 .build());
-        log.info("Cuenta creada con el id {}", user.getIdUser());
+        log.info("Account created with id {}", user.getIdUser());
         return new RegisterResponse(user.getIdUser(), user.getName(), user.getLastName(), user.getEmail(),
                 user.getRole());
     }

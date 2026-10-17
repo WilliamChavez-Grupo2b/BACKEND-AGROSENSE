@@ -1,7 +1,7 @@
 package com.agrosense.backend.service;
 
-import com.agrosense.backend.dto.request.CultivoRequest;
-import com.agrosense.backend.dto.request.FincaRequest;
+import com.agrosense.backend.dto.request.CropRequest;
+import com.agrosense.backend.dto.request.EstateRequest;
 import com.agrosense.backend.dto.response.CropResponse;
 import com.agrosense.backend.dto.response.EstateResponse;
 import com.agrosense.backend.exception.ResourceNotFoundException;
@@ -20,7 +20,7 @@ import java.util.List;
 /** Estates and their crops. Every operation is limited to what belongs to the authenticated user. */
 @Service
 @RequiredArgsConstructor
-public class FincaCultivoService {
+public class EstateCropService {
 
     private final EstateRepository estateRepository;
     private final CropRepository cropRepository;
@@ -34,7 +34,7 @@ public class FincaCultivoService {
     }
 
     @Transactional
-    public EstateResponse createEstate(String email, FincaRequest request) {
+    public EstateResponse createEstate(String email, EstateRequest request) {
         User owner = userRepository.findByEmail(email)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
         return EstateResponse.from(estateRepository.save(Estate.builder()
@@ -62,7 +62,7 @@ public class FincaCultivoService {
     }
 
     @Transactional
-    public CropResponse createCrop(String email, CultivoRequest request) {
+    public CropResponse createCrop(String email, CropRequest request) {
         Crop crop = Crop.builder()
                 .estate(ownedEstate(email, request.getEstateId()))
                 .name(request.getName().trim())

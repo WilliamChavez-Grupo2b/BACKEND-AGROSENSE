@@ -25,7 +25,7 @@ import java.util.Map;
 @Slf4j
 @Service
 @RequiredArgsConstructor
-public class PrediccionService {
+public class PredictionService {
 
     static final String IRRIGATION = "IRRIGATION";
 
@@ -81,7 +81,7 @@ public class PrediccionService {
     @Async(AppConfig.ASYNC_EXECUTOR)
     public void requestIrrigationPrediction(Integer cropId, Map<String, Object> sensorData) {
         if (!cropRepository.existsById(cropId)) {
-            log.warn("Predicción de riego omitida: el cultivo {} no existe", cropId);
+            log.warn("Irrigation prediction skipped: crop {} does not exist", cropId);
             return;
         }
         // The HTTP call happens outside any transaction; only the save below opens one.
@@ -93,7 +93,7 @@ public class PrediccionService {
                     .recommendation(prediction.recommendation())
                     .modelUsed(prediction.modelUsed())
                     .build());
-            log.info("Predicción de riego guardada para el cultivo {}", cropId);
+            log.info("Irrigation prediction saved for crop {}", cropId);
         });
     }
 

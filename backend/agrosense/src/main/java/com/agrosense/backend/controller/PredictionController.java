@@ -2,7 +2,7 @@ package com.agrosense.backend.controller;
 
 import com.agrosense.backend.dto.response.PredictionResponse;
 import com.agrosense.backend.security.Roles;
-import com.agrosense.backend.service.PrediccionService;
+import com.agrosense.backend.service.PredictionService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -22,14 +22,14 @@ import java.util.Map;
 @RequestMapping("/api/crops/{cropId}/predictions")
 @RequiredArgsConstructor
 @PreAuthorize(Roles.ANY)
-public class PrediccionController {
+public class PredictionController {
 
-    private final PrediccionService prediccionService;
+    private final PredictionService predictionService;
 
     @GetMapping
     public List<PredictionResponse> history(@PathVariable Integer cropId,
             @RequestParam(defaultValue = "20") int limit, Principal principal) {
-        return prediccionService.findHistory(principal.getName(), cropId, limit);
+        return predictionService.findHistory(principal.getName(), cropId, limit);
     }
 
     /**
@@ -41,7 +41,7 @@ public class PrediccionController {
     @PreAuthorize(Roles.MANAGER)
     public void request(@PathVariable Integer cropId, Principal principal) {
         // Ownership is checked here, on the request thread, so a foreign crop gets a 404.
-        Map<String, Object> conditions = prediccionService.currentConditions(principal.getName(), cropId);
-        prediccionService.requestIrrigationPrediction(cropId, conditions);
+        Map<String, Object> conditions = predictionService.currentConditions(principal.getName(), cropId);
+        predictionService.requestIrrigationPrediction(cropId, conditions);
     }
 }

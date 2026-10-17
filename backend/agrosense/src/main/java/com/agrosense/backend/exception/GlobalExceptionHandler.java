@@ -52,7 +52,7 @@ public class GlobalExceptionHandler {
     /** Arguments the business layer refuses. Its own message is for developers, so it is not sent. */
     @ExceptionHandler(IllegalArgumentException.class)
     public ResponseEntity<ErrorResponse> handleIllegalArgument(IllegalArgumentException exception) {
-        log.warn("Solicitud rechazada por datos no válidos: {}", exception.getMessage());
+        log.warn("Request rejected for invalid data: {}", exception.getMessage());
         return respond(HttpStatus.BAD_REQUEST, "Los datos enviados no son válidos.");
     }
 
@@ -62,7 +62,7 @@ public class GlobalExceptionHandler {
      */
     @ExceptionHandler(DataIntegrityViolationException.class)
     public ResponseEntity<ErrorResponse> handleDataIntegrity(DataIntegrityViolationException exception) {
-        log.warn("Operación rechazada por la base de datos: {}", exception.getMostSpecificCause().getMessage());
+        log.warn("Operation rejected by the database: {}", exception.getMostSpecificCause().getMessage());
         return respond(HttpStatus.CONFLICT, "Los datos entran en conflicto con un registro existente.");
     }
 
@@ -105,7 +105,7 @@ public class GlobalExceptionHandler {
                 && response.getStatusCode().is4xxClientError()) {
             return respond(HttpStatus.valueOf(response.getStatusCode().value()), "La solicitud no es válida.");
         }
-        log.error("Error inesperado al atender la solicitud", exception);
+        log.error("Unexpected error handling the request", exception);
         return respond(HttpStatus.INTERNAL_SERVER_ERROR, "Ocurrió un error inesperado. Inténtalo de nuevo.");
     }
 

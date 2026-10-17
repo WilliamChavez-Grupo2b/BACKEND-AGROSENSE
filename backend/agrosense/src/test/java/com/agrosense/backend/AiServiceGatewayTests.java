@@ -45,8 +45,8 @@ class AiServiceGatewayTests {
 
 	private static final String EMAIL = "demo@agrosense.co";
 	private static final String OTHER = "otra@agrosense.co";
-	private static final String KEY = "llave-interna-de-prueba";
-	private static final String TOKEN = "token-anterior";
+	private static final String KEY = "test-internal-key";
+	private static final String TOKEN = "previous-token";
 	private static final JsonMapper JSON = JsonMapper.builder().build();
 
 	private HttpServer service;
@@ -176,7 +176,7 @@ class AiServiceGatewayTests {
 			ownCalls.incrementAndGet();
 			return "respuesta interna";
 		};
-		AiAssistantService assistant = new AiAssistantService(farm, JSON, Clock.systemUTC(), "una-llave-gemini", "g",
+		AiAssistantService assistant = new AiAssistantService(farm, JSON, Clock.systemUTC(), "a-gemini-key", "g",
 				"http://127.0.0.1:9", 2000, 256, 10, true, own, client());
 
 		assertThat(assistant.chat(EMAIL, question("¿Riego?")).reply()).isEqualTo("Riega el café hoy.");
@@ -212,7 +212,7 @@ class AiServiceGatewayTests {
 	void aRecordingGoesToTheServiceWithTheFarmAndComesBackWithItsTranscript() {
 		answer.set("{\"reply\":\"El pH está bien.\",\"transcript\":\"¿Cómo está el pH?\",\"source\":\"model\"}");
 
-		AiResponseDto response = gateway(true).voice(EMAIL, "audio-de-prueba".getBytes(StandardCharsets.UTF_8),
+		AiResponseDto response = gateway(true).voice(EMAIL, "test-audio".getBytes(StandardCharsets.UTF_8),
 				"audio/webm;codecs=opus", null);
 
 		assertThat(response.reply()).isEqualTo("El pH está bien.");
@@ -220,7 +220,7 @@ class AiServiceGatewayTests {
 		assertThat(paths).containsExactly("/voice");
 		assertThat(keys).containsExactly(KEY);
 		assertThat(contentTypes.get(0)).startsWith("multipart/form-data");
-		assertThat(bodies.get(0)).contains("name=\"audio\"", "Content-Type: audio/webm", "audio-de-prueba",
+		assertThat(bodies.get(0)).contains("name=\"audio\"", "Content-Type: audio/webm", "test-audio",
 				"name=\"farm_context\"");
 	}
 

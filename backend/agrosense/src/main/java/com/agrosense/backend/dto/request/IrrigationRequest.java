@@ -12,7 +12,7 @@ import java.math.BigDecimal;
 
 /** Data to register an irrigation cycle started by a user. */
 @Data
-public class RiegoRequest {
+public class IrrigationRequest {
 
     @NotNull(message = "El cultivo es obligatorio.")
     private Integer cropId;

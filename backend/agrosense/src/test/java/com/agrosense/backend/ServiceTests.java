@@ -19,7 +19,7 @@ import com.agrosense.backend.repository.SensorReadingRepository;
 import com.agrosense.backend.repository.SensorRepository;
 import com.agrosense.backend.security.LoginAttemptService;
 import com.agrosense.backend.service.AiClientService;
-import com.agrosense.backend.service.PrediccionService;
+import com.agrosense.backend.service.PredictionService;
 import com.agrosense.backend.service.SensorService;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -82,7 +82,7 @@ class ServiceTests {
 		AiServiceProxy proxy = mock(AiServiceProxy.class);
 		AiPredictionRepository predictions = mock(AiPredictionRepository.class);
 		CropRepository crops = mock(CropRepository.class);
-		PrediccionService service = new PrediccionService(proxy, predictions, crops,
+		PredictionService service = new PredictionService(proxy, predictions, crops,
 				mock(SensorReadingRepository.class));
 		Crop crop = crop(7);
 
@@ -112,7 +112,7 @@ class ServiceTests {
 	void aPredictionIsAskedWithTheCropsOwnLimitsAndOnlyWithWhatWasMeasured() {
 		CropRepository crops = mock(CropRepository.class);
 		SensorReadingRepository readings = mock(SensorReadingRepository.class);
-		PrediccionService service = new PrediccionService(mock(AiServiceProxy.class),
+		PredictionService service = new PredictionService(mock(AiServiceProxy.class),
 				mock(AiPredictionRepository.class), crops, readings);
 		Crop rice = crop(7);
 		rice.setHumidityMin(new BigDecimal("70.0"));

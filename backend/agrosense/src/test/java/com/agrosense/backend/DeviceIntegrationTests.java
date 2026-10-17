@@ -47,9 +47,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 		"cors.allowed-origins=",
 		"jwt.secret=test-secret-that-is-at-least-64-bytes-long-for-hs512-signatures-0123456789",
 		"agrosense.seed.password=seed-password",
-		"agrosense.seed.device-key=llave-del-dispositivo-demo",
-		"events.internal-key=llave-interna-de-eventos",
-		"events.stream-secret=secreto-del-stream-de-al-menos-32-bytes",
+		"agrosense.seed.device-key=demo-device-key-for-tests",
+		"events.internal-key=internal-key-of-the-events",
+		"events.stream-secret=stream-secret-of-at-least-32-bytes",
 		"login.max-attempts-per-address=0"
 })
 @ActiveProfiles("seed")
@@ -58,9 +58,9 @@ class DeviceIntegrationTests {
 	private static final String EMAIL = "demo@agrosense.co";
 	private static final String PASSWORD = "seed-password";
 	private static final String DEMO_DEVICE = "RPI-DEMO-01";
-	private static final String DEMO_KEY = "llave-del-dispositivo-demo";
-	private static final String INTERNAL_KEY = "llave-interna-de-eventos";
-	private static final String STREAM_SECRET = "secreto-del-stream-de-al-menos-32-bytes";
+	private static final String DEMO_KEY = "demo-device-key-for-tests";
+	private static final String INTERNAL_KEY = "internal-key-of-the-events";
+	private static final String STREAM_SECRET = "stream-secret-of-at-least-32-bytes";
 	private static final JsonMapper JSON = JsonMapper.builder().build();
 
 	@Value("${local.server.port}")
@@ -141,10 +141,10 @@ class DeviceIntegrationTests {
 		String event = "{\"device_id\":\"" + DEMO_DEVICE + "\",\"type\":\"reading\",\"data\":{\"ph\":6.4}}";
 
 		assertThat(internal(null, DEMO_KEY, event).statusCode()).isEqualTo(401);
-		assertThat(internal("otra-llave", DEMO_KEY, event).statusCode()).isEqualTo(401);
+		assertThat(internal("another-key", DEMO_KEY, event).statusCode()).isEqualTo(401);
 		// A user's token is not a way in either.
 		assertThat(send("POST", "/api/internal/events", token(EMAIL, PASSWORD), event).statusCode()).isEqualTo(401);
-		HttpResponse<String> wrongDevice = internal(INTERNAL_KEY, "no-es-la-llave", event);
+		HttpResponse<String> wrongDevice = internal(INTERNAL_KEY, "not-the-key", event);
 		assertThat(wrongDevice.statusCode()).isEqualTo(401);
 		assertThat(wrongDevice.body()).contains("Dispositivo desconocido o llave incorrecta");
 		assertThat(internal(INTERNAL_KEY, DEMO_KEY,

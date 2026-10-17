@@ -37,7 +37,7 @@ public class AiClientService implements AiService {
         // The decision rests on the soil moisture: without a reading of it there is nothing to predict
         // from, and a made-up value would come back as advice about a measurement nobody took.
         if (sensorData.get(SOIL_MOISTURE) == null) {
-            log.info("Predicción de riego omitida: el cultivo {} no tiene lecturas de humedad del suelo", cropId);
+            log.info("Irrigation prediction skipped: crop {} has no soil moisture readings", cropId);
             return Optional.empty();
         }
         Map<String, Object> body = new LinkedHashMap<>();

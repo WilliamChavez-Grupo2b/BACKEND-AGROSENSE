@@ -19,7 +19,7 @@ import java.util.List;
 @RequestMapping("/api")
 @RequiredArgsConstructor
 @PreAuthorize(Roles.ANY)
-public class AlertaController {
+public class AlertController {
 
     private final AlertService alertService;
 

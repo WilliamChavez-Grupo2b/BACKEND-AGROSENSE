@@ -59,7 +59,7 @@ public class MqttConfig implements MqttCallbackExtended {
                 client.connect(connectOptions());
             }
         } catch (MqttException exception) {
-            log.warn("No se pudo conectar al broker MQTT {}: {}", brokerUrl, exception.getMessage());
+            log.warn("Could not connect to the MQTT broker {}: {}", brokerUrl, exception.getMessage());
         }
     }
 
@@ -80,9 +80,9 @@ public class MqttConfig implements MqttCallbackExtended {
     public void connectComplete(boolean reconnect, String serverUri) {
         try {
             client.subscribe(topic, QOS_AT_LEAST_ONCE);
-            log.info("Conectado al broker MQTT {} y suscrito a {}", serverUri, topic);
+            log.info("Connected to the MQTT broker {} and subscribed to {}", serverUri, topic);
         } catch (MqttException exception) {
-            log.error("No se pudo suscribir a {}: {}", topic, exception.getMessage());
+            log.error("Could not subscribe to {}: {}", topic, exception.getMessage());
         }
     }
 
@@ -93,7 +93,7 @@ public class MqttConfig implements MqttCallbackExtended {
 
     @Override
     public void connectionLost(Throwable cause) {
-        log.warn("Conexión MQTT perdida: {}", cause == null ? "sin detalle" : cause.getMessage());
+        log.warn("MQTT connection lost: {}", cause == null ? "no detail" : cause.getMessage());
     }
 
     @Override
@@ -111,7 +111,7 @@ public class MqttConfig implements MqttCallbackExtended {
                 client.close();
             }
         } catch (MqttException exception) {
-            log.warn("Error al cerrar la conexión MQTT: {}", exception.getMessage());
+            log.warn("Error closing the MQTT connection: {}", exception.getMessage());
         }
     }
 }

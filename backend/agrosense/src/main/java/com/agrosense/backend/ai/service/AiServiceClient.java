@@ -107,7 +107,7 @@ public class AiServiceClient {
             return answer;
         } catch (WebClientResponseException exception) {
             int status = exception.getStatusCode().value();
-            log.warn("El servicio de IA respondió {} al asistente", status);
+            log.warn("The AI service answered {} to the assistant", status);
             String message = messageOf(exception);
             if (PASSED_ON.contains(status) && message != null) {
                 throw new AiException(HttpStatus.valueOf(status), message);
@@ -117,7 +117,7 @@ public class AiServiceClient {
             throw exception;
         } catch (RuntimeException exception) {
             // Timeouts and connection failures; the key travels in a header and is not part of the cause.
-            log.warn("No se pudo contactar al servicio de IA: {}", exception.getClass().getSimpleName());
+            log.warn("Could not reach the AI service: {}", exception.getClass().getSimpleName());
             throw new AiException(HttpStatus.GATEWAY_TIMEOUT, "El asistente tardó demasiado en responder. Inténtalo de nuevo.");
         }
     }

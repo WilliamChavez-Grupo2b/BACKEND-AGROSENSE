@@ -15,7 +15,7 @@ import java.math.BigDecimal;
 
 /** Data to register an estate. The coordinates are optional, but they only make sense as a pair. */
 @Data
-public class FincaRequest {
+public class EstateRequest {
 
     @NotBlank(message = "El nombre de la finca es obligatorio.")
     @Size(max = 255, message = "El nombre de la finca es demasiado largo.")

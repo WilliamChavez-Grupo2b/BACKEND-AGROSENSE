@@ -1,9 +1,9 @@
 package com.agrosense.backend.controller;
 
-import com.agrosense.backend.dto.request.RiegoRequest;
+import com.agrosense.backend.dto.request.IrrigationRequest;
 import com.agrosense.backend.dto.response.IrrigationResponse;
 import com.agrosense.backend.security.Roles;
-import com.agrosense.backend.service.RiegoService;
+import com.agrosense.backend.service.IrrigationService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -24,20 +24,20 @@ import java.util.List;
 @RequestMapping("/api/riego")
 @RequiredArgsConstructor
 @PreAuthorize(Roles.ANY)
-public class RiegoController {
+public class IrrigationController {
 
-    private final RiegoService riegoService;
+    private final IrrigationService irrigationService;
 
     @GetMapping("/cultivo/{cropId}")
     public List<IrrigationResponse> history(@PathVariable Integer cropId,
             @RequestParam(defaultValue = "50") int limit, Authentication authentication) {
-        return riegoService.findHistory(authentication.getName(), cropId, limit);
+        return irrigationService.findHistory(authentication.getName(), cropId, limit);
     }
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     @PreAuthorize(Roles.MANAGER)
-    public IrrigationResponse register(@Valid @RequestBody RiegoRequest request, Authentication authentication) {
-        return riegoService.register(authentication.getName(), request);
+    public IrrigationResponse register(@Valid @RequestBody IrrigationRequest request, Authentication authentication) {
+        return irrigationService.register(authentication.getName(), request);
     }
 }

@@ -38,7 +38,7 @@ public class SensorWebSocketHandler {
             messagingTemplate.convertAndSendToUser(ownerEmail, queue, payload);
         } catch (Exception exception) {
             // A push that fails must not affect the reading that was already stored.
-            log.warn("No se pudo enviar la notificación por WebSocket: {}", exception.getMessage());
+            log.warn("Could not send the WebSocket notification: {}", exception.getMessage());
         }
     }
 }

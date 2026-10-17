@@ -26,14 +26,14 @@ public class AiServiceProxy implements AiService {
     public Optional<IrrigationPrediction> predictIrrigation(Integer cropId, Map<String, Object> sensorData) {
         AiConfigManager.Settings settings = config.getSettings();
         if (!settings.enabled()) {
-            log.debug("Servicio de IA no configurado; se omite la predicción del cultivo {}", cropId);
+            log.debug("AI service not configured; skipping the prediction for crop {}", cropId);
             return Optional.empty();
         }
         for (int attempt = 1; attempt <= settings.maxAttempts(); attempt++) {
             try {
                 return aiClient.predictIrrigation(cropId, sensorData);
             } catch (RuntimeException exception) {
-                log.warn("Servicio de IA no disponible para el cultivo {} (intento {} de {}): {}",
+                log.warn("AI service unavailable for crop {} (attempt {} of {}): {}",
                         cropId, attempt, settings.maxAttempts(), exception.getMessage());
             }
         }

@@ -20,7 +20,7 @@ public class ValidationDecorator implements SensorReadingProcessor {
         SensorReading result = delegate.process(reading);
         if (!isPlausible(result)) {
             result.setQuality(QUALITY_OUT_OF_RANGE);
-            log.warn("Lectura fuera de rango: sensor={} valor={}",
+            log.warn("Reading out of range: sensor={} value={}",
                     result.getSensor().getSensorCode(), result.getValue());
         }
         return result;

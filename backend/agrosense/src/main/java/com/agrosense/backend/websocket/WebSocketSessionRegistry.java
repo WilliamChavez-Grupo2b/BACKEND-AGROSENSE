@@ -87,7 +87,7 @@ public class WebSocketSessionRegistry implements WebSocketHandlerDecoratorFactor
             }
         }
         if (closed > 0) {
-            log.info("Sesiones WebSocket cerradas por token expirado o cuenta desactivada: {}", closed);
+            log.info("WebSocket sessions closed for an expired token or a disabled account: {}", closed);
         }
         return closed;
     }
@@ -102,7 +102,7 @@ public class WebSocketSessionRegistry implements WebSocketHandlerDecoratorFactor
             session.close(SESSION_EXPIRED);
             return true;
         } catch (IOException exception) {
-            log.warn("No se pudo cerrar la sesión WebSocket {}: {}", sessionId, exception.getMessage());
+            log.warn("Could not close WebSocket session {}: {}", sessionId, exception.getMessage());
             return false;
         }
     }

@@ -18,7 +18,7 @@ import java.time.LocalDate;
  * leave both ends out to get the default range, or send both with the minimum below the maximum.
  */
 @Data
-public class CultivoRequest {
+public class CropRequest {
 
     @NotNull(message = "La finca es obligatoria.")
     private Integer estateId;

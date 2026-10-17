@@ -137,10 +137,10 @@ public class AiAssistantService {
             return null;
         }
         if (serviceUrl.isBlank()) {
-            log.warn("AI_CHAT_VIA_SERVICE está activo pero AI_SERVICE_URL no tiene valor: el asistente usa su IA interna");
+            log.warn("AI_CHAT_VIA_SERVICE is on but AI_SERVICE_URL is empty: the assistant uses its built-in AI");
             return null;
         }
-        log.info("El asistente responde a través del servicio de IA en {}", serviceUrl.trim());
+        log.info("The assistant answers through the AI service at {}", serviceUrl.trim());
         return new AiServiceClient(serviceUrl, serviceKey, serviceToken, timeoutMs);
     }
 
@@ -289,7 +289,7 @@ public class AiAssistantService {
         try {
             return farmContext.snapshot(email);
         } catch (RuntimeException exception) {
-            log.warn("No se pudieron leer los datos de la finca para el asistente: {}", exception.getMessage());
+            log.warn("Could not read the farm data for the assistant: {}", exception.getMessage());
             return null;
         }
     }
@@ -396,7 +396,7 @@ public class AiAssistantService {
                 return new AiResponseDto(reply, heard.isEmpty() ? null : heard, AiResponseDto.SOURCE_MODEL);
             }
         } catch (JacksonException exception) {
-            log.warn("El asistente no devolvió el JSON pedido para un mensaje de voz");
+            log.warn("The assistant did not return the requested JSON for a voice message");
         }
         // The model ignored the requested shape: its text is still an answer worth showing.
         return new AiResponseDto(answer, null, AiResponseDto.SOURCE_MODEL);
@@ -448,7 +448,7 @@ public class AiAssistantService {
             return answer;
         } catch (WebClientResponseException exception) {
             int status = exception.getStatusCode().value();
-            log.warn("Gemini respondió {} al modelo {}", status, model);
+            log.warn("Gemini answered {} to model {}", status, model);
             if (status == 429) {
                 throw new AiException(HttpStatus.TOO_MANY_REQUESTS,
                         "El asistente está recibiendo muchas consultas. Inténtalo de nuevo en un minuto.");
@@ -458,7 +458,7 @@ public class AiAssistantService {
             throw exception;
         } catch (RuntimeException exception) {
             // Timeouts and connection failures; the cause never carries the key, which travels in a header.
-            log.warn("No se pudo contactar a Gemini: {}", exception.getClass().getSimpleName());
+            log.warn("Could not reach Gemini: {}", exception.getClass().getSimpleName());
             throw new AiException(HttpStatus.GATEWAY_TIMEOUT, "El asistente tardó demasiado en responder. Inténtalo de nuevo.");
         }
     }
@@ -541,7 +541,7 @@ public class AiAssistantService {
         try {
             return new ClassPathResource(path).getContentAsString(StandardCharsets.UTF_8).strip();
         } catch (IOException exception) {
-            throw new IllegalStateException("No se encontró " + path, exception);
+            throw new IllegalStateException("Could not find " + path, exception);
         }
     }
 }
