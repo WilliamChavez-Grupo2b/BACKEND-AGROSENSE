@@ -80,6 +80,9 @@ proveedor. Los contratos de `/api/ai/chat` y `/api/ai/voice`, el token y el lím
   usaban las predicciones.
 - `AI_CHAT_VIA_SERVICE` es `false` por defecto: `AI_SERVICE_URL` ya activa las predicciones de riego, y el chat
   no debe cambiar de proveedor sin decidirlo.
+- El `.env.example` de la raíz del workspace trae `AI_CHAT_VIA_SERVICE=true` porque es el archivo de
+  `docker compose`, que siempre levanta el servicio de IA junto al backend. Fuera de compose (Render,
+  `mvnw spring-boot:run`) esa copia no se lee y el backend sigue con `false` mientras no se defina la variable.
 
 | Variable | Descripción |
 |---|---|
