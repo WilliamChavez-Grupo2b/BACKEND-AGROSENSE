@@ -18,7 +18,7 @@ public class AppConfig {
     @Bean
     public AiConfigManager aiConfigManager(
             @Value("${ai.service.url:}") String serviceUrl,
-            @Value("${ai.service.timeout-ms:5000}") int timeoutMs,
+            @Value("${ai.service.timeout-ms:30000}") int timeoutMs,
             @Value("${ai.service.max-attempts:1}") int maxAttempts) {
         AiConfigManager manager = AiConfigManager.getInstance();
         manager.configure(serviceUrl, timeoutMs, !serviceUrl.isBlank(), maxAttempts);

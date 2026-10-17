@@ -28,7 +28,8 @@ para el límite de preguntas por minuto del usuario; un proveedor sin cuota nunc
 
 ### Qué recibe el modelo
 
-- **Instrucciones**: `src/main/resources/ai/prompts/system-es.txt`. Se editan ahí, sin tocar el código; incluyen
+- **Instrucciones**: `src/main/resources/ai/prompts/system-es.txt` (con el servicio de IA, las de su
+  `prompts/system-es.txt`). Se editan ahí, sin tocar el código; incluyen
   lo que el asistente puede decir sobre la aplicación (menú, registro de sensores, alertas y sus colores, riego).
 - **Datos de la finca**, solo del usuario autenticado y en texto compacto: fecha y hora actual; totales; por
   cultivo (hasta 8), variedad, etapa, fecha de siembra, finca y ubicación, últimas lecturas de humedad,
@@ -37,9 +38,35 @@ para el límite de preguntas por minuto del usuario; un proveedor sin cuota nunc
   una línea completa a partir de 4000 caracteres.
 - **Conversación**: los últimos 8 mensajes del historial (la petición puede traer hasta 12) y la pregunta.
 
-### Qué modelo responde
+### A través del servicio de IA
 
-Responde el primer proveedor que tenga llave, en este orden:
+Con `AI_CHAT_VIA_SERVICE=true` y `AI_SERVICE_URL` definida, el backend no llama a ningún proveedor: envía la
+pregunta, los últimos 8 mensajes y la descripción de la finca (armada aquí, con los datos del usuario
+autenticado) al servicio de IA (`IA-AGROSENSE`, `POST /chat` y `POST /voice`), que responde con su propio
+proveedor. Los contratos de `/api/ai/chat` y `/api/ai/voice`, el token y el límite por usuario no cambian.
+
+- Si el servicio falla, no responde, se queda sin cuota o no tiene proveedor (503), la pregunta escrita se
+  responde en modo local (`source: local`), o con 503 si `AI_LOCAL_ANSWERS=false`. Una negativa del modelo
+  (422) llega tal cual.
+- Cada llamada lleva `X-Internal-Key` con `AI_SERVICE_KEY` y, si está definido, el `AI_SERVICE_TOKEN` que ya
+  usaban las predicciones.
+- `AI_CHAT_VIA_SERVICE` es `false` por defecto: `AI_SERVICE_URL` ya activa las predicciones de riego, y el chat
+  no debe cambiar de proveedor sin decidirlo.
+
+| Variable | Descripción |
+|---|---|
+| `AI_CHAT_VIA_SERVICE` | `true` para que el asistente pase por el servicio de IA (por defecto `false`) |
+| `AI_SERVICE_URL` | Dirección del servicio de IA; también activa las predicciones de riego |
+| `AI_SERVICE_KEY` | Llave interna del servicio (`INTERNAL_API_KEY` allí), enviada como `X-Internal-Key` |
+| `AI_SERVICE_TOKEN` | Token anterior (`Authorization: Bearer`), aceptado por el servicio durante la migración |
+| `AI_SERVICE_TIMEOUT_MS` | Cuánto se espera al servicio (30000), para chat y predicciones. En el plan gratuito de Render el servicio se duerme y la primera petición tarda más |
+
+### Qué modelo responde sin el servicio (obsoleto)
+
+> Esta ruta queda como respaldo para un backend sin servicio de IA y se retirará cuando el servicio sea la
+> única. Los proveedores ya viven también en `IA-AGROSENSE`; los cambios nuevos se hacen allí.
+
+Sin `AI_CHAT_VIA_SERVICE`, responde el primer proveedor que tenga llave, en este orden:
 
 1. `AI_CHAT_API_KEY`: un proveedor que hable la API de OpenAI (Groq, OpenRouter, Mistral, OpenAI…).
 2. `ANTHROPIC_API_KEY`: Claude, de Anthropic.

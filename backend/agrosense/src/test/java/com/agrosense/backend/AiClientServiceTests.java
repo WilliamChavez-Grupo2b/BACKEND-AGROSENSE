@@ -29,6 +29,7 @@ class AiClientServiceTests {
 	private final AtomicReference<String> receivedPath = new AtomicReference<>();
 	private final AtomicReference<String> receivedBody = new AtomicReference<>();
 	private final AtomicReference<String> receivedAuthorization = new AtomicReference<>();
+	private final AtomicReference<String> receivedKey = new AtomicReference<>();
 	private final AtomicReference<String> answer = new AtomicReference<>(
 			"{\"recommendation\":\"Riega ahora.\",\"confidence\":0.77671,\"model_used\":\"agrosense-riego-reglas-1.0\"}");
 	private AiClientService client;
@@ -40,6 +41,7 @@ class AiClientServiceTests {
 			calls.incrementAndGet();
 			receivedPath.set(exchange.getRequestURI().toString());
 			receivedAuthorization.set(exchange.getRequestHeaders().getFirst("Authorization"));
+			receivedKey.set(exchange.getRequestHeaders().getFirst("X-Internal-Key"));
 			receivedBody.set(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
 			byte[] body = answer.get().getBytes(StandardCharsets.UTF_8);
 			exchange.getResponseHeaders().add("Content-Type", "application/json");
@@ -74,9 +76,10 @@ class AiClientServiceTests {
 	}
 
 	@Test
-	void theCropsLimitsTravelWithTheReadingsAndTheTokenWithEveryCall() {
+	void theCropsLimitsTravelWithTheReadingsAndTheCredentialsWithEveryCall() {
 		// The client as the application builds it, pointed at the local server.
-		WebClient withToken = new WebClientConfig().aiWebClient(AiConfigManager.getInstance(), " secreto-del-servicio ")
+		WebClient withToken = new WebClientConfig().aiWebClient(AiConfigManager.getInstance(), " llave-interna ",
+						" secreto-del-servicio ")
 				.mutate().baseUrl("http://127.0.0.1:" + service.getAddress().getPort()).build();
 
 		new AiClientService(withToken, "/predict/irrigation").predictIrrigation(7, Map.of(
@@ -86,6 +89,7 @@ class AiClientServiceTests {
 		assertThat(receivedBody.get()).contains("\"humidity_min\":70.0", "\"humidity_max\":95.0",
 				"\"ph_min\":5.5", "\"ph_max\":7.0");
 		assertThat(receivedAuthorization.get()).isEqualTo("Bearer secreto-del-servicio");
+		assertThat(receivedKey.get()).isEqualTo("llave-interna");
 	}
 
 	@Test

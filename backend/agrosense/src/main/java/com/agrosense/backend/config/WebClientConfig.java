@@ -19,10 +19,12 @@ public class WebClientConfig {
 
     /**
      * Client for the AI service. One timeout bounds connecting, each read and the whole response. With
-     * {@code AI_SERVICE_TOKEN} set, every call carries it, for a service that only answers its backend.
+     * {@code AI_SERVICE_KEY} set, every call carries it as {@code X-Internal-Key}, and with
+     * {@code AI_SERVICE_TOKEN} as a bearer token, for a service that only answers its backend.
      */
     @Bean
-    public WebClient aiWebClient(AiConfigManager aiConfig, @Value("${ai.service.token:}") String token) {
+    public WebClient aiWebClient(AiConfigManager aiConfig, @Value("${ai.service.key:}") String key,
+            @Value("${ai.service.token:}") String token) {
         int timeoutMs = aiConfig.getTimeoutMs();
         HttpClient httpClient = HttpClient.create()
                 .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, timeoutMs)
@@ -32,6 +34,9 @@ public class WebClientConfig {
         WebClient.Builder client = WebClient.builder()
                 .baseUrl(aiConfig.getServiceUrl())
                 .clientConnector(new ReactorClientHttpConnector(httpClient));
+        if (!key.isBlank()) {
+            client.defaultHeader("X-Internal-Key", key.trim());
+        }
         if (!token.isBlank()) {
             client.defaultHeader(HttpHeaders.AUTHORIZATION, "Bearer " + token.trim());
         }

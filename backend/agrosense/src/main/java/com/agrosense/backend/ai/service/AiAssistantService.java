@@ -41,9 +41,11 @@ import java.util.function.Supplier;
 
 /**
  * The conversational assistant. Each question travels with the system prompt and a compact summary of
- * the caller's own farm, so answers refer to real figures while the request stays small. It is answered
- * by the first provider with a key: OpenAI-compatible, Claude, Gemini; without any, from the farm's
- * own figures (see {@link #chosenModel}).
+ * the caller's own farm, so answers refer to real figures while the request stays small. With
+ * {@code AI_CHAT_VIA_SERVICE=true} it is answered by the AI service (see {@link #chosenService}); otherwise by
+ * the first provider with a key: OpenAI-compatible, Claude, Gemini (see {@link #chosenModel}). Those
+ * providers are the older path, kept for a backend without the service. Whenever no model answers, the
+ * question is answered from the farm's own figures.
  */
 @Slf4j
 @Service
@@ -74,7 +76,16 @@ public class AiAssistantService {
     private static final Set<HttpStatus> MODEL_UNAVAILABLE = Set.of(HttpStatus.TOO_MANY_REQUESTS,
             HttpStatus.BAD_GATEWAY, HttpStatus.GATEWAY_TIMEOUT);
 
+    /**
+     * What the AI service answers with when it cannot answer: the question can still be answered from the
+     * farm's figures. Its 503 means it has no provider configured.
+     */
+    private static final Set<HttpStatus> SERVICE_UNAVAILABLE = Set.of(HttpStatus.TOO_MANY_REQUESTS,
+            HttpStatus.BAD_GATEWAY, HttpStatus.SERVICE_UNAVAILABLE, HttpStatus.GATEWAY_TIMEOUT);
+
     private final FarmContextService farmContext;
+    /** The AI service (IA-AGROSENSE), when the assistant goes through it; {@code null} for the providers below. */
+    private final AiServiceClient service;
     private final boolean localAnswers;
     private final ObjectMapper objectMapper;
     private final Clock clock;
@@ -103,11 +114,34 @@ public class AiAssistantService {
             @Value("${anthropic.api-key:}") String anthropicApiKey,
             @Value("${anthropic.base-url:https://api.anthropic.com}") String anthropicBaseUrl,
             @Value("${anthropic.model:claude-haiku-5-5}") String anthropicModel,
-            @Value("${anthropic.effort:low}") String anthropicEffort) {
+            @Value("${anthropic.effort:low}") String anthropicEffort,
+            @Value("${ai.chat.via-service:false}") boolean viaService,
+            @Value("${ai.service.url:}") String serviceUrl,
+            @Value("${ai.service.key:}") String serviceKey,
+            @Value("${ai.service.token:}") String serviceToken,
+            @Value("${ai.service.timeout-ms:30000}") int serviceTimeoutMs) {
         this(farmContext, objectMapper, Clock.systemUTC(), apiKey, model, baseUrl, timeoutMs, maxOutputTokens,
                 requestsPerMinute, localAnswers,
                 chosenModel(chatApiKey, chatBaseUrl, chatModels, transcriptionModel, anthropicApiKey,
-                        anthropicBaseUrl, anthropicModel, anthropicEffort, timeoutMs, maxOutputTokens));
+                        anthropicBaseUrl, anthropicModel, anthropicEffort, timeoutMs, maxOutputTokens),
+                chosenService(viaService, serviceUrl, serviceKey, serviceToken, serviceTimeoutMs));
+    }
+
+    /**
+     * The AI service, when the assistant is to go through it: only with {@code AI_CHAT_VIA_SERVICE=true} and
+     * {@code AI_SERVICE_URL} set, so turning predictions on does not move the assistant to another provider.
+     */
+    public static AiServiceClient chosenService(boolean viaService, String serviceUrl, String serviceKey,
+            String serviceToken, int timeoutMs) {
+        if (!viaService) {
+            return null;
+        }
+        if (serviceUrl.isBlank()) {
+            log.warn("AI_CHAT_VIA_SERVICE está activo pero AI_SERVICE_URL no tiene valor: el asistente usa su IA interna");
+            return null;
+        }
+        log.info("El asistente responde a través del servicio de IA en {}", serviceUrl.trim());
+        return new AiServiceClient(serviceUrl, serviceKey, serviceToken, timeoutMs);
     }
 
     /**
@@ -147,6 +181,18 @@ public class AiAssistantService {
     public AiAssistantService(FarmContextService farmContext, ObjectMapper objectMapper, Clock clock,
             String apiKey, String model, String baseUrl, int timeoutMs, int maxOutputTokens,
             int requestsPerMinute, boolean localAnswers, ChatModel chatModel) {
+        this(farmContext, objectMapper, clock, apiKey, model, baseUrl, timeoutMs, maxOutputTokens,
+                requestsPerMinute, localAnswers, chatModel, null);
+    }
+
+    /**
+     * @param service the AI service; when given it answers every question and the providers above are not
+     *                used. They stay as the assistant's own answer for a backend without that service.
+     */
+    public AiAssistantService(FarmContextService farmContext, ObjectMapper objectMapper, Clock clock,
+            String apiKey, String model, String baseUrl, int timeoutMs, int maxOutputTokens,
+            int requestsPerMinute, boolean localAnswers, ChatModel chatModel, AiServiceClient service) {
+        this.service = service;
         this.chatModel = chatModel;
         this.farmContext = farmContext;
         this.localAnswers = localAnswers;
@@ -186,6 +232,17 @@ public class AiAssistantService {
     /** Answers a question that has already been counted against the user's allowance. */
     private AiResponseDto answer(String email, String question, List<AiRequestDto.Turn> history) {
         FarmSnapshot farm = farmOf(email);
+        if (service != null) {
+            try {
+                return new AiResponseDto(service.chat(describe(farm), history, question), null,
+                        AiResponseDto.SOURCE_MODEL);
+            } catch (AiException failure) {
+                if (!SERVICE_UNAVAILABLE.contains(failure.getStatus())) {
+                    throw failure;
+                }
+                return withoutTheModel(question, farm, failure);
+            }
+        }
         if (chatModel == null && apiKey.isEmpty()) {
             return withoutTheModel(question, farm, notConfigured());
         }
@@ -302,6 +359,12 @@ public class AiAssistantService {
         if (!AUDIO_TYPES.contains(mimeType)) {
             throw new AiException(HttpStatus.UNSUPPORTED_MEDIA_TYPE, "Ese formato de audio no es compatible.");
         }
+        if (service != null) {
+            // The service transcribes and answers; a recording has no answer without a model to listen.
+            countRequest(email);
+            String farm = describe(farmOf(email));
+            return listening(() -> service.voice(audio, mimeType, farm));
+        }
         if (chatModel != null && chatModel.listens()) {
             // This kind of provider listens and answers in two steps; once the recording is text, it is a
             // written question like any other, also for the answers given without the model.
@@ -343,7 +406,7 @@ public class AiAssistantService {
      * A recording only a model can turn into words, so when it is unavailable there is no answer to fall
      * back on: that is a 503, whether or not written questions are answered without the model.
      */
-    private static String listening(Supplier<String> call) {
+    private static <T> T listening(Supplier<T> call) {
         try {
             return call.get();
         } catch (AiException failure) {
