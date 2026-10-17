@@ -49,7 +49,45 @@ Las preguntas 6 a 13 y la 15 solo se pueden responder bien con un modelo, y el p
 mejora, aparte de esta rama, es que el modo local reconozca las preguntas que no son sobre la finca. En lugar
 de devolver datos que no vienen al caso, diría que esa respuesta necesita el modelo.
 
-## Ronda 2: con modelo (pendiente)
+## Ronda 2: a través del servicio de IA, sin llave (17 de octubre de 2026)
+
+**Entorno.** Rama `feature/arquitectura-servicios`, con los cuatro servicios arrancados por separado sobre una
+base H2 local recién creada con `database/seed_demo.sql`: ia-service (`:8000`), backend (`:9000`, con
+`AI_CHAT_VIA_SERVICE=true`), event-service (`:8100`) y frontend (`:8080`). Ninguna llave de proveedor definida.
+Antes de las preguntas, el simulador de la Raspberry envió una medición del dispositivo `RPI-DEMO-01`, así que el
+Café tiene lecturas nuevas. Mismo método que la ronda 1: token de `demo@agrosense.co`, sin historial y con 7
+segundos entre preguntas.
+
+**Datos de la finca en ese momento:**
+- 3 cultivos (Café, Papa, Plátano), 5 sensores y 3 alertas sin atender.
+- Café: humedad 54.4 %, temperatura 22.2 °C y pH 6.39 (del simulador). Plátano: humedad 64.74 %. Papa: sin lecturas.
+
+**Resultado:** cada pregunta pasó del backend al servicio de IA, que respondió 503 por no tener proveedor. El
+backend contestó entonces desde la finca: las 15 con 200 y `source: "local"`, sin cifras inventadas. Las
+respuestas y las calificaciones son las mismas de la ronda 1 con las cifras nuevas: el paso por el servicio no
+cambia el modo local. La pregunta 1 también se hizo desde el frontend (`/api/ui/ai/chat`), con la misma respuesta.
+
+| # | `source` | Calidad | Observaciones |
+|---|---|---|---|
+| 1 | local | Buena | Café 54.4 % y Plátano 64.74 % en el rango 40–80 %, no hace falta regar; Papa sin lecturas. |
+| 2 | local | Buena | Café 6.39, en su rango 5.5–7; Papa y Plátano sin lecturas de pH. |
+| 3 | local | Aceptable | Lista las 3 alertas; el consejo se queda en «revísalas en Alertas». |
+| 4 | local | Aceptable | Resumen con las cifras de cada cultivo, sin decir cuál está peor. |
+| 5 | local | Mala | Lista las alertas abiertas; no identifica la de ayer. |
+| 6 | local | Mala | Solo las lecturas del Café; nada sobre la roya. |
+| 7 | local | Mala | Dice que sin el modelo solo responde sobre la finca. |
+| 8 | local | Mala | El pH de los cultivos de la finca, no el ideal del tomate. |
+| 9 | local | Aceptable | Compara la humedad con el máximo, sin explicar las señales del exceso de riego. |
+| 10 | local | Mala | Temperatura actual del Café (22.2 °C); nada sobre heladas. |
+| 11 | local | Mala | Cuenta los sensores activos; no explica cómo registrar uno. |
+| 12 | local | Mala | Humedad de cada cultivo; no explica cómo funciona el riego. |
+| 13 | local | Mala | Lista las alertas; no explica los colores. |
+| 14 | local | Aceptable | Redirige a lo que sí puede hacer, empezando con «Hola.». |
+| 15 | local | Mala | Resumen de la finca en vez de redirigir. |
+
+**Totales:** 2 buenas, 4 aceptables, 9 malas (igual que la ronda 1).
+
+## Ronda 3: con modelo (pendiente)
 
 Repetir con una llave definida en la terminal como variable de entorno (por ejemplo
 `$env:ANTHROPIC_API_KEY`), nunca en archivos. Anotar el proveedor y el modelo usados. Lo esperado:
