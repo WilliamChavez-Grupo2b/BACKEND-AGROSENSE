@@ -83,8 +83,8 @@ class DataSeederTests {
 		assertThat(userRepository.count()).isEqualTo(1);
 		assertThat(estateRepository.count()).isEqualTo(2);
 		assertThat(cropRepository.count()).isEqualTo(3);
-		assertThat(sensorRepository.count()).isEqualTo(6);
-		assertThat(readingRepository.count()).isEqualTo(5 * 24);
+		assertThat(sensorRepository.count()).isEqualTo(7);
+		assertThat(readingRepository.count()).isEqualTo(6 * 24);
 		assertThat(alertRepository.count()).isEqualTo(4);
 		assertThat(irrigationRepository.count()).isEqualTo(4);
 		assertThat(predictionRepository.count()).isEqualTo(2);

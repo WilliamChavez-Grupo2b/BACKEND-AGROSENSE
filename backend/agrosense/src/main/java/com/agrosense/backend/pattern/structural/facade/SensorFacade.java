@@ -103,7 +103,8 @@ public class SensorFacade {
         Crop crop = sensor.getCrop();
         BigDecimal value = reading.getValue();
         AlertType type = switch (sensor.getSensorType()) {
-            case SOIL_MOISTURE, RELATIVE_HUMIDITY -> below(value, crop.getHumidityMin()) ? AlertType.LOW_HUMIDITY
+            // The crop's humidity range is the soil's; the air's humidity has none, so it raises no alert here.
+            case SOIL_MOISTURE -> below(value, crop.getHumidityMin()) ? AlertType.LOW_HUMIDITY
                     : above(value, crop.getHumidityMax()) ? AlertType.HIGH_HUMIDITY : null;
             case AIR_TEMPERATURE, SOIL_TEMPERATURE -> below(value, crop.getTempMin()) ? AlertType.LOW_TEMPERATURE
                     : above(value, crop.getTempMax()) ? AlertType.HIGH_TEMPERATURE : null;

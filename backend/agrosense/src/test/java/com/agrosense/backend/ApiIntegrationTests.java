@@ -243,7 +243,7 @@ class ApiIntegrationTests {
 		assertThat(response.statusCode()).isEqualTo(200);
 		assertThat(response.body())
 				.contains("\"totalCrops\":3")
-				.contains("\"totalSensors\":5")
+				.contains("\"totalSensors\":6")
 				.contains("\"aiRecommendation\":\"")
 				.contains("\"sensorCode\":\"AS-00")
 				.doesNotContain("OTHER-DASH");

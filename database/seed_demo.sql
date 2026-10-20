@@ -44,7 +44,8 @@ JOIN (VALUES
         ('Café', 'AS-003', 'PH', 'Lote sur', TRUE),
         ('Plátano', 'AS-004', 'SOIL_MOISTURE', 'Platanera', TRUE),
         ('Plátano', 'AS-005', 'CONDUCTIVITY', 'Platanera', TRUE),
-        ('Papa', 'AS-006', 'LIGHT', 'Parcela 1', FALSE)
+        ('Papa', 'AS-006', 'LIGHT', 'Parcela 1', FALSE),
+        ('Café', 'AS-007', 'RELATIVE_HUMIDITY', 'Lote norte', TRUE)
     ) AS v(crop_name, sensor_code, sensor_type, location, active) ON v.crop_name = c.name
 WHERE NOT EXISTS (SELECT 1 FROM sensors s WHERE s.sensor_code = v.sensor_code);
 
@@ -69,6 +70,8 @@ UPDATE sensors SET latitude = 1.2145000, longitude = -77.2809000, coverage_m = 3
 WHERE sensor_code = 'AS-005' AND latitude IS NULL;
 UPDATE sensors SET latitude = 1.6047000, longitude = -77.1321000, coverage_m = 35
 WHERE sensor_code = 'AS-006' AND latitude IS NULL;
+UPDATE sensors SET latitude = 1.2139000, longitude = -77.2804000, coverage_m = 60
+WHERE sensor_code = 'AS-007' AND latitude IS NULL;
 
 -- One reading per hour for the last 24 hours of every active sensor.
 
@@ -132,6 +135,19 @@ CROSS JOIN (VALUES
 WHERE s.sensor_code = 'AS-005'
   AND NOT EXISTS (SELECT 1 FROM sensor_readings r WHERE r.id_sensor = s.id_sensor);
 
+-- The air's humidity beside AS-002, highest at night when the air is coolest.
+INSERT INTO sensor_readings (id_sensor, reading_value, unit, recorded_at)
+SELECT s.id_sensor, v.reading_value, '%', CURRENT_TIMESTAMP - v.hours_ago * INTERVAL '1' HOUR
+FROM sensors s
+CROSS JOIN (VALUES
+        (23, 80.25), (22, 76.92), (21, 73.86), (20, 71.34), (19, 69.56), (18, 68.63),
+        (17, 68.61), (16, 69.47), (15, 71.09), (14, 73.32), (13, 75.92), (12, 78.69),
+        (11, 81.42), (10, 83.94), (9, 86.10), (8, 87.81), (7, 89.00), (6, 89.65),
+        (5, 89.76), (4, 89.34), (3, 88.46), (2, 87.13), (1, 85.40), (0, 83.33)
+    ) AS v(hours_ago, reading_value)
+WHERE s.sensor_code = 'AS-007'
+  AND NOT EXISTS (SELECT 1 FROM sensor_readings r WHERE r.id_sensor = s.id_sensor);
+
 INSERT INTO alerts (id_crop, id_sensor, alert_type, severity, message, detected_value, acknowledged, created_at)
 SELECT c.id_crop, s.id_sensor, v.alert_type, v.severity, v.message, v.detected_value, v.acknowledged,
        CURRENT_TIMESTAMP - v.hours_ago * INTERVAL '1' HOUR
@@ -177,7 +193,7 @@ JOIN (VALUES
 WHERE NOT EXISTS (SELECT 1 FROM ai_predictions p WHERE p.id_crop = c.id_crop);
 
 -- A sample device (Raspberry Pi) on the coffee crop, whose sensors AS-001 (soil moisture), AS-002 (air
--- temperature) and AS-003 (pH) receive its readings. Like the demo user, it is created with a key hash that
+-- temperature), AS-003 (pH) and AS-007 (air humidity, the DHT22's second value) receive its readings. Like the demo user, it is created with a key hash that
 -- matches no key, so it cannot send events until the backend sets one from SEED_DEVICE_KEY.
 INSERT INTO devices (id_crop, device_code, key_hash)
 SELECT c.id_crop, 'RPI-DEMO-01', 'DISABLED'

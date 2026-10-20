@@ -170,6 +170,22 @@ class DeviceIntegrationTests {
 	}
 
 	@Test
+	void theAirsHumidityIsStoredWithoutBeingComparedWithTheSoilsRange() throws Exception {
+		HttpResponse<String> humidAir = internal(INTERNAL_KEY, DEMO_KEY, "{\"device_id\":\"" + DEMO_DEVICE
+				+ "\",\"type\":\"reading\",\"data\":{\"relative_humidity\":95}}");
+
+		assertThat(humidAir.statusCode()).isEqualTo(200);
+		JsonNode stored = JSON.readTree(humidAir.body()).path("event");
+		assertThat(stored.path("readings").findValuesAsString("sensorCode")).containsExactly("AS-007");
+		assertThat(stored.path("alerts")).isEmpty();
+
+		HttpResponse<String> wetSoil = internal(INTERNAL_KEY, DEMO_KEY, "{\"device_id\":\"" + DEMO_DEVICE
+				+ "\",\"type\":\"reading\",\"data\":{\"soil_moisture\":92}}");
+		assertThat(JSON.readTree(wetSoil.body()).path("event").path("alerts").findValuesAsString("alertType"))
+				.containsExactly("HIGH_HUMIDITY");
+	}
+
+	@Test
 	void withSeveralSensorsOfTheSameTypeTheDeviceMustSayWhichOne() throws Exception {
 		Crop crop = cropRepository.save(Crop.builder().estate(cropOf(EMAIL).getEstate()).name("Fresa").build());
 		sensorRepository.save(Sensor.builder().crop(crop).sensorCode("FR-01").sensorType(SensorType.SOIL_MOISTURE).build());
