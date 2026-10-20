@@ -178,6 +178,8 @@ POST /voice    multipart: audio | transcript, farm_context
             →  {"reply": "...", "transcript": "..." | null, "source": "model"}
 POST /predict/irrigation  {"id_crop", "soil_moisture", "air_temperature", "ph", "humidity_min", ...}
             →  {"irrigate", "duration_minutes", "recommendation", "confidence", "model_used", "factors"}
+POST /analizar  {"datos": {"humedad_suelo", "temperatura"?, "humedad_aire"?}, "humidity_min"?, "humidity_max"?}
+            →  {"alerta", "recomendacion"}   las mismas reglas; hoy el backend no la llama
 GET  /health → {"status": "UP"}
 ```
 
@@ -657,6 +659,28 @@ Render»).
 - Programa real de la Raspberry: sustituir los sensores simulados de `raspberry/simulator.py` por la
   lectura de los sensores físicos. MQTT queda apagado y sin broker.
 - Dispositivos: listado, desactivación y cambio de llave (hoy solo el alta).
+- **Lecturas duplicadas: `eventId` único por evento y deduplicación en el backend** (propuesta del 20 de
+  octubre de 2026, sin implementar). Hoy un evento puede guardarse dos veces si el backend lo guarda pero
+  la respuesta no llega a la Raspberry (tiempo agotado, corte de wifi): la Raspberry lo deja en su cola y
+  lo reenvía. Cambios que implicaría:
+  - *Raspberry:* generar un UUID por evento al medirlo, guardarlo con el evento en la cola SQLite y
+    enviarlo igual en cada reintento (`"eventId"` en el cuerpo).
+  - *Manejador de eventos:* validar el formato (UUID) en `check_event` y en la forma `deviceId`/`datos`, y
+    reenviarlo tal cual. Con eso también podría reintentar los tiempos agotados, que hoy no reintenta.
+  - *Base de datos:* migración `002_device_events.sql` con una tabla `device_events (id_device, event_id,
+    received_at, PRIMARY KEY (id_device, event_id))`, para que el identificador sea único por dispositivo y
+    no por sistema. Mejor una tabla aparte que una columna en `sensor_readings`, porque un evento crea
+    varias lecturas y puede ser una alerta. Añadirla a `schema.sql` y a `reset.sql`, y una limpieza de
+    filas de más de, por ejemplo, 30 días.
+  - *Backend:* entidad y repositorio de `device_events`; en `DeviceEventService.receive`, dentro de la
+    misma transacción, insertar `(dispositivo, eventId)` antes de guardar las lecturas. Si ya existe,
+    responder **200** con lo que se guardó la primera vez (o con `"duplicate": true` y sin lecturas), no un
+    error, para que la Raspberry lo saque de su cola. La clave primaria resuelve también dos reintentos
+    simultáneos: el segundo choca con la restricción y se trata igual. `eventId` opcional durante la
+    migración, para no romper dispositivos antiguos.
+  - *Frontend:* nada; un duplicado no se empuja por SSE (`delivered: 0`).
+  - *Contrato y pruebas:* documentar `eventId` en los README del manejador y de la Raspberry; pruebas del
+    reenvío del mismo evento dos veces (una sola lectura guardada) y de dos envíos simultáneos.
 - El servicio de predicción de riego también duerme en el plan gratuito. El backend lo espera 60
   segundos y lo intenta dos veces (`AI_SERVICE_TIMEOUT_MS`, `AI_SERVICE_MAX_ATTEMPTS`); si aun así no
   responde, esa predicción no se guarda y hay que pedirla de nuevo.
