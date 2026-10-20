@@ -29,7 +29,8 @@ tiene su propio historial y no comparte commits con el workspace:
 | `database/`           | `ssantivr/BASE-DE-DATOS-AGROSENSE`       | los seis archivos de la carpeta           |
 | `api/`                | `ssantivr/API-AGROSENSE`                 | los archivos de la carpeta                |
 | `IA/`                 | `ssantivr/IA-AGROSENSE`                  | los archivos de la carpeta                |
-| `event-service/`, `raspberry/`, `compose.yaml` | ninguno todavía; solo existen en el workspace |                  |
+| `event-service/`      | `ssantivr/API-AGROSENSE`, rama `feat/event-service` (desde el 20 de octubre de 2026) | `event-service/`, junto al contrato; sus pruebas son el job `event-service` de `.github/workflows/tests.yml` (la carpeta `.github` del workspace no se publica) |
+| `raspberry/`, `compose.yaml` | ninguno todavía; solo existen en el workspace |                  |
 | `docs/`               | ninguno; solo existe en el workspace     |                                           |
 
 Una rama del workspace no se puede subir tal cual a ninguno de ellos. Para publicar, los commits de
