@@ -1,0 +1,2 @@
+# These files run on Linux (the Raspberry Pi): systemd reads a carriage return as part of a path.
+* text=auto eol=lf
