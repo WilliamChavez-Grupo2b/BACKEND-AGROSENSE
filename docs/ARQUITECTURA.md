@@ -202,6 +202,14 @@ POST /api/internal/events  (X-Internal-Key, X-Device-Key)   mismo cuerpo
                                "idCrop", "cropName", "createdAt", ...}]}}
 ```
 
+`POST /webhook/eventos` es la misma ruta que `/events`, `X-API-KEY` la misma cabecera que `X-Device-Key`
+(sigue siendo la llave propia del dispositivo), y también se acepta
+`{"deviceId", "timestamp", "datos": {"temperatura", "humedad_aire", "humedad_suelo"}}`, que el manejador
+traduce a `air_temperature`, `relative_humidity` y `soil_moisture`. El manejador responde 200 solo cuando el
+backend guardó el evento; si el backend no lo guardó (sin conexión, o 500, 502, 503 o 504), lo reintenta 3
+veces con esperas de 0,5, 1 y 2 s y después responde 502. Un tiempo agotado mientras el backend respondía no
+se reintenta, porque el backend no detecta eventos repetidos.
+
 Con varios sensores del mismo tipo en el cultivo, la medida debe nombrar el suyo
 (`{"soil_moisture": {"value": 31.5, "sensor_code": "AS-001"}}`); si no, 400 con los códigos posibles.
 `type: "alert"` lleva `data: {"alert_type", "message", "severity"?, "value"?}`.
@@ -224,7 +232,7 @@ repositorio.
 |---|---|
 | Backend | `AI_CHAT_VIA_SERVICE` (`false`), `AI_SERVICE_KEY`, `AI_SERVICE_TIMEOUT_MS` (ahora 30000), `EVENTS_INTERNAL_KEY`, `EVENTS_STREAM_SECRET` (≥ 32 bytes), `SEED_DEVICE_KEY` |
 | IA | `INTERNAL_API_KEY`, `AI_SERVICE_TOKEN` (migración), `AI_CHAT_API_KEY`, `AI_CHAT_BASE_URL`, `AI_CHAT_MODEL`, `AI_TRANSCRIPTION_MODEL`, `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL`, `ANTHROPIC_EFFORT`, `GEMINI_API_KEY`, `GEMINI_MODEL`, `AI_TIMEOUT_MS` (20000), `AI_MAX_OUTPUT_TOKENS` (2048), `PORT` |
-| Manejador de eventos | `BACKEND_URL`, `EVENTS_INTERNAL_KEY`, `EVENTS_STREAM_SECRET`, `EVENTS_ALLOWED_ORIGINS`, `BACKEND_TIMEOUT_MS` (30000), `EVENTS_HEARTBEAT_S`, `EVENTS_MAX_STREAMS_PER_USER`, `EVENTS_MAX_STREAMS`, `PORT` |
+| Manejador de eventos | `BACKEND_URL`, `EVENTS_INTERNAL_KEY`, `EVENTS_STREAM_SECRET`, `EVENTS_ALLOWED_ORIGINS`, `BACKEND_TIMEOUT_MS` (30000), `BACKEND_RETRIES` (3), `BACKEND_RETRY_FIRST_MS` (500), `EVENTS_HEARTBEAT_S`, `EVENTS_MAX_STREAMS_PER_USER`, `EVENTS_MAX_STREAMS`, `PORT` |
 | Frontend | `EVENTS_PUBLIC_URL` |
 | Raspberry | `EVENTS_URL`, `DEVICE_ID`, `DEVICE_KEY`, `INTERVAL_S`, `READINGS`, `QUEUE_FILE`, `MAX_QUEUE`, `TIMEOUT_S`, `ATTEMPTS`, `FIRST_BACKOFF_S`, `MAX_BACKOFF_S` |
 
