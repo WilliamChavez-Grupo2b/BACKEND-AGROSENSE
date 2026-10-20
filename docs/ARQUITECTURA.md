@@ -14,7 +14,7 @@ disponibles, y dónde está desplegado cada componente.
 | `api/`      | Contrato de la API del backend: `openapi.json`, peticiones de ejemplo y `tools/check_contract.py`, que comprueba un backend en marcha contra el contrato. |
 | `IA/`       | Servicio de IA (Python, FastAPI) que el backend llama en `AI_SERVICE_URL`: predicción de riego y asistente (`/chat`, `/voice`). |
 | `event-service/` | Manejador de eventos (Python, FastAPI): webhook de las Raspberry y canal en vivo (SSE) de cada usuario. |
-| `raspberry/` | Programa del dispositivo de campo (simulado en un PC): envía lecturas al webhook, con reintentos y cola en disco. |
+| `raspberry/` | Programa del dispositivo de campo: lee un DHT22 y un sensor de suelo por MCP3008 en la Raspberry Pi (simula en un PC) y envía cada 30 s al webhook, con reintentos y cola en SQLite. |
 | `compose.yaml`, `.env.example` | Todos los servicios en una máquina (`docker compose up`) y todas sus variables. |
 
 ### Repositorios
@@ -237,7 +237,7 @@ repositorio.
 | IA | `INTERNAL_API_KEY`, `AI_SERVICE_TOKEN` (migración), `AI_CHAT_API_KEY`, `AI_CHAT_BASE_URL`, `AI_CHAT_MODEL`, `AI_TRANSCRIPTION_MODEL`, `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL`, `ANTHROPIC_EFFORT`, `GEMINI_API_KEY`, `GEMINI_MODEL`, `AI_TIMEOUT_MS` (20000), `AI_MAX_OUTPUT_TOKENS` (2048), `PORT` |
 | Manejador de eventos | `BACKEND_URL`, `EVENTS_INTERNAL_KEY`, `EVENTS_STREAM_SECRET`, `EVENTS_ALLOWED_ORIGINS`, `BACKEND_TIMEOUT_MS` (30000), `BACKEND_RETRIES` (3), `BACKEND_RETRY_FIRST_MS` (500), `EVENTS_HEARTBEAT_S`, `EVENTS_MAX_STREAMS_PER_USER`, `EVENTS_MAX_STREAMS`, `PORT` |
 | Frontend | `EVENTS_PUBLIC_URL` |
-| Raspberry | `EVENTS_URL`, `DEVICE_ID`, `DEVICE_KEY`, `INTERVAL_S`, `READINGS`, `QUEUE_FILE`, `MAX_QUEUE`, `TIMEOUT_S`, `ATTEMPTS`, `FIRST_BACKOFF_S`, `MAX_BACKOFF_S` |
+| Raspberry | `EVENTS_URL`, `DEVICE_ID`, `DEVICE_KEY`, `INTERVAL_S` (30), `SENSORS` (`auto`), `READINGS`, `DHT_GPIO` (4), `DHT_ATTEMPTS`, `ADC_SPI_BUS`, `ADC_SPI_DEVICE`, `ADC_CHANNEL` (0, 0, 0), `SOIL_DRY_RAW`, `SOIL_WET_RAW`, `QUEUE_FILE` (`queue.sqlite3`), `MAX_QUEUE`, `TIMEOUT_S` (45), `ATTEMPTS`, `FIRST_BACKOFF_S`, `MAX_BACKOFF_S` |
 
 ### Ejecutar todo junto
 
@@ -656,8 +656,12 @@ Render»).
   servicio de IA en producción (`AI_CHAT_VIA_SERVICE=true`), en el orden de la sección 2.
 - Retirar el Bearer `AI_SERVICE_TOKEN` cuando el backend desplegado envíe `X-Internal-Key`, y después la IA
   interna del backend.
-- Programa real de la Raspberry: sustituir los sensores simulados de `raspberry/simulator.py` por la
-  lectura de los sensores físicos. MQTT queda apagado y sin broker.
+- Raspberry con sensores reales (DHT22 y MCP3008, `raspberry/hardware.py`, 20 de octubre de 2026): escrita
+  y probada con dispositivos falsos en un PC; falta probarla en una Raspberry Pi con los sensores cableados.
+  MQTT queda apagado y sin broker.
+- La humedad del aire (`RELATIVE_HUMIDITY`) no tiene rango propio en el cultivo, así que no genera alertas
+  ni se marca fuera de rango (antes se comparaba con el rango de humedad del suelo). Si se quiere alertar por
+  ella, hace falta un rango propio en `crops`.
 - Dispositivos: listado, desactivación y cambio de llave (hoy solo el alta).
 - **Lecturas duplicadas: `eventId` único por evento y deduplicación en el backend** (propuesta del 20 de
   octubre de 2026, sin implementar). Hoy un evento puede guardarse dos veces si el backend lo guarda pero
