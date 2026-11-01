@@ -4,11 +4,13 @@
 #include <Arduino.h>
 #include <DHT.h>
 #include <FspTimer.h>
+#include <WDT.h>
 #include <WiFiS3.h>
 #include <WiFiSSLClient.h>
 
 #include "AgroSenseDevice.h"
 #include "HttpResponseReader.h"
+#include "LoopSupervisor.h"
 
 namespace agro {
 
@@ -20,6 +22,7 @@ constexpr bool RELAY_ACTIVE_LOW = true;  // most relay boards; set false if the 
 constexpr int CONNECT_TIMEOUT_MS = 8000;
 constexpr uint32_t ANSWER_TIMEOUT_MS = 45000;  // longer than the event service waits for a sleeping backend
 constexpr float PUMP_WATCH_HZ = 10.0f;
+constexpr uint32_t WATCHDOG_MS = 5000;  // the board's maximum is 5.6 s
 
 using Dht22Adapter = Dht22AdapterT<DHT>;
 using Sht31Adapter = Sht31AdapterT<Adafruit_SHT31>;
@@ -120,9 +123,12 @@ class HttpBackend : public IBackend {
 // Runs from a timer interrupt, so the pump obeys its deadline even while WiFiS3 holds loop() inside a connect().
 inline ActuatorDriver* watchedPump = nullptr;
 inline FspTimer pumpTimer;
+inline LoopSupervisor supervisor;
+inline bool watchdogOn = false;
 
 inline void onPumpTimer(timer_callback_args_t*) {
   if (watchedPump != nullptr) watchedPump->enforceDeadline();
+  if (watchdogOn && supervisor.mayFeed(millis())) WDT.refresh();
 }
 
 inline bool startPumpWatch(ActuatorDriver& actuator) {
@@ -132,6 +138,13 @@ inline bool startPumpWatch(ActuatorDriver& actuator) {
   if (channel < 0) return false;
   return pumpTimer.begin(TIMER_MODE_PERIODIC, type, static_cast<uint8_t>(channel), PUMP_WATCH_HZ, 0.0f, onPumpTimer) &&
          pumpTimer.setup_overflow_irq() && pumpTimer.open() && pumpTimer.start();
+}
+
+// Only once the timer runs: nothing else feeds the watchdog.
+inline bool startWatchdog() {
+  supervisor.beat(millis());
+  watchdogOn = WDT.begin(WATCHDOG_MS) == 1;
+  return watchdogOn;
 }
 
 class RealHardwareFactory : public HardwareFactory {

@@ -57,10 +57,15 @@ void setup() {
   const DeviceSettings& config = DeviceConfig::instance().get();
   WifiManager::instance().attach(boardWifi, config.wifiSsid, config.wifiPassword);
   if (!device.begin()) Serial.println("AgroSense: revisa arduino_secrets.h y el sensor de aire");
-  if (!startPumpWatch(hardware.actuator())) Serial.println("AgroSense: sin temporizador de la bomba");
+  if (!startPumpWatch(hardware.actuator())) {
+    Serial.println("AgroSense: sin temporizador de la bomba ni perro guardián");
+  } else if (!startWatchdog()) {
+    Serial.println("AgroSense: sin perro guardián");
+  }
 }
 
 void loop() {
+  supervisor.beat(millis());
   device.tick();
   if (reached(millis(), nextStatusAt)) {
     nextStatusAt = millis() + STATUS_EVERY_MS;

@@ -55,7 +55,7 @@ Ninguna de estas protecciones depende de la red. Los valores son constantes en `
 
 | Protección | Dónde |
 |---|---|
-| Máximo absoluto de **5 minutos** encendida, sea cual sea la orden | `TimedDriver`, con `MAX_PUMP_ON_MS` |
+| Máximo absoluto de **5 minutos** encendida, sea cual sea la orden. El backend rechaza más minutos de una persona y recorta los de la IA (`IRRIGATION_MAX_RUN_MINUTES`, mantenlo igual a esta constante) | `TimedDriver`, con `MAX_PUMP_ON_MS` |
 | Máximo de **30 minutos por día** | `PumpGuard`, con `MAX_PUMP_MS_PER_DAY` |
 | Al menos **5 minutos** entre riegos, contados también desde el arranque | `PumpGuard`, con `MIN_PUMP_GAP_MS` |
 | Apagada tras cualquier reinicio; el nivel del pin se fija antes de su dirección para evitar un pulso | `setup()` y `begin()` |
@@ -64,11 +64,16 @@ Ninguna de estas protecciones depende de la red. Los valores son constantes en `
 
 **Lo que estas protecciones no cubren:**
 
-- `connect()` sí bloquea, hasta 8 s, dentro de `WiFiS3`, porque la placa habla con su módulo Wi-Fi por comandos AT. La
-  interrupción cubre la bomba, pero el pulsador no responde durante ese tiempo.
-- Si el microcontrolador se cuelga por completo, la interrupción también cae y el relé queda como estaba. No se activó el
-  perro guardián porque su máximo en esta placa, 5,6 s, es menor que lo que tarda una conexión. Para una bomba que no deba
-  quedar encendida en ningún caso hace falta un temporizador externo.
+- `connect()` sí bloquea dentro de `WiFiS3`: pide 8 s, pero cada comando AT puede esperar hasta 10 s, y no hay forma de
+  hacerlo no bloqueante porque la placa habla con su módulo Wi-Fi por comandos síncronos. La interrupción cubre la bomba,
+  pero el pulsador no responde durante ese tiempo.
+- **Perro guardián:** su máximo en esta placa es 5,6 s, menos que un comando AT, así que `loop()` no puede alimentarlo. Lo
+  alimenta la interrupción mientras `loop()` haya dado señal en los últimos 60 s (`LoopSupervisor`). Si `loop()` se cuelga,
+  o si caen las interrupciones, la placa se reinicia y la bomba vuelve apagada, en hasta 65 s en el primer caso y 5 s en
+  el segundo. Esto no se ha probado en una placa: hay que provocar un cuelgue con el relé sin carga.
+- Un fallo eléctrico, como un relé pegado o una placa sin alimentación con el relé enclavado, queda fuera de todo esto.
+  Para una bomba que no deba quedar encendida en ningún caso, **pon un temporizador por hardware en serie con el relé**,
+  por ejemplo un relé temporizado de retardo a la desconexión ajustado a 6 minutos.
 - Los contadores están en RAM: un reinicio borra el total del día.
 
 Con el mínimo entre riegos contado desde el arranque, **enciende la placa 5 minutos antes de una demostración**.
@@ -82,13 +87,13 @@ dispositivo, como máximo 30 s después:
 {"command": {"id": 12, "type": "irrigate", "source": "AI", "minutes": 7, "confidence": 0.85}}
 ```
 
-El dispositivo informa del resultado en su siguiente evento con `"ack": {"command_id": 12, "result": "started"}` o
-`"refused"`, y el backend lo guarda en `irrigation_dispatches`. Una orden sin entregar caduca a los 5 minutos y nunca se
-entrega dos veces.
+El dispositivo informa en sus eventos siguientes: `"ack": {"command_id": 12, "result": "started"}`, y al terminar
+`"result": "finished", "ran_seconds": 300`, o `"refused"`. El backend lo guarda en `irrigation_dispatches` y **corrige el
+riego en el historial** con la duración real y el agua proporcional. Una orden rechazada o caducada queda sin agua. Si la
+placa se reinicia durante un riego, ese `finished` no llega y el historial conserva lo pedido.
 
 - Una orden de la IA se rechaza sin lectura válida de suelo o con el suelo al 85 % o más. Una orden de una persona se
   obedece, dentro de los límites de la tabla.
-- Una orden de más de 5 minutos se ejecuta 5.
 - El pulsador arranca un riego y, si la bomba ya funciona, la detiene.
 
 ## Red y Render

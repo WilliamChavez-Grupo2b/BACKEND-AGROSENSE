@@ -7,6 +7,7 @@
 
 #include "AgroSenseDevice.h"
 #include "HttpResponseReader.h"
+#include "LoopSupervisor.h"
 
 using namespace agro;
 
@@ -747,6 +748,19 @@ static void a_send_that_cannot_start_waits_and_an_event_lost_in_flight_is_not_po
   CHECK(slow.sent[1] == "e1");
 }
 
+static void the_watchdog_is_fed_while_the_loop_lives_even_inside_a_long_connect() {
+  LoopSupervisor supervisor;
+  supervisor.beat(1000);
+  CHECK(supervisor.mayFeed(1000));
+  CHECK(supervisor.mayFeed(1000 + 8000));   // connect()
+  CHECK(supervisor.mayFeed(1000 + 45000));  // far beyond it
+  CHECK(!supervisor.mayFeed(1000 + LoopSupervisor::MAX_SILENCE_MS));  // hung: the board resets
+  supervisor.beat(70000);
+  CHECK(supervisor.mayFeed(70001));
+  supervisor.beat(0xFFFFFF00UL);
+  CHECK(supervisor.mayFeed(0x00000100UL));  // across the wrap of millis()
+}
+
 int main() {
   singletons_are_one_instance_and_refuse_incomplete_settings();
   wifi_retries_with_a_growing_wait_and_resets_once_connected();
@@ -769,6 +783,7 @@ int main() {
   without_wifi_it_keeps_measuring_and_catches_up();
   the_order_in_an_answer_reaches_the_pump_through_the_facade();
   the_button_starts_and_stops_the_pump();
+  the_watchdog_is_fed_while_the_loop_lives_even_inside_a_long_connect();
   an_order_above_the_maximum_reports_what_really_ran();
   stopping_an_order_by_hand_reports_the_shorter_run();
   the_result_of_an_order_travels_in_the_next_event();
