@@ -6,12 +6,14 @@ import com.agrosense.backend.dto.response.SensorReadingResponse;
 import com.agrosense.backend.pattern.creational.singleton.AiConfigManager;
 import com.agrosense.backend.pattern.structural.bridge.IrrigationCommand;
 import com.agrosense.backend.pattern.structural.bridge.PendingIrrigationCommands;
+import com.agrosense.backend.security.DeviceRateLimiter;
 import com.agrosense.backend.service.DeviceEventService;
 import com.agrosense.backend.service.PredictionService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
+import tools.jackson.databind.JsonNode;
 
 import java.time.Clock;
 import java.time.Duration;
@@ -35,28 +37,33 @@ public class DeviceIngestionFacade {
     private final PredictionService predictions;
     private final AiConfigManager aiConfig;
     private final PendingIrrigationCommands commands;
+    private final DeviceRateLimiter rateLimiter;
     private final Duration predictionInterval;
     private final Clock clock;
     private final Map<Integer, Instant> lastPrediction = new ConcurrentHashMap<>();
 
     @Autowired
     public DeviceIngestionFacade(DeviceEventService events, PredictionService predictions, AiConfigManager aiConfig,
-            PendingIrrigationCommands commands,
+            PendingIrrigationCommands commands, DeviceRateLimiter rateLimiter,
             @Value("${ai.ingestion.prediction-minutes:30}") int predictionMinutes) {
-        this(events, predictions, aiConfig, commands, Duration.ofMinutes(predictionMinutes), Clock.systemUTC());
+        this(events, predictions, aiConfig, commands, rateLimiter, Duration.ofMinutes(predictionMinutes),
+                Clock.systemUTC());
     }
 
     public DeviceIngestionFacade(DeviceEventService events, PredictionService predictions, AiConfigManager aiConfig,
-            PendingIrrigationCommands commands, Duration predictionInterval, Clock clock) {
+            PendingIrrigationCommands commands, DeviceRateLimiter rateLimiter, Duration predictionInterval,
+            Clock clock) {
         this.events = events;
         this.predictions = predictions;
         this.aiConfig = aiConfig;
         this.commands = commands;
+        this.rateLimiter = rateLimiter;
         this.predictionInterval = predictionInterval;
         this.clock = clock;
     }
 
     public Map<String, Object> ingest(String deviceKey, DeviceEventRequest request) {
+        rateLimiter.count(request.getDeviceId());
         Map<String, Object> answer = events.receive(request.getDeviceId(), deviceKey, request.getType(),
                 request.getTs(), request.getData());
         try {
@@ -64,13 +71,29 @@ public class DeviceIngestionFacade {
         } catch (RuntimeException failure) {
             log.warn("The event was stored but its prediction could not be requested: {}", failure.getMessage());
         }
-        commands.take((Integer) ((Map<?, ?>) answer.get("event")).get("cropId"))
-                .ifPresent(command -> answer.put("command", describe(command)));
+        Integer cropId = (Integer) ((Map<?, ?>) answer.get("event")).get("cropId");
+        try {
+            confirm(cropId, request.getAck());
+            commands.take(cropId).ifPresent(command -> answer.put("command", describe(command)));
+        } catch (RuntimeException failure) {
+            log.warn("The event was stored but its irrigation order could not be handled: {}", failure.getMessage());
+        }
         return answer;
+    }
+
+    private void confirm(Integer cropId, JsonNode ack) {
+        if (ack == null || !ack.path("command_id").isIntegralNumber()) {
+            return;
+        }
+        boolean started = "started".equals(ack.path("result").asString(""));
+        if (!commands.confirm(cropId, ack.path("command_id").asInt(), started)) {
+            log.warn("Crop {} confirmed an order that was not waiting for it", cropId);
+        }
     }
 
     private static Map<String, Object> describe(IrrigationCommand command) {
         Map<String, Object> described = new LinkedHashMap<>();
+        described.put("id", command.id());
         described.put("type", "irrigate");
         described.put("source", command.source());
         described.put("minutes", command.minutes());

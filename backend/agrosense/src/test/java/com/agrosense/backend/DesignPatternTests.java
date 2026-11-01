@@ -20,7 +20,7 @@ import com.agrosense.backend.pattern.creational.prototype.CropTemplateCatalog;
 import com.agrosense.backend.pattern.creational.singleton.AiConfigManager;
 import com.agrosense.backend.pattern.creational.singleton.CalibrationRegistry;
 import com.agrosense.backend.pattern.structural.adapter.OpenMeteoAdapter;
-import com.agrosense.backend.pattern.structural.adapter.WeatherProvider.ColdestDay;
+import com.agrosense.backend.pattern.structural.adapter.WeatherProvider.Outlook;
 import com.agrosense.backend.pattern.structural.bridge.PendingIrrigationCommands;
 import com.agrosense.backend.pattern.structural.decorator.BaseSensorReadingProcessor;
 import com.agrosense.backend.pattern.structural.decorator.CalibrationDecorator;
@@ -29,6 +29,7 @@ import com.agrosense.backend.pattern.structural.decorator.ValidationDecorator;
 import com.agrosense.backend.pattern.structural.facade.DeviceIngestionFacade;
 import com.agrosense.backend.pattern.structural.proxy.AiService.IrrigationPrediction;
 import com.agrosense.backend.pattern.structural.proxy.AiServiceProxy;
+import com.agrosense.backend.security.DeviceRateLimiter;
 import com.agrosense.backend.service.AiClientService;
 import com.agrosense.backend.service.DeviceEventService;
 import com.agrosense.backend.service.PredictionService;
@@ -202,7 +203,8 @@ class DesignPatternTests {
 	void adapterTurnsOpenMeteoArraysIntoTheColdestDay() throws IOException {
 		AtomicReference<String> query = new AtomicReference<>();
 		AtomicReference<String> answer = new AtomicReference<>("""
-				{"daily":{"time":["2026-11-02","2026-11-03"],"temperature_2m_min":[6.5,1.2]}}""");
+				{"daily":{"time":["2026-11-02","2026-11-03"],"temperature_2m_min":[6.5,1.2],
+				"precipitation_probability_max":[20,80],"precipitation_sum":[0.5,6.5]}}""");
 		HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
 		server.createContext("/", exchange -> {
 			query.set(exchange.getRequestURI().toString());
@@ -216,16 +218,23 @@ class DesignPatternTests {
 		try {
 			OpenMeteoAdapter adapter = new OpenMeteoAdapter("http://127.0.0.1:" + server.getAddress().getPort(), 2000);
 
-			Optional<ColdestDay> coldest = adapter.coldestDayAhead(new BigDecimal("4.71"), new BigDecimal("-74.07"));
+			Outlook outlook = adapter.outlook(new BigDecimal("4.71"), new BigDecimal("-74.07")).orElseThrow();
 
-			assertThat(query.get()).contains("/v1/forecast", "latitude=4.71", "longitude=-74.07", "temperature_2m_min");
-			assertThat(coldest.orElseThrow().date()).isEqualTo(LocalDate.parse("2026-11-03"));
-			assertThat(coldest.orElseThrow().minimumTemperature()).isEqualByComparingTo("1.2");
+			assertThat(query.get()).contains("/v1/forecast", "latitude=4.71", "longitude=-74.07", "temperature_2m_min",
+					"precipitation_probability_max");
+			assertThat(outlook.coldestDay()).isEqualTo(LocalDate.parse("2026-11-03"));
+			assertThat(outlook.minimumTemperature()).isEqualByComparingTo("1.2");
+			assertThat(outlook.rainProbability()).isEqualTo(80);
+			assertThat(outlook.rainMm()).isEqualByComparingTo("7.0");
+
+			String first = query.get();
+			adapter.outlook(new BigDecimal("4.71"), new BigDecimal("-74.07"));
+			assertThat(query.get()).isSameAs(first);
 
 			answer.set("{\"daily\":{\"time\":[\"2026-11-02\"],\"temperature_2m_min\":[null]}}");
-			assertThat(adapter.coldestDayAhead(BigDecimal.ONE, BigDecimal.ONE)).isEmpty();
+			assertThat(adapter.outlook(BigDecimal.ONE, BigDecimal.ONE)).isEmpty();
 			answer.set("no es json");
-			assertThat(adapter.coldestDayAhead(BigDecimal.ONE, BigDecimal.ONE)).isEmpty();
+			assertThat(adapter.outlook(BigDecimal.TEN, BigDecimal.ONE)).isEmpty();
 		} finally {
 			server.stop(0);
 		}
@@ -270,8 +279,8 @@ class DesignPatternTests {
 		when(events.receive(any(), any(), any(), any(), any())).thenReturn(stored("SOIL_MOISTURE"));
 		when(predictions.currentConditions("demo@agrosense.co", 1)).thenReturn(Map.of("soil_moisture", 30));
 		MovableClock clock = new MovableClock();
-		DeviceIngestionFacade facade = new DeviceIngestionFacade(events, predictions, ai, new PendingIrrigationCommands(),
-				Duration.ofMinutes(30), clock);
+		DeviceIngestionFacade facade = new DeviceIngestionFacade(events, predictions, ai, mock(PendingIrrigationCommands.class),
+				new DeviceRateLimiter(0), Duration.ofMinutes(30), clock);
 
 		facade.ingest("key", readingEvent());
 		facade.ingest("key", readingEvent());
@@ -291,15 +300,15 @@ class DesignPatternTests {
 		when(ai.isEnabled()).thenReturn(true);
 		when(events.receive(any(), any(), any(), any(), any())).thenReturn(stored("SOIL_MOISTURE"));
 		when(predictions.currentConditions(any(), any())).thenThrow(new IllegalStateException("database down"));
-		DeviceIngestionFacade facade = new DeviceIngestionFacade(events, predictions, ai, new PendingIrrigationCommands(),
-				Duration.ofMinutes(30),
+		DeviceIngestionFacade facade = new DeviceIngestionFacade(events, predictions, ai, mock(PendingIrrigationCommands.class),
+				new DeviceRateLimiter(0), Duration.ofMinutes(30),
 				new MovableClock());
 
 		assertThat(facade.ingest("key", readingEvent())).containsKey("event");
 
 		when(events.receive(any(), any(), any(), any(), any())).thenReturn(stored("PH"));
-		DeviceIngestionFacade noMoisture = new DeviceIngestionFacade(events, predictions, ai, new PendingIrrigationCommands(),
-				Duration.ofMinutes(30),
+		DeviceIngestionFacade noMoisture = new DeviceIngestionFacade(events, predictions, ai, mock(PendingIrrigationCommands.class),
+				new DeviceRateLimiter(0), Duration.ofMinutes(30),
 				new MovableClock());
 		noMoisture.ingest("key", readingEvent());
 		verify(predictions, never()).requestIrrigationPrediction(any(), any());

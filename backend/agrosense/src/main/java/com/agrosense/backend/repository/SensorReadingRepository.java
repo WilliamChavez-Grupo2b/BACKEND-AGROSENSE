@@ -33,4 +33,9 @@ public interface SensorReadingRepository extends JpaRepository<SensorReading, Lo
 
     Optional<SensorReading> findFirstBySensorCropIdCropAndSensorSensorTypeOrderByRecordedAtDesc(
             Integer idCrop, SensorType sensorType);
+
+    boolean existsBySensorIdSensorAndRecordedAt(Integer idSensor, LocalDateTime recordedAt);
+
+    List<SensorReading> findBySensorCropIdCropAndSensorSensorTypeAndQualityAndRecordedAtAfterOrderByRecordedAtAsc(
+            Integer idCrop, SensorType sensorType, String quality, LocalDateTime since, Pageable pageable);
 }

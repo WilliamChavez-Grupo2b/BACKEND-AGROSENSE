@@ -1,6 +1,7 @@
 package com.agrosense.backend;
 
 import com.agrosense.backend.domain.enums.SensorType;
+import com.agrosense.backend.exception.ApiException;
 import com.agrosense.backend.models.Crop;
 import com.agrosense.backend.models.Device;
 import com.agrosense.backend.models.Estate;
@@ -37,6 +38,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT, properties = {
 		"spring.datasource.url=jdbc:h2:mem:agrosense-devices;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;DEFAULT_NULL_ORDERING=HIGH;DB_CLOSE_DELAY=-1",
@@ -99,8 +101,8 @@ class DeviceIntegrationTests {
 		assertThat(key).hasSizeGreaterThanOrEqualTo(43);
 		Device stored = deviceRepository.findByDeviceCode("RPI-LOTE-NORTE").orElseThrow();
 		assertThat(stored.getKeyHash()).isEqualTo(DeviceService.hash(key)).doesNotContain(key).hasSize(64);
-		assertThat(deviceService.authenticate("rpi-lote-norte", key)).isPresent();
-		assertThat(deviceService.authenticate("RPI-LOTE-NORTE", key + "x")).isEmpty();
+		assertThat(deviceService.require("rpi-lote-norte", key).getDeviceCode()).isEqualTo("RPI-LOTE-NORTE");
+		assertThatThrownBy(() -> deviceService.require("RPI-LOTE-NORTE", key + "x")).isInstanceOf(ApiException.class);
 
 		HttpResponse<String> again = send("POST", "/api/devices", token,
 				"{\"cropId\":" + cropId + ",\"deviceCode\":\"RPI-LOTE-NORTE\"}");
@@ -128,8 +130,8 @@ class DeviceIntegrationTests {
 
 	@Test
 	void theDemoDeviceGetsTheKeyFromTheSettingsAndNoUsableHashFromTheScript() {
-		assertThat(deviceService.authenticate(DEMO_DEVICE, DEMO_KEY)).isPresent();
-		assertThat(deviceService.authenticate(DEMO_DEVICE, "DISABLED")).isEmpty();
+		assertThat(deviceService.require(DEMO_DEVICE, DEMO_KEY).getDeviceCode()).isEqualTo(DEMO_DEVICE);
+		assertThatThrownBy(() -> deviceService.require(DEMO_DEVICE, "DISABLED")).isInstanceOf(ApiException.class);
 		assertThat(deviceRepository.findByDeviceCode(DEMO_DEVICE).orElseThrow().getCrop().getName()).isEqualTo("Café");
 	}
 
@@ -141,10 +143,10 @@ class DeviceIntegrationTests {
 		assertThat(internal("another-key", DEMO_KEY, event).statusCode()).isEqualTo(401);
 		assertThat(send("POST", "/api/internal/events", token(EMAIL, PASSWORD), event).statusCode()).isEqualTo(401);
 		HttpResponse<String> wrongDevice = internal(INTERNAL_KEY, "not-the-key", event);
-		assertThat(wrongDevice.statusCode()).isEqualTo(401);
+		assertThat(wrongDevice.statusCode()).isEqualTo(403);
 		assertThat(wrongDevice.body()).contains("Dispositivo desconocido o llave incorrecta");
 		assertThat(internal(INTERNAL_KEY, DEMO_KEY,
-				"{\"device_id\":\"RPI-NO-EXISTE\",\"type\":\"reading\",\"data\":{\"ph\":6.4}}").statusCode()).isEqualTo(401);
+				"{\"device_id\":\"RPI-NO-EXISTE\",\"type\":\"reading\",\"data\":{\"ph\":6.4}}").statusCode()).isEqualTo(403);
 	}
 
 	@Test

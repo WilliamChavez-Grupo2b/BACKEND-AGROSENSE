@@ -12,6 +12,7 @@ import com.agrosense.backend.pattern.creational.factory.SensorFactory;
 import com.agrosense.backend.pattern.creational.singleton.AiConfigManager;
 import com.agrosense.backend.pattern.structural.facade.SensorFacade;
 import com.agrosense.backend.pattern.structural.proxy.AiService.IrrigationPrediction;
+import com.agrosense.backend.pattern.structural.adapter.WeatherProvider;
 import com.agrosense.backend.pattern.structural.proxy.AiServiceProxy;
 import com.agrosense.backend.repository.AiPredictionRepository;
 import com.agrosense.backend.repository.CropRepository;
@@ -84,7 +85,7 @@ class ServiceTests {
 		AiPredictionRepository predictions = mock(AiPredictionRepository.class);
 		CropRepository crops = mock(CropRepository.class);
 		PredictionService service = new PredictionService(proxy, predictions, crops,
-				mock(SensorReadingRepository.class), mock(IrrigationService.class));
+				mock(SensorReadingRepository.class), mock(IrrigationService.class), mock(WeatherProvider.class));
 		Crop crop = crop(7);
 
 		service.requestIrrigationPrediction(99, Map.of());
@@ -114,7 +115,7 @@ class ServiceTests {
 		CropRepository crops = mock(CropRepository.class);
 		SensorReadingRepository readings = mock(SensorReadingRepository.class);
 		PredictionService service = new PredictionService(mock(AiServiceProxy.class),
-				mock(AiPredictionRepository.class), crops, readings, mock(IrrigationService.class));
+				mock(AiPredictionRepository.class), crops, readings, mock(IrrigationService.class), mock(WeatherProvider.class));
 		Crop rice = crop(7);
 		rice.setHumidityMin(new BigDecimal("70.0"));
 		rice.setHumidityMax(new BigDecimal("95.0"));

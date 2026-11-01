@@ -7,8 +7,8 @@ import java.util.Optional;
 /** What AgroSense needs from a weather service, whichever service it is. */
 public interface WeatherProvider {
 
-    record ColdestDay(LocalDate date, BigDecimal minimumTemperature) {
+    record Outlook(LocalDate coldestDay, BigDecimal minimumTemperature, Integer rainProbability, BigDecimal rainMm) {
     }
 
-    Optional<ColdestDay> coldestDayAhead(BigDecimal latitude, BigDecimal longitude);
+    Optional<Outlook> outlook(BigDecimal latitude, BigDecimal longitude);
 }

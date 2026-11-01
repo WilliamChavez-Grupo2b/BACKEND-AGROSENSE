@@ -26,7 +26,7 @@ class DatabaseSchemaTests {
 
 	@Test
 	void entitiesMatchTheSchemaScriptAndConstraintsAreEnforced() {
-		assertEquals(9, jdbc.queryForObject(
+		assertEquals(11, jdbc.queryForObject(
 				"select count(*) from information_schema.tables where table_schema = 'public'"
 						+ " and table_name not like 'spring_session%'", Integer.class));
 		assertEquals(2, jdbc.queryForObject(

@@ -3,6 +3,7 @@ package com.agrosense.backend.pattern.creational.builder;
 import java.math.BigDecimal;
 import java.util.Collections;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 /** The body of POST /predict/irrigation. Only what was measured is sent, and never a half-made range. */
@@ -31,6 +32,9 @@ public final class PredictionRequest {
                 .ph(number(conditions.get("ph")))
                 .humidityRange(number(conditions.get("humidity_min")), number(conditions.get("humidity_max")))
                 .phRange(number(conditions.get("ph_min")), number(conditions.get("ph_max")))
+                .rain(number(conditions.get("rain_probability")), number(conditions.get("rain_mm")))
+                .moistureGainPerMinute(number(conditions.get("moisture_gain_per_minute")))
+                .moistureHistory(conditions.get("moisture_history") instanceof List<?> history ? history : null)
                 .build();
     }
 
@@ -48,6 +52,10 @@ public final class PredictionRequest {
         private BigDecimal humidityMax;
         private BigDecimal phMin;
         private BigDecimal phMax;
+        private BigDecimal rainProbability;
+        private BigDecimal rainMm;
+        private BigDecimal moistureGain;
+        private List<?> moistureHistory;
 
         private Builder(Integer cropId) {
             this.cropId = cropId;
@@ -80,6 +88,22 @@ public final class PredictionRequest {
             return this;
         }
 
+        public Builder rain(BigDecimal probability, BigDecimal millimetres) {
+            this.rainProbability = probability;
+            this.rainMm = millimetres;
+            return this;
+        }
+
+        public Builder moistureGainPerMinute(BigDecimal value) {
+            this.moistureGain = value;
+            return this;
+        }
+
+        public Builder moistureHistory(List<?> history) {
+            this.moistureHistory = history;
+            return this;
+        }
+
         public PredictionRequest build() {
             if (cropId == null) {
                 throw new IllegalStateException("A prediction needs a crop");
@@ -101,6 +125,12 @@ public final class PredictionRequest {
             putIfMeasured(body, "humidity_max", humidityMax);
             putIfMeasured(body, "ph_min", phMin);
             putIfMeasured(body, "ph_max", phMax);
+            putIfMeasured(body, "rain_probability", rainProbability);
+            putIfMeasured(body, "rain_mm", rainMm);
+            putIfMeasured(body, "moisture_gain_per_minute", moistureGain);
+            if (moistureHistory != null && !moistureHistory.isEmpty()) {
+                body.put("moisture_history", moistureHistory);
+            }
             return new PredictionRequest(body);
         }
 

@@ -1,6 +1,7 @@
 package com.agrosense.backend.service;
 
 import com.agrosense.backend.dto.response.DeviceResponse;
+import com.agrosense.backend.exception.ApiException;
 import com.agrosense.backend.exception.BusinessRuleException;
 import com.agrosense.backend.exception.ResourceNotFoundException;
 import com.agrosense.backend.models.Crop;
@@ -8,6 +9,7 @@ import com.agrosense.backend.models.Device;
 import com.agrosense.backend.repository.CropRepository;
 import com.agrosense.backend.repository.DeviceRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -42,15 +44,21 @@ public class DeviceService {
         return DeviceResponse.from(device, key);
     }
 
+    /** 401 without a key, 403 with a wrong one or an unknown device (the same, so codes cannot be probed), 409 inactive. */
     @Transactional(readOnly = true)
-    public Optional<Device> authenticate(String deviceCode, String key) {
-        if (deviceCode == null || key == null || deviceCode.isBlank() || key.isBlank()) {
-            return Optional.empty();
+    public Device require(String deviceCode, String key) {
+        if (key == null || key.isBlank()) {
+            throw new ApiException(HttpStatus.UNAUTHORIZED, "Falta la llave del dispositivo.");
         }
         byte[] sent = hash(key.trim()).getBytes(StandardCharsets.US_ASCII);
-        return deviceRepository.findByDeviceCode(normalize(deviceCode))
-                .filter(Device::getActive)
-                .filter(device -> MessageDigest.isEqual(sent, device.getKeyHash().trim().getBytes(StandardCharsets.US_ASCII)));
+        Device device = (deviceCode == null || deviceCode.isBlank() ? Optional.<Device>empty()
+                : deviceRepository.findByDeviceCode(normalize(deviceCode)))
+                .filter(known -> MessageDigest.isEqual(sent, known.getKeyHash().trim().getBytes(StandardCharsets.US_ASCII)))
+                .orElseThrow(() -> new ApiException(HttpStatus.FORBIDDEN, "Dispositivo desconocido o llave incorrecta."));
+        if (!Boolean.TRUE.equals(device.getActive())) {
+            throw new ApiException(HttpStatus.CONFLICT, "El dispositivo está inactivo.");
+        }
+        return device;
     }
 
     @Transactional

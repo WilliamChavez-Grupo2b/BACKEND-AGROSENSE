@@ -49,6 +49,12 @@ public class Irrigation {
     @JoinColumn(name = "activated_by")
     private User activatedBy;
 
+    @Column(name = "moisture_before", precision = 5, scale = 2)
+    private BigDecimal moistureBefore;
+
+    @Column(name = "moisture_after", precision = 5, scale = 2)
+    private BigDecimal moistureAfter;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
 

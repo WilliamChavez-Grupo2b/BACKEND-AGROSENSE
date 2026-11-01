@@ -19,27 +19,31 @@ import com.agrosense.backend.pattern.structural.proxy.AiService.IrrigationPredic
 import com.agrosense.backend.pattern.structural.proxy.AiServiceProxy;
 import com.agrosense.backend.repository.CropRepository;
 import com.agrosense.backend.repository.IrrigationRepository;
+import com.agrosense.backend.repository.SensorReadingRepository;
 import com.agrosense.backend.repository.UserRepository;
+import com.agrosense.backend.security.DeviceRateLimiter;
 import com.agrosense.backend.service.DeviceEventService;
 import com.agrosense.backend.service.IrrigationService;
 import com.agrosense.backend.service.PredictionService;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
+import tools.jackson.databind.json.JsonMapper;
 
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Duration;
-import java.time.Instant;
-import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.function.UnaryOperator;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -69,11 +73,14 @@ class IrrigationBridgeTests {
 			assertThat(order.execute(stored)).isPresent();
 		}
 
-		PendingIrrigationCommands pending = new PendingIrrigationCommands();
+		PendingIrrigationCommands pending = mock(PendingIrrigationCommands.class);
 		manual(new RelayActuatorDriver(pending)).execute(stored);
-		assertThat(pending.take(1).orElseThrow().source()).isEqualTo(IrrigationCommand.MANUAL);
 		ai(new RelayActuatorDriver(pending)).execute(stored);
-		IrrigationCommand command = pending.take(1).orElseThrow();
+
+		ArgumentCaptor<IrrigationCommand> offered = ArgumentCaptor.forClass(IrrigationCommand.class);
+		verify(pending, times(2)).offer(offered.capture());
+		assertThat(offered.getAllValues().get(0).source()).isEqualTo(IrrigationCommand.MANUAL);
+		IrrigationCommand command = offered.getAllValues().get(1);
 		assertThat(command.source()).isEqualTo(IrrigationCommand.AI);
 		assertThat(command.minutes()).isEqualTo(15);
 		assertThat(command.confidence()).isEqualByComparingTo("0.90");
@@ -120,38 +127,6 @@ class IrrigationBridgeTests {
 	}
 
 	@Test
-	void anOrderWaitsOnceAndExpires() {
-		Instant start = Instant.parse("2026-11-01T12:00:00Z");
-		Clock[] clock = {Clock.fixed(start, ZoneOffset.UTC)};
-		PendingIrrigationCommands pending = new PendingIrrigationCommands(new Clock() {
-			@Override
-			public Instant instant() {
-				return clock[0].instant();
-			}
-
-			@Override
-			public java.time.ZoneId getZone() {
-				return ZoneOffset.UTC;
-			}
-
-			@Override
-			public Clock withZone(java.time.ZoneId zone) {
-				return this;
-			}
-		});
-		IrrigationCommand command = new IrrigationCommand(1, 5, IrrigationCommand.MANUAL, null);
-
-		pending.offer(command);
-		assertThat(pending.take(2)).isEmpty();
-		assertThat(pending.take(1)).contains(command);
-		assertThat(pending.take(1)).isEmpty();
-
-		pending.offer(command);
-		clock[0] = Clock.fixed(start.plus(PendingIrrigationCommands.EXPIRES_AFTER), ZoneOffset.UTC);
-		assertThat(pending.take(1)).isEmpty();
-	}
-
-	@Test
 	void anAiOrderNeedsTheSettingOnTheService() {
 		IrrigationRepository irrigations = mock(IrrigationRepository.class);
 		CropRepository crops = mock(CropRepository.class);
@@ -159,12 +134,12 @@ class IrrigationBridgeTests {
 		when(irrigations.save(any())).thenAnswer(call -> call.getArgument(0));
 		IrrigationPrediction confident = prediction(true, "0.90", 15, "m1");
 
-		new IrrigationService(irrigations, crops, mock(UserRepository.class), recording, false)
+		new IrrigationService(irrigations, crops, mock(UserRepository.class), mock(SensorReadingRepository.class), recording, false)
 				.orderFromPrediction(1, confident);
 		verify(irrigations, never()).save(any());
 		assertThat(started).isEmpty();
 
-		new IrrigationService(irrigations, crops, mock(UserRepository.class), recording, true)
+		new IrrigationService(irrigations, crops, mock(UserRepository.class), mock(SensorReadingRepository.class), recording, true)
 				.orderFromPrediction(1, confident);
 		assertThat(started).hasSize(1);
 	}
@@ -178,14 +153,20 @@ class IrrigationBridgeTests {
 			answer.put("event", Map.of("cropId", 1, "readings", List.of()));
 			return answer;
 		});
-		PendingIrrigationCommands pending = new PendingIrrigationCommands();
-		pending.offer(new IrrigationCommand(1, 7, IrrigationCommand.AI, new BigDecimal("0.8")));
+		PendingIrrigationCommands pending = mock(PendingIrrigationCommands.class);
+		when(pending.take(1)).thenReturn(Optional.of(new IrrigationCommand(12, 1, 7, IrrigationCommand.AI,
+				new BigDecimal("0.8")))).thenReturn(Optional.empty());
 		DeviceIngestionFacade facade = new DeviceIngestionFacade(events, mock(PredictionService.class),
-				mock(AiConfigManager.class), pending, Duration.ZERO, Clock.systemUTC());
+				mock(AiConfigManager.class), pending, new DeviceRateLimiter(0), Duration.ZERO, Clock.systemUTC());
 
 		Map<String, Object> first = facade.ingest("key", new DeviceEventRequest());
-		assertThat(first.get("command")).isEqualTo(Map.of("type", "irrigate", "source", "AI", "minutes", 7,
+		assertThat(first.get("command")).isEqualTo(Map.of("id", 12, "type", "irrigate", "source", "AI", "minutes", 7,
 				"confidence", new BigDecimal("0.8")));
 		assertThat(facade.ingest("key", new DeviceEventRequest())).doesNotContainKey("command");
+
+		DeviceEventRequest confirmed = new DeviceEventRequest();
+		confirmed.setAck(JsonMapper.builder().build().readTree("{\"command_id\":12,\"result\":\"refused\"}"));
+		facade.ingest("key", confirmed);
+		verify(pending).confirm(1, 12, false);
 	}
 }

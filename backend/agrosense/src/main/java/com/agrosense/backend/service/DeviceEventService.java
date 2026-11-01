@@ -11,6 +11,7 @@ import com.agrosense.backend.models.Device;
 import com.agrosense.backend.models.Sensor;
 import com.agrosense.backend.pattern.structural.adapter.SensorReadingData;
 import com.agrosense.backend.pattern.structural.facade.SensorFacade;
+import com.agrosense.backend.repository.SensorReadingRepository;
 import com.agrosense.backend.repository.SensorRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -50,13 +51,13 @@ public class DeviceEventService {
 
     private final DeviceService deviceService;
     private final SensorRepository sensorRepository;
+    private final SensorReadingRepository readingRepository;
     private final SensorFacade sensorFacade;
     private final Clock clock = Clock.systemDefaultZone();
 
     @Transactional
     public Map<String, Object> receive(String deviceCode, String deviceKey, String type, JsonNode ts, JsonNode data) {
-        Device device = deviceService.authenticate(deviceCode, deviceKey)
-                .orElseThrow(() -> new ApiException(HttpStatus.UNAUTHORIZED, "Dispositivo desconocido o llave incorrecta."));
+        Device device = deviceService.require(deviceCode, deviceKey);
         Crop crop = device.getCrop();
         LocalDateTime when = timeOf(ts);
         if (data == null || !data.isObject()) {
@@ -66,7 +67,7 @@ public class DeviceEventService {
         List<AlertResponse> alerts = new ArrayList<>();
         String kind = type == null ? "" : type.trim().toLowerCase(Locale.ROOT);
         switch (kind) {
-            case READING -> readings(crop, when, data, readings, alerts);
+            case READING -> readings(crop, when, ts != null && !ts.isNull(), data, readings, alerts);
             case ALERT -> alert(crop, data).map(AlertResponse::from).ifPresent(alerts::add);
             default -> throw invalid("El tipo de evento debe ser 'reading' o 'alert'.");
         }
@@ -85,8 +86,8 @@ public class DeviceEventService {
         return answer;
     }
 
-    private void readings(Crop crop, LocalDateTime when, JsonNode data, List<SensorReadingResponse> readings,
-            List<AlertResponse> alerts) {
+    private void readings(Crop crop, LocalDateTime when, boolean stamped, JsonNode data,
+            List<SensorReadingResponse> readings, List<AlertResponse> alerts) {
         if (data.isEmpty()) {
             throw invalid("Una lectura necesita al menos una medida en 'data', por ejemplo {\"soil_moisture\": 31.5}.");
         }
@@ -102,6 +103,10 @@ public class DeviceEventService {
             String sensorCode = given.isObject() && given.hasNonNull("sensor_code")
                     ? given.get("sensor_code").asString("") : null;
             Sensor sensor = sensorFor(crop, active, type, name, value, sensorCode);
+            // A device stamps an event when it measures, so a retry arrives with the same time: already stored.
+            if (stamped && readingRepository.existsBySensorIdSensorAndRecordedAt(sensor.getIdSensor(), when)) {
+                continue;
+            }
             SensorFacade.Recorded recorded = sensorFacade.record(SensorReadingData.builder()
                     .sensorCode(sensor.getSensorCode()).value(value).recordedAt(when).build());
             readings.add(SensorReadingResponse.from(recorded.reading()));

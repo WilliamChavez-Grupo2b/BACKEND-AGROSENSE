@@ -1,32 +1,64 @@
 package com.agrosense.backend;
 
 import com.agrosense.backend.domain.enums.AlertType;
+import com.agrosense.backend.domain.enums.DispatchStatus;
+import com.agrosense.backend.domain.enums.SensorType;
 import com.agrosense.backend.dto.request.CropRequest;
+import com.agrosense.backend.dto.request.DeviceEventRequest;
+import com.agrosense.backend.dto.request.IrrigationRequest;
 import com.agrosense.backend.dto.response.CropResponse;
+import com.agrosense.backend.exception.ApiException;
+import com.agrosense.backend.models.Crop;
 import com.agrosense.backend.models.Device;
+import com.agrosense.backend.models.Irrigation;
+import com.agrosense.backend.models.Sensor;
+import com.agrosense.backend.models.SensorReading;
+import com.agrosense.backend.pattern.structural.adapter.SensorReadingData;
 import com.agrosense.backend.pattern.structural.adapter.WeatherProvider;
-import com.agrosense.backend.pattern.structural.adapter.WeatherProvider.ColdestDay;
+import com.agrosense.backend.pattern.structural.adapter.WeatherProvider.Outlook;
+import com.agrosense.backend.pattern.structural.bridge.IrrigationCommand;
+import com.agrosense.backend.pattern.structural.bridge.PendingIrrigationCommands;
+import com.agrosense.backend.pattern.structural.facade.DeviceIngestionFacade;
+import com.agrosense.backend.pattern.structural.facade.SensorFacade;
 import com.agrosense.backend.repository.AlertRepository;
+import com.agrosense.backend.repository.CropRepository;
 import com.agrosense.backend.repository.DeviceRepository;
 import com.agrosense.backend.repository.EstateRepository;
+import com.agrosense.backend.repository.IrrigationDispatchRepository;
+import com.agrosense.backend.repository.IrrigationRepository;
+import com.agrosense.backend.repository.SensorReadingRepository;
+import com.agrosense.backend.repository.SensorRepository;
 import com.agrosense.backend.service.EstateCropService;
 import com.agrosense.backend.service.FieldWatchService;
+import com.agrosense.backend.service.IrrigationService;
+import com.agrosense.backend.service.PredictionService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.http.HttpStatus;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.json.JsonMapper;
 
 import java.math.BigDecimal;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.Arrays;
+import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 
-/** Against the real schema: its CHECK has to accept the two new alert types. */
+/** Against the real schema: its CHECK has to accept the new alert types, and the orders have to live in its tables. */
 @SpringBootTest(properties = {
 		"spring.datasource.url=jdbc:h2:mem:agrosense-field-watch;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;DEFAULT_NULL_ORDERING=HIGH;DB_CLOSE_DELAY=-1",
 		"spring.datasource.username=sa",
@@ -38,12 +70,17 @@ import static org.mockito.Mockito.when;
 		"agrosense.seed.device-key=demo-device-key-for-tests",
 		"events.internal-key=internal-key-of-the-events",
 		"events.stream-secret=stream-secret-of-at-least-32-bytes",
-		"login.max-attempts-per-address=0"
+		"login.max-attempts-per-address=0",
+		"devices.max-events-per-minute=5",
+		"readings.retention-days=30"
 })
 @ActiveProfiles("seed")
 class FieldWatchIntegrationTests {
 
 	private static final String EMAIL = "demo@agrosense.co";
+	private static final String DEVICE = "RPI-DEMO-01";
+	private static final String KEY = "demo-device-key-for-tests";
+	private static final JsonMapper JSON = JsonMapper.builder().build();
 
 	@Autowired
 	private FieldWatchService watch;
@@ -55,38 +92,101 @@ class FieldWatchIntegrationTests {
 	private EstateRepository estates;
 	@Autowired
 	private EstateCropService crops;
+	@Autowired
+	private CropRepository cropRepository;
+	@Autowired
+	private SensorRepository sensors;
+	@Autowired
+	private SensorReadingRepository readings;
+	@Autowired
+	private SensorFacade sensorFacade;
+	@Autowired
+	private DeviceIngestionFacade ingestion;
+	@Autowired
+	private IrrigationDispatchRepository dispatches;
+	@Autowired
+	private PendingIrrigationCommands pending;
+	@Autowired
+	private IrrigationRepository irrigations;
+	@Autowired
+	private IrrigationService irrigationService;
+	@Autowired
+	private PredictionService predictions;
+	@Autowired
+	private com.agrosense.backend.service.ReadingRetentionService retention;
+	@Autowired
+	private JdbcTemplate jdbc;
 	@MockitoBean
 	private WeatherProvider weather;
 
-	private long openOf(AlertType type) {
+	private long allOf(AlertType type) {
 		return alerts.findAll().stream().filter(alert -> alert.getAlertType() == type).count();
 	}
 
-	@Test
-	void aDeviceThatStoppedReportingRaisesOneAlert() {
-		watch.watchSilentDevices();
-		assertThat(openOf(AlertType.SENSOR_OFFLINE)).as("a device that never reported is not silent").isZero();
+	private void answerAll(AlertType type) {
+		alerts.findAll().stream().filter(alert -> alert.getAlertType() == type).forEach(alert -> {
+			alert.setAcknowledged(true);
+			alerts.save(alert);
+		});
+	}
 
-		Device device = devices.findByDeviceCode("RPI-DEMO-01").orElseThrow();
+	private Integer cropOfTheDevice() {
+		return jdbc.queryForObject("SELECT id_crop FROM devices WHERE device_code = ?", Integer.class, DEVICE);
+	}
+
+	private Sensor firstSensor(SensorType type) {
+		return sensors.findByCropIdCropAndActiveTrue(cropOfTheDevice()).stream()
+				.filter(sensor -> sensor.getSensorType() == type).findFirst().orElseThrow();
+	}
+
+	private static DeviceEventRequest event(String device, String json) {
+		DeviceEventRequest request = new DeviceEventRequest();
+		request.setDeviceId(device);
+		request.setType("reading");
+		JsonNode body = JSON.readTree(json);
+		request.setTs(body.get("ts"));
+		request.setData(body.get("data"));
+		request.setAck(body.get("ack"));
+		return request;
+	}
+
+	@Test
+	void aDeviceThatStoppedReportingRaisesOneAlertAndItStaysAnsweredOnceAnswered() {
+		watch.watchSilentDevices();
+		assertThat(allOf(AlertType.SENSOR_OFFLINE)).as("a device that never reported is not silent").isZero();
+
+		Device device = devices.findByDeviceCode(DEVICE).orElseThrow();
 		device.setLastEventAt(LocalDateTime.now().minusHours(1));
 		devices.save(device);
 
 		watch.watchSilentDevices();
 		watch.watchSilentDevices();
-		assertThat(openOf(AlertType.SENSOR_OFFLINE)).isEqualTo(1);
+		assertThat(allOf(AlertType.SENSOR_OFFLINE)).isEqualTo(1);
+
+		answerAll(AlertType.SENSOR_OFFLINE);
+		watch.watchSilentDevices();
+		assertThat(allOf(AlertType.SENSOR_OFFLINE)).as("still the same silence").isEqualTo(1);
 	}
 
 	@Test
-	void aForecastFrostRaisesAnAlertOnTheCropsOfTheEstate() {
-		when(weather.coldestDayAhead(any(), any())).thenReturn(
-				Optional.of(new ColdestDay(LocalDate.now().plusDays(1), new BigDecimal("0.5"))));
+	void aForecastFrostRaisesAnAlertOnTheCropsOfTheEstateAndDoesNotRepeatEachHour() {
+		when(weather.outlook(any(), any())).thenReturn(
+				Optional.of(new Outlook(LocalDate.now().plusDays(1), new BigDecimal("0.5"), 10, BigDecimal.ZERO)));
 
 		watch.watchFrost();
-		long raised = openOf(AlertType.FROST_RISK);
+		long raised = allOf(AlertType.FROST_RISK);
+		watch.watchFrost();
+		answerAll(AlertType.FROST_RISK);
 		watch.watchFrost();
 
 		assertThat(raised).isPositive();
-		assertThat(openOf(AlertType.FROST_RISK)).isEqualTo(raised);
+		assertThat(allOf(AlertType.FROST_RISK)).isEqualTo(raised);
+	}
+
+	@Test
+	void aFailingForecastDoesNotStopTheRound() {
+		when(weather.outlook(any(), any())).thenThrow(new IllegalStateException("weather down"));
+		watch.watchFrost();
 	}
 
 	@Test
@@ -102,5 +202,157 @@ class FieldWatchIntegrationTests {
 
 		assertThat(crop.getHumidityMin()).isEqualByComparingTo("60");
 		assertThat(crop.getPhMin()).isEqualByComparingTo("4.5");
+	}
+
+	@Test
+	void anOrderIsDeliveredOnceAndItsResultIsRecorded() {
+		Integer crop = cropOfTheDevice();
+		pending.offer(new IrrigationCommand(crop, 5, IrrigationCommand.AI, new BigDecimal("0.8")));
+		pending.offer(new IrrigationCommand(crop, 7, IrrigationCommand.MANUAL, null));
+
+		IrrigationCommand first = pending.take(crop).orElseThrow();
+		assertThat(first.minutes()).as("the newest order replaces the older one").isEqualTo(7);
+		assertThat(pending.take(crop)).as("never twice").isEmpty();
+
+		assertThat(pending.confirm(crop + 1000, first.id(), true)).as("not another crop's").isFalse();
+		assertThat(pending.confirm(crop, first.id(), true)).isTrue();
+		assertThat(pending.confirm(crop, first.id(), false)).as("only once").isFalse();
+		assertThat(dispatches.findById(first.id()).orElseThrow().getStatus()).isEqualTo(DispatchStatus.STARTED);
+		assertThat(dispatches.findById(first.id()).orElseThrow().getConfirmedAt()).isNotNull();
+	}
+
+	@Test
+	void anOrderThatWaitedTooLongExpires() {
+		Integer crop = cropOfTheDevice();
+		pending.offer(new IrrigationCommand(crop, 5, IrrigationCommand.MANUAL, null));
+		jdbc.update("UPDATE irrigation_dispatches SET expires_at = ? WHERE status = 'PENDING'",
+				LocalDateTime.now().minusSeconds(1));
+
+		assertThat(pending.take(crop)).isEmpty();
+		assertThat(dispatches.findAll()).noneMatch(dispatch -> dispatch.getStatus() == DispatchStatus.PENDING);
+	}
+
+	@Test
+	void theDeviceIsAuthenticatedEachWayAndALimitProtectsTheRoute() {
+		String reading = "{\"data\":{\"ph\":6.4}}";
+
+		assertThatThrownBy(() -> ingestion.ingest(" ", event("LIMIT-A", reading)))
+				.isInstanceOfSatisfying(ApiException.class, failure ->
+						assertThat(failure.getStatus()).isEqualTo(HttpStatus.UNAUTHORIZED));
+		assertThatThrownBy(() -> ingestion.ingest("other-devices-key", event(DEVICE, reading)))
+				.isInstanceOfSatisfying(ApiException.class, failure ->
+						assertThat(failure.getStatus()).isEqualTo(HttpStatus.FORBIDDEN));
+		assertThatThrownBy(() -> ingestion.ingest(KEY, event("NOT-A-DEVICE", reading)))
+				.isInstanceOfSatisfying(ApiException.class, failure ->
+						assertThat(failure.getStatus()).isEqualTo(HttpStatus.FORBIDDEN));
+
+		Device device = devices.findByDeviceCode(DEVICE).orElseThrow();
+		device.setActive(false);
+		devices.save(device);
+		try {
+			assertThatThrownBy(() -> ingestion.ingest(KEY, event(DEVICE, reading)))
+					.isInstanceOfSatisfying(ApiException.class, failure ->
+							assertThat(failure.getStatus()).isEqualTo(HttpStatus.CONFLICT));
+		} finally {
+			device.setActive(true);
+			devices.save(device);
+		}
+
+		for (int attempt = 0; attempt < 5; attempt++) {
+			assertThatThrownBy(() -> ingestion.ingest("x", event("LIMIT-B", reading)))
+					.isInstanceOfSatisfying(ApiException.class, failure ->
+							assertThat(failure.getStatus()).isEqualTo(HttpStatus.FORBIDDEN));
+		}
+		assertThatThrownBy(() -> ingestion.ingest("x", event("LIMIT-B", reading)))
+				.isInstanceOfSatisfying(ApiException.class, failure ->
+						assertThat(failure.getStatus()).isEqualTo(HttpStatus.TOO_MANY_REQUESTS));
+	}
+
+	@Test
+	void aRetriedEventDoesNotDuplicateItsReadings() {
+		Sensor ph = firstSensor(SensorType.PH);
+		String stamped = "{\"ts\":1793000000,\"data\":{\"ph\":6.4}}";
+		long before = readings.count();
+
+		ingestion.ingest(KEY, event(DEVICE, stamped));
+		ingestion.ingest(KEY, event(DEVICE, stamped));
+
+		assertThat(readings.count()).isEqualTo(before + 1);
+		assertThat(ph.getSensorCode()).isNotBlank();
+	}
+
+	@Test
+	void anImpossibleOrStuckValueRaisesASensorFault() {
+		Sensor moisture = firstSensor(SensorType.SOIL_MOISTURE);
+		for (int reading = 0; reading < 10; reading++) {
+			sensorFacade.record(SensorReadingData.builder().sensorCode(moisture.getSensorCode())
+					.value(new BigDecimal("100")).recordedAt(LocalDateTime.now().plusSeconds(reading)).build());
+		}
+		assertThat(allOf(AlertType.SENSOR_FAULT)).isEqualTo(1);
+		assertThat(alerts.findAll().stream().filter(alert -> alert.getAlertType() == AlertType.SENSOR_FAULT)
+				.findFirst().orElseThrow().getMessage()).contains("10 lecturas");
+
+		answerAll(AlertType.SENSOR_FAULT);
+		sensorFacade.record(SensorReadingData.builder().sensorCode(moisture.getSensorCode())
+				.value(new BigDecimal("140")).recordedAt(LocalDateTime.now().plusMinutes(1)).build());
+		assertThat(allOf(AlertType.SENSOR_FAULT)).isEqualTo(2);
+	}
+
+	@Test
+	void anIrrigationNotesTheMoistureItLeftAndTeachesTheGainPerMinute() {
+		Integer cropId = cropOfTheDevice();
+		Crop crop = cropRepository.findById(cropId).orElseThrow();
+		IrrigationRequest request = new IrrigationRequest();
+		request.setCropId(cropId);
+		request.setDurationMinutes(10);
+		request.setWaterLiters(new BigDecimal("50"));
+		request.setReason("Prueba");
+		sensorFacade.record(SensorReadingData.builder().sensorCode(firstSensor(SensorType.SOIL_MOISTURE).getSensorCode())
+				.value(new BigDecimal("30")).recordedAt(LocalDateTime.now().plusHours(1)).build());
+		Integer id = irrigationService.register(EMAIL, request).getIdIrrigation();
+		Irrigation irrigation = irrigations.findById(id).orElseThrow();
+		assertThat(irrigation.getMoistureBefore()).isEqualByComparingTo("30");
+
+		irrigation.setStartedAt(LocalDateTime.now().minusHours(3));
+		irrigation.setEndedAt(LocalDateTime.now().minusHours(2));
+		irrigations.save(irrigation);
+		sensorFacade.record(SensorReadingData.builder().sensorCode(firstSensor(SensorType.SOIL_MOISTURE).getSensorCode())
+				.value(new BigDecimal("50")).recordedAt(LocalDateTime.now().plusHours(2)).build());
+
+		irrigationService.recordResults();
+
+		assertThat(irrigations.findById(id).orElseThrow().getMoistureAfter()).isEqualByComparingTo("50");
+		assertThat(irrigationService.moistureGainPerMinute(cropId)).isEqualByComparingTo("2.0000");
+		assertThat(crop.getName()).isNotBlank();
+		assertThat(predictions.currentConditions(EMAIL, cropId)).containsKey("moisture_gain_per_minute");
+	}
+
+	@Test
+	void oldReadingsBecomeHourlySummaries() {
+		Integer sensor = firstSensor(SensorType.AIR_TEMPERATURE).getIdSensor();
+		LocalDateTime old = LocalDateTime.now().minusDays(40).withMinute(10);
+		readings.save(SensorReading.builder().sensor(sensors.findById(sensor).orElseThrow())
+				.value(new BigDecimal("20")).recordedAt(old).quality("OK").unit("°C").build());
+		readings.save(SensorReading.builder().sensor(sensors.findById(sensor).orElseThrow())
+				.value(new BigDecimal("24")).recordedAt(old.plusMinutes(5)).quality("OK").unit("°C").build());
+
+		retention.compact();
+
+		assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM sensor_readings WHERE recorded_at < ?", Long.class,
+				LocalDateTime.now().minusDays(30))).isZero();
+		Map<String, Object> summary = jdbc.queryForMap(
+				"SELECT avg_value, samples FROM sensor_readings_hourly WHERE id_sensor = ? ORDER BY hour_start DESC LIMIT 1",
+				sensor);
+		assertThat(new BigDecimal(summary.get("avg_value").toString())).isEqualByComparingTo("22");
+		assertThat(summary.get("samples")).isEqualTo(2);
+	}
+
+	@Test
+	void schemaAndMigrationsAllowEveryAlertType() throws Exception {
+		Path database = Path.of("../../database");
+		List<String> types = Arrays.stream(AlertType.values()).map(type -> "'" + type.name() + "'").toList();
+		assertThat(Files.readString(database.resolve("schema.sql"))).contains(types);
+		assertThat(Files.readString(database.resolve("migrations/002_alert_types.sql"))).contains(types);
+		assertThat(Duration.ofMinutes(5)).isEqualTo(PendingIrrigationCommands.EXPIRES_AFTER);
 	}
 }

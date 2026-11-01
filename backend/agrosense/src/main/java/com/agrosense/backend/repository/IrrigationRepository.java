@@ -5,6 +5,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 
+import java.time.LocalDateTime;
 import java.util.List;
 
 public interface IrrigationRepository extends JpaRepository<Irrigation, Integer> {
@@ -15,4 +16,10 @@ public interface IrrigationRepository extends JpaRepository<Irrigation, Integer>
 
     @EntityGraph(attributePaths = "crop")
     List<Irrigation> findByCropEstateUserEmailOrderByStartedAtDesc(String email, Pageable pageable);
+
+    @EntityGraph(attributePaths = "crop")
+    List<Irrigation> findByMoistureBeforeIsNotNullAndMoistureAfterIsNullAndEndedAtBefore(LocalDateTime limit);
+
+    List<Irrigation> findByCropIdCropAndMoistureAfterIsNotNullAndDurationMinIsNotNullOrderByStartedAtDesc(
+            Integer idCrop, Pageable pageable);
 }

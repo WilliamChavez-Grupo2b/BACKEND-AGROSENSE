@@ -18,6 +18,9 @@ public interface CropRepository extends JpaRepository<Crop, Integer> {
     @EntityGraph(attributePaths = {"estate", "estate.user"})
     List<Crop> findByActiveTrueAndEstateLatitudeIsNotNull();
 
+    @EntityGraph(attributePaths = "estate")
+    Optional<Crop> findWithEstateByIdCrop(Integer idCrop);
+
     List<Crop> findByEstateIdEstate(Integer idEstate);
 
     Optional<Crop> findByIdCropAndEstateUserEmail(Integer idCrop, String email);

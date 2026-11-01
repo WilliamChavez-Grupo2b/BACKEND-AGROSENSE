@@ -7,6 +7,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
@@ -19,6 +20,8 @@ public interface AlertRepository extends JpaRepository<Alert, Integer> {
     List<Alert> findBySeverityAndAcknowledgedFalse(Severity severity);
 
     boolean existsByCropIdCropAndAlertTypeAndAcknowledgedFalse(Integer idCrop, AlertType alertType);
+
+    boolean existsByCropIdCropAndAlertTypeAndCreatedAtAfter(Integer idCrop, AlertType alertType, LocalDateTime since);
 
     @EntityGraph(attributePaths = "crop")
     List<Alert> findByCropEstateUserEmailAndAcknowledgedFalseOrderByCreatedAtDesc(String email, Pageable pageable);

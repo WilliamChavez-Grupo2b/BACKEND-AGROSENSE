@@ -272,7 +272,9 @@ class ApiIntegrationTests {
 
 		HttpResponse<String> impossible = send("POST", "/api/readings", auth, "{\"sensorCode\":\"AS-003\",\"value\":99}");
 		assertThat(impossible.body()).contains("\"quality\":\"OUT_OF_RANGE\"");
-		assertThat(alertRepository.count()).isEqualTo(alertsBefore + 1);
+		assertThat(alertRepository.count()).as("no crop-range alert, only the sensor's fault").isEqualTo(alertsBefore + 2);
+		assertThat(alertRepository.findByCropIdCropAndAcknowledgedFalse(temperature.getCrop().getIdCrop()).stream()
+				.filter(alert -> alert.getAlertType() == AlertType.SENSOR_FAULT)).hasSize(1);
 
 		assertThat(sensorRepository.findBySensorCode("AS-002").orElseThrow().getLastReadingAt()).isNotNull();
 		HttpResponse<String> latest = send("GET",

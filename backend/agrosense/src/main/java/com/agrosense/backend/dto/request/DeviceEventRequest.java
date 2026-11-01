@@ -15,4 +15,6 @@ public class DeviceEventRequest {
     private JsonNode ts;
 
     private JsonNode data;
+
+    private JsonNode ack;
 }

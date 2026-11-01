@@ -20,28 +20,36 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
-/** The alerts no reading can raise: a device that stopped reporting and a frost that has not arrived yet. */
+/**
+ * What no reading can raise: a device that stopped reporting and a frost that has not arrived yet. Both last longer
+ * than their alert, so one already raised is not repeated, even if someone answered it. A failure on one crop or
+ * estate is logged and the round goes on.
+ */
 @Slf4j
 @Service
 public class FieldWatchService {
+
+    private static final int FROST_REPEAT_HOURS = 24;
 
     private final DeviceRepository deviceRepository;
     private final CropRepository cropRepository;
     private final SensorFacade sensorFacade;
     private final WeatherProvider weather;
+    private final IrrigationService irrigationService;
     private final int silentMinutes;
     private final boolean frostWatch;
     private final SensorOfflineAlertCreator offline = new SensorOfflineAlertCreator();
     private final FrostRiskAlertCreator frost = new FrostRiskAlertCreator();
 
     public FieldWatchService(DeviceRepository deviceRepository, CropRepository cropRepository,
-            SensorFacade sensorFacade, WeatherProvider weather,
+            SensorFacade sensorFacade, WeatherProvider weather, IrrigationService irrigationService,
             @Value("${alerts.device-silent-minutes:15}") int silentMinutes,
             @Value("${alerts.frost-watch:true}") boolean frostWatch) {
         this.deviceRepository = deviceRepository;
         this.cropRepository = cropRepository;
         this.sensorFacade = sensorFacade;
         this.weather = weather;
+        this.irrigationService = irrigationService;
         this.silentMinutes = silentMinutes;
         this.frostWatch = frostWatch;
     }
@@ -53,7 +61,8 @@ public class FieldWatchService {
         }
         LocalDateTime limit = LocalDateTime.now().minusMinutes(silentMinutes);
         for (Device device : deviceRepository.findByActiveTrueAndCropActiveTrueAndLastEventAtBefore(limit)) {
-            sensorFacade.raise(offline, AlertContext.ofSilentDevice(device.getCrop(), device.getDeviceCode(),
+            guarded("silent device " + device.getDeviceCode(), () -> sensorFacade.raiseOnceSince(offline,
+                    AlertContext.ofSilentDevice(device.getCrop(), device.getDeviceCode(), device.getLastEventAt()),
                     device.getLastEventAt()));
         }
     }
@@ -65,8 +74,23 @@ public class FieldWatchService {
         }
         Map<Estate, List<Crop>> byEstate = cropRepository.findByActiveTrueAndEstateLatitudeIsNotNull().stream()
                 .collect(Collectors.groupingBy(Crop::getEstate));
-        byEstate.forEach((estate, crops) -> weather.coldestDayAhead(estate.getLatitude(), estate.getLongitude())
-                .ifPresent(day -> crops.forEach(crop -> sensorFacade.raise(frost,
-                        AlertContext.ofForecast(crop, day.minimumTemperature(), day.date())))));
+        LocalDateTime since = LocalDateTime.now().minusHours(FROST_REPEAT_HOURS);
+        byEstate.forEach((estate, crops) -> guarded("frost at estate " + estate.getIdEstate(), () ->
+                weather.outlook(estate.getLatitude(), estate.getLongitude()).ifPresent(outlook -> crops.forEach(crop ->
+                        sensorFacade.raiseOnceSince(frost, AlertContext.ofForecast(crop, outlook.minimumTemperature(),
+                                outlook.coldestDay()), since)))));
+    }
+
+    @Scheduled(initialDelay = 600_000, fixedDelay = 600_000)
+    public void recordIrrigationResults() {
+        guarded("irrigation results", irrigationService::recordResults);
+    }
+
+    private static void guarded(String what, Runnable work) {
+        try {
+            work.run();
+        } catch (RuntimeException failure) {
+            log.warn("Field watch failed on {}: {}", what, failure.getMessage());
+        }
     }
 }
