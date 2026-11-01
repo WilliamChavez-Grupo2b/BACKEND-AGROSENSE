@@ -139,6 +139,10 @@ class DesignPatternTests {
 		assertThat(target.getHumidityMin()).isEqualByComparingTo("70");
 		assertThat(target.getTempMax()).isEqualByComparingTo("24");
 		assertThatThrownBy(() -> catalog.cloneOf("TRIGO")).isInstanceOf(BusinessRuleException.class);
+
+		CropTemplate listed = catalog.all().stream().filter(item -> item.getKey().equals("TOMATE")).findFirst().orElseThrow();
+		listed.getHumidity().setMin(BigDecimal.ONE);
+		assertThat(catalog.cloneOf("tomate").getHumidity().getMin()).isEqualByComparingTo("60");
 	}
 
 	@Test

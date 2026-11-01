@@ -24,12 +24,14 @@ public final class CropTemplate implements Cloneable {
     }
 
     private final String key;
+    private final String label;
     private Range humidity;
     private Range temperature;
     private Range ph;
 
-    public CropTemplate(String key, Range humidity, Range temperature, Range ph) {
+    public CropTemplate(String key, String label, Range humidity, Range temperature, Range ph) {
         this.key = key;
+        this.label = label;
         this.humidity = humidity;
         this.temperature = temperature;
         this.ph = ph;
