@@ -17,11 +17,14 @@ simulador de dispositivo para pruebas.
 
 | Parte | Comando | Resultado del 1 de noviembre de 2026 |
 |---|---|---|
-| Backend | `cd backend/agrosense && ./mvnw test` | 135 pruebas, 0 fallos, 3 omitidas (PostgreSQL) |
-| Frontend, Java | `cd frontend && ./mvnw test` | 109 pruebas, 0 fallos, 2 omitidas (PostgreSQL) |
-| Frontend, TypeScript | `cd frontend && npm run build && npm test` | 9 pruebas, 0 fallos |
-| IA, patrones | `cd IA && python -m unittest tests.test_patterns` | 14 pruebas, 0 fallos |
-| Firmware | `sh firmware/test/run-tests.sh` | 108 comprobaciones, 0 fallos; la capa de la placa solo se compiló contra stubs |
+| Backend | `cd backend/agrosense && ./mvnw test` | 144 pruebas, 0 fallos, 3 omitidas (PostgreSQL) |
+| Frontend, Java | `cd frontend && ./mvnw test` | 113 pruebas, 0 fallos, 2 omitidas (PostgreSQL) |
+| Frontend, TypeScript | `cd frontend && npm run build && npm test` | 10 pruebas, 0 fallos |
+| IA, patrones y reglas | `cd IA && python -m unittest tests.test_patterns tests.test_rules` | 31 pruebas, 0 fallos |
+| Firmware en el PC | `sh firmware/test/run-tests.sh` | 213 comprobaciones, 0 fallos |
+| Firmware con el compilador real | `sh firmware/test/compile.sh` | Compila; 33 % de flash y 46 % de RAM. No ejecutado en una placa |
+
+Las suites FastAPI de `IA/` y `event-service/` no pueden correr en este equipo: quedan para CI (`.github/workflows/agrosense.yml`).
 
 ## 1. Singleton
 
@@ -109,6 +112,10 @@ classDiagram
 La copia es profunda porque `Range` es mutable: cambiar un cultivo nunca toca el catálogo.
 
 Los rangos del catálogo son valores de partida, no recomendaciones agronómicas validadas.
+
+**Uso real limitado:** hoy solo se llega a las plantillas por `POST /api/cultivos`. El formulario web crea cultivos con
+`CatalogService`, por JPA, y no las ofrece. Para que el patrón se note en la demo faltaría un selector de plantilla en ese
+formulario.
 
 ## 3. Builder
 
@@ -219,8 +226,9 @@ nuevas no nacen de una lectura: un dispositivo callado y un pronóstico de helad
 |---|---|---|---|
 | `AlertCreator`, abstracta | Java | `B/pattern/creational/factory/alert/AlertCreator.java` | `factoryMethodMakesTheAlertOfEachRule` |
 | `LowMoistureAlertCreator`, `HighMoistureAlertCreator`, `HighTemperatureAlertCreator`, `LowTemperatureAlertCreator`, `PhOutOfRangeAlertCreator` | Java | La misma carpeta | `factoryMethodMakesTheAlertOfEachRule` |
-| `FrostRiskAlertCreator` | Java | La misma carpeta | `frostWinsOverLowTemperatureButOnlyInTheAir`, `aForecastFrostRaisesAnAlertOnTheCropsOfTheEstate` |
-| `SensorOfflineAlertCreator` | Java | La misma carpeta | `aSilentDeviceRaisesAnOfflineAlertThatNamesIt`, `aDeviceThatStoppedReportingRaisesOneAlert` |
+| `FrostRiskAlertCreator` | Java | La misma carpeta | `frostWinsOverLowTemperatureButOnlyInTheAir`, `aForecastFrostRaisesAnAlertOnTheCropsOfTheEstateAndDoesNotRepeatEachHour` |
+| `SensorOfflineAlertCreator` | Java | La misma carpeta | `aSilentDeviceRaisesAnOfflineAlertThatNamesIt`, `aDeviceThatStoppedReportingRaisesOneAlertAndItStaysAnsweredOnceAnswered` |
+| `SensorFaultAlertCreator` | Java | La misma carpeta | `anImpossibleOrStuckValueRaisesASensorFault` |
 | `SensorFactory`, **ya existía** | Java | `B/pattern/creational/factory/SensorFactory.java` | `PatternTests.factoryNormalisesTheCodeAndKnowsEveryTypesUnit` |
 
 `HighMoistureAlertCreator` y `LowTemperatureAlertCreator` no estaban en la lista pedida. Hacen falta para conservar dos
@@ -239,6 +247,7 @@ classDiagram
     class PhOutOfRangeAlertCreator
     class FrostRiskAlertCreator
     class SensorOfflineAlertCreator
+    class SensorFaultAlertCreator
     class AlertContext
     class SensorFacade
     class FieldWatchService
@@ -247,6 +256,7 @@ classDiagram
     AlertCreator <|-- PhOutOfRangeAlertCreator
     AlertCreator <|-- FrostRiskAlertCreator
     AlertCreator <|-- SensorOfflineAlertCreator
+    AlertCreator <|-- SensorFaultAlertCreator
     AlertCreator ..> AlertContext
     SensorFacade ..> AlertCreator
     FieldWatchService ..> AlertCreator
@@ -294,7 +304,7 @@ classDiagram
 
     class WeatherProvider {
         <<interface>>
-        +coldestDayAhead(latitude, longitude) Optional
+        +outlook(latitude, longitude) Optional
     }
     class OpenMeteoAdapter
     WeatherProvider <|.. OpenMeteoAdapter
@@ -311,10 +321,10 @@ simulado). Combinarlas por herencia daría cuatro clases, y una por cada novedad
 
 | Clase | Lenguaje | Archivo | Prueba |
 |---|---|---|---|
-| `IrrigationOrder`, `ManualIrrigationOrder`, `AiIrrigationOrder` | Java | `B/pattern/structural/bridge/` | `IrrigationBridgeTests.everyOrderWorksWithEveryDriver`, `aPredictionHasToEarnTheWater` |
-| `ActuatorDriver`, `RelayActuatorDriver`, `SimulatedActuatorDriver` | Java | `B/pattern/structural/bridge/` | `IrrigationBridgeTests.theFacadeHandsTheOrderToTheDeviceInItsAnswer` |
+| `IrrigationOrder`, `ManualIrrigationOrder`, `AiIrrigationOrder` | Java | `B/pattern/structural/bridge/` | `everyOrderWorksWithEveryDriver`, `aPredictionHasToEarnTheWater` en `IrrigationBridgeTests` |
+| `ActuatorDriver`, `RelayActuatorDriver`, `SimulatedActuatorDriver` | Java | `B/pattern/structural/bridge/` | `theFacadeHandsTheOrderToTheDeviceInItsAnswer`, `anOrderIsDeliveredOnceAndItsResultIsRecorded`, `anOrderThatWaitedTooLongExpires` |
 | `IrrigationOrder`, `ManualIrrigationOrder`, `AiIrrigationOrder` | C++ | `F/Irrigation.h` | `every_order_works_with_every_driver`, `the_device_has_the_last_word_on_an_ai_order` |
-| `ActuatorDriver`, `RelayDriver`, `SimulatedDriver` | C++ | `F/Irrigation.h` | `the_pump_stops_by_itself` |
+| `ActuatorDriver`, `RelayDriver`, `SimulatedDriver`, decorados por `PumpGuard` | C++ | `F/Irrigation.h` | `the_pump_stops_by_itself`, `no_order_runs_the_pump_past_the_absolute_maximum`, `the_interrupt_stops_the_pump_while_the_loop_is_blocked`, `the_daily_limit_cuts_and_then_refuses_until_the_next_day` |
 
 ```mermaid
 classDiagram
@@ -335,6 +345,7 @@ classDiagram
     class PendingIrrigationCommands {
         +offer(command)
         +take(cropId) Optional
+        +confirm(cropId, id, started) bool
     }
     IrrigationOrder <|-- ManualIrrigationOrder
     IrrigationOrder <|-- AiIrrigationOrder
@@ -357,11 +368,15 @@ sequenceDiagram
     B-->>E: evento guardado + command
     E-->>A: 200 con command
     A->>A: IrrigationOrder.execute() acciona el relé
+    A->>E: siguiente lectura con ack
+    E->>B: el resultado queda en irrigation_dispatches
 ```
 
 **Justificación.** Dos jerarquías unidas por composición: dos órdenes y dos drivers son dos pares de clases, no cuatro
 combinaciones. Cada orden pone sus condiciones, y el dispositivo tiene la última palabra sobre una orden de la IA porque
 es quien ve el suelo en ese momento.
+
+`PendingIrrigationCommands` guarda cada orden en `irrigation_dispatches`, así que sobrevive a un reinicio y deja constancia de si llegó y de qué hizo el dispositivo.
 
 Valores por defecto: `IRRIGATION_ACTUATOR=simulated` e `IRRIGATION_AI_ORDERS=false`. Hasta cambiarlos, el backend solo
 registra el riego, como antes, y la IA no ordena nada.
@@ -373,6 +388,7 @@ Meterlo todo en una clase impediría combinarlos o probarlos por separado.
 
 | Clase | Lenguaje | Archivo | Prueba |
 |---|---|---|---|
+| `PumpGuard`, sobre el driver de la bomba | C++ | `F/Irrigation.h` | `the_gap_between_runs_is_respected` |
 | `CapacitiveSoilSensor` → `MedianFilter` → `Calibration` → `RangeCheck` | C++ | `F/SensorChain.h` | `the_median_ignores_a_spike_and_needs_a_majority`, `calibration_maps_either_way_the_sensor_counts`, `range_check_clamps_near_the_limit_and_refuses_far_from_it`, `the_whole_chain_turns_raw_counts_into_a_percentage` |
 | `LoggingChatModel`, `RateLimitChatModel`, `CacheChatModel` | Python | `IA/agrosense_ia/ai_decorators.py` | `DecoratorTests` en `IA/tests/test_patterns.py` |
 | `CalibrationDecorator`, nuevo eslabón de la cadena existente | Java | `B/pattern/structural/decorator/CalibrationDecorator.java` | `decoratorCorrectsTheReadingBeforeItIsValidated` |
@@ -424,7 +440,7 @@ y su orden.
 | `DeviceIngestionFacade` | Java | `B/pattern/structural/facade/DeviceIngestionFacade.java` | `facadeStoresTheEventAndAsksForOnePredictionPerInterval`, `facadeNeverLosesAStoredEventOverAPrediction` |
 | `AgroSenseDevice` | C++ | `F/AgroSenseDevice.h` | `the_facade_measures_each_interval_and_sends`, `without_wifi_it_keeps_measuring_and_catches_up`, `the_order_in_an_answer_reaches_the_pump_through_the_facade` |
 | `ApiFacade` | TypeScript | `TS/facade.ts` | `describe('ApiFacade')` en `frontend/src/test/ts/api-patterns.test.mjs` |
-| `SensorFacade`, **ya existía** | Java | `B/pattern/structural/facade/SensorFacade.java` | Pruebas de integración del backend |
+| `SensorFacade`, **ya existía** | Java | `B/pattern/structural/facade/SensorFacade.java` | `readingsAreValidatedNormalisedAndRaiseAlertsOutsideTheCropRange` en `ApiIntegrationTests` |
 
 ```mermaid
 classDiagram
@@ -469,13 +485,14 @@ cargar con esa lógica.
 classDiagram
     class IBackend {
         <<interface>>
-        +post(json) BackendResponse
+        +begin(json) bool
+        +poll(response) SendState
     }
     class HttpBackend
     class BackendProxy {
         -char events_
-        +enqueue(json) bool
-        +flush() BackendResponse
+        +pending() int
+        +lost() int
     }
     IBackend <|.. HttpBackend
     IBackend <|.. BackendProxy
@@ -528,7 +545,7 @@ Los repositorios siguen la sección 1 de `ARQUITECTURA.md`. `firmware/` todavía
 | Abstract Factory | IA-AGROSENSE | `AiProviderFactory` y sus familias | `IA/agrosense_ia/ai_factory.py` |
 | Abstract Factory | firmware | `HardwareFactory`, `SimulatedHardwareFactory` | `firmware/agrosense/src/HardwareFactory.h` |
 | Abstract Factory | firmware | `RealHardwareFactory` | `firmware/agrosense/src/ArduinoPorts.h` |
-| Factory Method | BACKEND-AGROSENSE | `AlertCreator` y 7 subclases | `B/pattern/creational/factory/alert/` |
+| Factory Method | BACKEND-AGROSENSE | `AlertCreator` y 8 subclases | `B/pattern/creational/factory/alert/` |
 | Factory (existente) | BACKEND-AGROSENSE | `SensorFactory` | `B/pattern/creational/factory/SensorFactory.java` |
 | Adapter | IA-AGROSENSE | `GeminiAdapter`, `OpenAiCompatAdapter`, `AnthropicAdapter` | `IA/agrosense_ia/providers.py` |
 | Adapter | firmware | `Dht22Adapter`, `Sht31Adapter` | `firmware/agrosense/src/ClimateAdapters.h` |

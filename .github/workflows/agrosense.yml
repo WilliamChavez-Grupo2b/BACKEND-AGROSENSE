@@ -1,0 +1,167 @@
+# Everything in one place for the workspace. It only runs where the workspace itself is pushed: each published
+# repository keeps its own workflow. pytest of IA and event-service runs here because a machine with Windows
+# application control cannot load pydantic's native module.
+name: AgroSense
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+          cache-dependency-path: backend/agrosense/pom.xml
+      - name: Tests
+        working-directory: backend/agrosense
+        run: |
+          sed -i 's/\r$//' mvnw
+          chmod +x mvnw
+          ./mvnw -q -B test
+
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+          cache-dependency-path: frontend/pom.xml
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: TypeScript
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run typecheck
+          npm run build
+          git diff --exit-code -- src/main/resources/static/js
+          npm test
+      - name: Java
+        working-directory: frontend
+        run: |
+          sed -i 's/\r$//' mvnw
+          chmod +x mvnw
+          ./mvnw -q -B test
+
+  python:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        service: [IA, event-service, raspberry]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: pytest
+        working-directory: ${{ matrix.service }}
+        run: |
+          pip install -r requirements-dev.txt
+          python -m pytest -q
+
+  contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: The contract is consistent
+        working-directory: api
+        run: |
+          python tools/validate_spec.py
+          python -m unittest discover -s tests
+
+  firmware:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Logic on a PC
+        run: sh firmware/test/run-tests.sh
+      - uses: arduino/setup-arduino-cli@v2
+      - name: Real toolchain
+        run: |
+          arduino-cli core update-index
+          arduino-cli core install arduino:renesas_uno
+          arduino-cli lib install "DHT sensor library" "Adafruit SHT31 Library" "Adafruit Unified Sensor" ArduinoHttpClient ArduinoJson
+          sh firmware/test/compile.sh
+
+  end-to-end:
+    runs-on: ubuntu-latest
+    env:
+      INTERNAL: e2e-events-key
+      AI_KEY: e2e-ai-key
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+          cache-dependency-path: backend/agrosense/pom.xml
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: AI service
+        working-directory: IA
+        run: |
+          pip install -r requirements.txt
+          INTERNAL_API_KEY=$AI_KEY PORT=8000 nohup python -m agrosense_ia > /tmp/ia.log 2>&1 &
+      - name: Event service
+        working-directory: event-service
+        run: |
+          pip install -r requirements.txt
+          BACKEND_URL=http://127.0.0.1:9000 EVENTS_INTERNAL_KEY=$INTERNAL EVENTS_STREAM_SECRET=e2e-stream-secret-of-at-least-32-bytes \
+            PORT=8100 nohup python -m agrosense_events > /tmp/events.log 2>&1 &
+      - name: Backend on H2
+        working-directory: backend/agrosense
+        env:
+          SERVER_PORT: '9000'
+          PORT: '9000'
+          SPRING_PROFILES_ACTIVE: seed
+          DATABASE_URL: jdbc:h2:mem:e2e;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;DEFAULT_NULL_ORDERING=HIGH;DB_CLOSE_DELAY=-1
+          SPRING_DATASOURCE_URL: jdbc:h2:mem:e2e;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;DEFAULT_NULL_ORDERING=HIGH;DB_CLOSE_DELAY=-1
+          DATABASE_USERNAME: sa
+          DATABASE_PASSWORD: ''
+          SPRING_DATASOURCE_DRIVER_CLASS_NAME: org.h2.Driver
+          JWT_SECRET: e2e-secret-that-is-at-least-64-bytes-long-for-hs512-signatures-0123456789
+          SEED_USER_PASSWORD: e2e-password
+          SEED_DEVICE_KEY: e2e-device-key
+          EVENTS_STREAM_SECRET: e2e-stream-secret-of-at-least-32-bytes
+          LOGIN_MAX_ATTEMPTS_PER_ADDRESS: '0'
+          AI_SERVICE_URL: http://127.0.0.1:8000
+          IRRIGATION_ACTUATOR: relay
+          ALERTS_FROST_WATCH: 'false'
+        run: |
+          sed -i 's/\r$//' mvnw
+          chmod +x mvnw
+          EVENTS_INTERNAL_KEY=$INTERNAL AI_SERVICE_KEY=$AI_KEY nohup ./mvnw -q -B spring-boot:run \
+            -Dspring-boot.run.useTestClasspath=true > /tmp/backend.log 2>&1 &
+      - name: The road
+        env:
+          API_PASSWORD: e2e-password
+          DEVICE_KEY: e2e-device-key
+          BACKEND_URL: http://127.0.0.1:9000
+          EVENTS_URL: http://127.0.0.1:8100
+          EXPECT_MODEL: rules
+          E2E_WAIT_S: '180'
+        run: python tools/e2e/run_e2e.py
+      - name: Logs
+        if: failure()
+        run: tail -n 60 /tmp/ia.log /tmp/events.log /tmp/backend.log

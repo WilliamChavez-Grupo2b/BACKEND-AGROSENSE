@@ -15,6 +15,7 @@ disponibles, y dónde está desplegado cada componente.
 | `IA/`       | Servicio de IA (Python, FastAPI) que el backend llama en `AI_SERVICE_URL`: predicción de riego y asistente (`/chat`, `/voice`). |
 | `event-service/` | Manejador de eventos (Python, FastAPI): webhook de las Raspberry y canal en vivo (SSE) de cada usuario. |
 | `firmware/` | Firmware del dispositivo final, un Arduino UNO R4 WiFi (decisión 28). Pruebas en PC con g++. |
+| `tools/e2e/` | Recorrido completo sin hardware: evento, backend, alerta, predicción y orden de riego. |
 | `raspberry/` | Simulador de dispositivo para pruebas (decisión 28): envía cada 30 s al webhook, con reintentos y cola en SQLite. También lee un DHT22 y un sensor de suelo por MCP3008 si corre en una Raspberry Pi. |
 | `compose.yaml`, `.env.example` | Todos los servicios en una máquina (`docker compose up`) y todas sus variables. |
 
@@ -110,9 +111,9 @@ punteada es la desviación pendiente que se describe más abajo.
 
 ```mermaid
 flowchart LR
-    RPI["Raspberry Pi<br/>(wifi)"]
-    EV["Manejador de eventos<br/>event-service · Python"]
-    FE["Frontend<br/>TypeScript"]
+    RPI["Arduino UNO R4 WiFi<br/>o simulador (raspberry/)"]
+    EV["Manejador de eventos<br/>event-service · Python<br/>servicio aparte, también se duerme"]
+    FE["Frontend<br/>Java/Thymeleaf con scripts TypeScript"]
     BE["Backend<br/>Java · Spring Boot"]
     DB[("BD<br/>PostgreSQL")]
     IA["IA<br/>IA/ · Python"]
@@ -259,10 +260,10 @@ en el backend; en el frontend, `/health` es público y no abre sesión ni consul
 
 Orden: base de datos, backend, IA, manejador de eventos, frontend.
 
-1. **Base de datos:** ejecuta a mano `database/migrations/001_devices.sql` y
-   `database/migrations/002_alert_types.sql` en la base de producción (Neon) antes de desplegar el backend nuevo;
-   `database/README.md` explica cómo. El backend no arranca sin la tabla `devices`, y sin la migración 002 la base
-   rechaza las alertas `FROST_RISK` y `SENSOR_OFFLINE`.
+1. **Base de datos:** ejecuta a mano `database/migrations/001_devices.sql`, `002_alert_types.sql` y
+   `003_reliability.sql` en la base de producción (Neon) antes de desplegar el backend nuevo; `database/README.md`
+   explica cómo. El backend no arranca sin las tablas de la 001 y la 003, y sin la 002 la base rechaza las alertas
+   `FROST_RISK`, `SENSOR_OFFLINE` y `SENSOR_FAULT`.
 2. **IA** (`ia-agrosense`, ya existe): define `INTERNAL_API_KEY` (generada) y la llave del proveedor. Sigue
    aceptando el `AI_SERVICE_TOKEN` actual, así que el backend desplegado no se rompe mientras tanto.
 3. **Backend** (`BACKEND-AGROSENSE`): añade `AI_SERVICE_KEY` (= `INTERNAL_API_KEY`), `EVENTS_INTERNAL_KEY`,
@@ -274,7 +275,7 @@ Orden: base de datos, backend, IA, manejador de eventos, frontend.
 5. **Frontend** (Vercel): `EVENTS_PUBLIC_URL` con la dirección pública del manejador de eventos.
 
 **Alertas nuevas:** despliega el frontend con el enum `AlertType` actualizado antes que el backend que genera
-`FROST_RISK` y `SENSOR_OFFLINE`. El frontend lee esas filas con JPA, y una versión anterior falla al encontrar un tipo
+`FROST_RISK`, `SENSOR_OFFLINE` y `SENSOR_FAULT`. El frontend lee esas filas con JPA, y una versión anterior falla al encontrar un tipo
 que no conoce.
 
 **Plan gratuito:** Render duerme cada servicio tras unos 15 minutos sin uso y tarda entre 1 y 3 minutos en
@@ -456,15 +457,34 @@ done
     habla el mismo contrato que el programa de `raspberry/` (`POST /events`, `X-Device-Key`), que se conserva como
     simulador para probar sin placa. El dispositivo de ejemplo `RPI-DEMO-01` sigue siendo el del simulador.
 29. **Órdenes de riego por la respuesta del dispositivo.** No hay conexión hacia el campo: con
-    `IRRIGATION_ACTUATOR=relay` la orden espera en memoria y sale en la respuesta al siguiente evento del dispositivo.
-    Caduca a los 5 minutos y se pierde si el backend se reinicia, porque no regar es más seguro que regar tarde. Con
-    `simulated`, el valor por defecto, todo sigue como en la decisión 8. La IA solo ordena riegos con
-    `IRRIGATION_AI_ORDERS=true`, confianza de al menos 0,70, un modelo real y hasta 120 minutos, y el dispositivo
-    aún los rechaza con el suelo al 85 % o más.
+    `IRRIGATION_ACTUATOR=relay` la orden se guarda en `irrigation_dispatches` y sale en la respuesta al siguiente
+    evento del dispositivo, una sola vez. Caduca a los 5 minutos, porque no regar es más seguro que regar tarde, y el
+    dispositivo confirma el resultado en su evento siguiente (`ack`). Con `simulated`, el valor por defecto, todo sigue
+    como en la decisión 8. La IA solo ordena riegos con `IRRIGATION_AI_ORDERS=true`, confianza de al menos 0,70, un
+    modelo real y hasta 120 minutos, y el dispositivo aún los rechaza con el suelo al 85 % o más. La seguridad de la
+    bomba vive en el firmware y no depende de la red (`firmware/README.md`).
 30. **Vigilancia sin lecturas.** `FieldWatchService` revisa cada 5 minutos si un dispositivo que ya reportó lleva
     `ALERTS_DEVICE_SILENT_MINUTES` (15) sin hacerlo (`SENSOR_OFFLINE`), y cada hora el pronóstico de Open-Meteo de las
     fincas con coordenadas (`FROST_RISK`, mínima de 2 °C o menos; `ALERTS_FROST_WATCH`). Open-Meteo no necesita llave.
-    Con el plan gratuito de Render, un backend dormido no vigila.
+    Con el plan gratuito de Render, un backend dormido no vigila. Una alerta ya atendida no se repite mientras dure la
+    misma condición: `SENSOR_OFFLINE` hasta que el dispositivo reporte y vuelva a callar, `FROST_RISK` durante 24 horas.
+31. **Autenticación del dispositivo.** 401 sin llave, 403 con llave incorrecta o dispositivo desconocido (lo mismo para
+    no revelar qué códigos existen), 409 si está inactivo, 400 con datos inválidos y 429 por encima de
+    `DEVICE_MAX_EVENTS_PER_MINUTE`. La llave se muestra una vez y se guarda solo su SHA-256.
+32. **Reintentos sin duplicados.** Un evento con `ts` que ya está guardado para ese sensor no se guarda otra vez. Un
+    evento sin `ts`, como los que envía el Arduino antes de conocer la hora, sí podría duplicarse al reintentar.
+33. **`LOGIN_MAX_ATTEMPTS_PER_ADDRESS=0`.** Todas las peticiones de inicio de sesión llegan al backend desde la dirección
+    del frontend, así que un límite por dirección bloquearía a todos a la vez. Se apaga y queda el límite por cuenta
+    (`LOGIN_MAX_ATTEMPTS`, 5). La compensación es que un atacante puede probar pocas contraseñas en muchas cuentas sin
+    que nada lo frene. `frontend/docs/PENDIENTES.md` explica cómo recuperar la IP real.
+34. **Retención de lecturas apagada por defecto.** Con `READINGS_RETENTION_DAYS` (30 sería razonable), las lecturas
+    crudas más antiguas pasan a promedios por hora en `sensor_readings_hourly` y se borran. Cada dispositivo escribe unas
+    2 880 lecturas por sensor al día, unas 8 600 con tres sensores, y el plan gratuito de Neon tiene espacio limitado.
+    Está apagada porque borra datos y porque ni las gráficas ni los reportes leen aún los promedios: tras activarla, lo
+    anterior a ese plazo deja de verse. Decídelo mirando el tamaño real de la base.
+35. **Lecturas en vivo por SSE, no por `/ws`.** La decisión 26 sigue vigente: el navegador recibe lecturas y alertas del
+    manejador de eventos. El backend publica también por WebSocket, y una prueba lo comprueba, pero la interfaz no usa ese
+    canal. Añadir un segundo cliente duplicaría lo que ya funciona.
 
 ## 4. Estructura del frontend
 
@@ -623,7 +643,7 @@ De los servicios nuevos, la sección 2 («Cada conexión en el código») resume
 | Frontend      | Vercel, proyecto `agrosense-frontend`, contenedor | `https://agrosense-frontend-iota.vercel.app` |
 | Backend       | Render, servicio `BACKEND-AGROSENSE`, Docker, plan gratuito | `https://backend-agrosense-u5mz.onrender.com` |
 | Predicción de riego | Render, servicio `ia-agrosense`, Docker, plan gratuito, misma región que el backend | `https://ia-agrosense.onrender.com` |
-| Manejador de eventos | Sin desplegar todavía; `event-service/render.yaml` lo describe | — |
+| Manejador de eventos | Sin desplegar todavía; `event-service/render.yaml` lo describe. Será otro servicio de Render, que también se duerme | — |
 
 Los servicios nuevos de la rama `feature/arquitectura-servicios` (asistente por el servicio de IA,
 dispositivos, eventos en vivo) no están desplegados; el procedimiento está en la sección 2 («Desplegar en
@@ -684,15 +704,15 @@ Render»).
   ni se marca fuera de rango (antes se comparaba con el rango de humedad del suelo). Si se quiere alertar por
   ella, hace falta un rango propio en `crops`.
 - Dispositivos: listado, desactivación y cambio de llave (hoy solo el alta).
-- **Lecturas duplicadas: `eventId` único por evento y deduplicación en el backend** (propuesta del 20 de
-  octubre de 2026, sin implementar). Hoy un evento puede guardarse dos veces si el backend lo guarda pero
+- **Lecturas duplicadas: `eventId` único por evento** (propuesta del 20 de octubre de 2026). La decisión 32 ya
+  resuelve el caso común por `ts`; esto sigue siendo la mejora para eventos sin hora. Sin `ts`, un evento puede guardarse dos veces si el backend lo guarda pero
   la respuesta no llega a la Raspberry (tiempo agotado, corte de wifi): la Raspberry lo deja en su cola y
   lo reenvía. Cambios que implicaría:
   - *Raspberry:* generar un UUID por evento al medirlo, guardarlo con el evento en la cola SQLite y
     enviarlo igual en cada reintento (`"eventId"` en el cuerpo).
   - *Manejador de eventos:* validar el formato (UUID) en `check_event` y en la forma `deviceId`/`datos`, y
     reenviarlo tal cual. Con eso también podría reintentar los tiempos agotados, que hoy no reintenta.
-  - *Base de datos:* migración `002_device_events.sql` con una tabla `device_events (id_device, event_id,
+  - *Base de datos:* migración `004_device_events.sql` con una tabla `device_events (id_device, event_id,
     received_at, PRIMARY KEY (id_device, event_id))`, para que el identificador sea único por dispositivo y
     no por sistema. Mejor una tabla aparte que una columna en `sensor_readings`, porque un evento crea
     varias lecturas y puede ser una alerta. Añadirla a `schema.sql` y a `reset.sql`, y una limpieza de
