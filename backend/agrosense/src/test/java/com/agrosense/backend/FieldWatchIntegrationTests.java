@@ -215,24 +215,76 @@ class FieldWatchIntegrationTests {
 	@Test
 	void anOrderIsDeliveredOnceAndItsResultIsRecorded() {
 		Integer crop = cropOfTheDevice();
-		pending.offer(new IrrigationCommand(crop, 5, IrrigationCommand.AI, new BigDecimal("0.8")));
-		pending.offer(new IrrigationCommand(crop, 7, IrrigationCommand.MANUAL, null));
+		pending.offer(new IrrigationCommand(crop, 5, IrrigationCommand.AI, new BigDecimal("0.8"), null));
+		pending.offer(new IrrigationCommand(crop, 7, IrrigationCommand.MANUAL, null, null));
 
 		IrrigationCommand first = pending.take(crop).orElseThrow();
 		assertThat(first.minutes()).as("the newest order replaces the older one").isEqualTo(7);
 		assertThat(pending.take(crop)).as("never twice").isEmpty();
 
-		assertThat(pending.confirm(crop + 1000, first.id(), true)).as("not another crop's").isFalse();
-		assertThat(pending.confirm(crop, first.id(), true)).isTrue();
-		assertThat(pending.confirm(crop, first.id(), false)).as("only once").isFalse();
+		assertThat(pending.confirm(crop + 1000, first.id(), "started", null)).as("not another crop's").isFalse();
+		assertThat(pending.confirm(crop, first.id(), "nonsense", null)).isFalse();
+		assertThat(pending.confirm(crop, first.id(), "started", null)).isTrue();
+		assertThat(pending.confirm(crop, first.id(), "refused", null)).as("only once").isFalse();
 		assertThat(dispatches.findById(first.id()).orElseThrow().getStatus()).isEqualTo(DispatchStatus.STARTED);
 		assertThat(dispatches.findById(first.id()).orElseThrow().getConfirmedAt()).isNotNull();
+	}
+
+	private Irrigation irrigationOfFiveMinutes(Integer crop) {
+		IrrigationRequest request = new IrrigationRequest();
+		request.setCropId(crop);
+		request.setDurationMinutes(5);
+		request.setWaterLiters(new BigDecimal("100"));
+		request.setReason("Prueba");
+		return irrigations.findById(irrigationService.register(EMAIL, request).getIdIrrigation()).orElseThrow();
+	}
+
+	private IrrigationCommand delivered(Irrigation irrigation, Integer crop) {
+		pending.offer(new IrrigationCommand(crop, 5, IrrigationCommand.MANUAL, null, irrigation.getIdIrrigation()));
+		return pending.take(crop).orElseThrow();
+	}
+
+	@Test
+	void theHistoryKeepsWhatTheDeviceReallyRan() {
+		Integer crop = cropOfTheDevice();
+		Irrigation irrigation = irrigationOfFiveMinutes(crop);
+		IrrigationCommand command = delivered(irrigation, crop);
+
+		assertThat(pending.confirm(crop, command.id(), "started", null)).isTrue();
+		assertThat(pending.confirm(crop, command.id(), "finished", 90)).isTrue();
+
+		Irrigation real = irrigations.findById(irrigation.getIdIrrigation()).orElseThrow();
+		assertThat(real.getDurationMin()).isEqualTo(2);
+		assertThat(real.getWaterLiters()).isEqualByComparingTo("30.00");
+		assertThat(java.time.Duration.between(real.getStartedAt(), real.getEndedAt()).getSeconds()).isEqualTo(90);
+		assertThat(dispatches.findById(command.id()).orElseThrow().getRanSeconds()).isEqualTo(90);
+		assertThat(pending.confirm(crop, command.id(), "finished", 90)).as("only once").isFalse();
+	}
+
+	@Test
+	void anOrderThatNeverRanLeavesNoWaterInTheHistory() {
+		Integer crop = cropOfTheDevice();
+		Irrigation refused = irrigationOfFiveMinutes(crop);
+		pending.confirm(crop, delivered(refused, crop).id(), "refused", null);
+
+		Irrigation record = irrigations.findById(refused.getIdIrrigation()).orElseThrow();
+		assertThat(record.getWaterLiters()).isEqualByComparingTo("0");
+		assertThat(record.getDurationMin()).isNull();
+		assertThat(record.getEndedAt()).isEqualTo(record.getStartedAt());
+		assertThat(record.getReason()).contains("rechazado por el dispositivo");
+
+		Irrigation late = irrigationOfFiveMinutes(crop);
+		pending.offer(new IrrigationCommand(crop, 5, IrrigationCommand.MANUAL, null, late.getIdIrrigation()));
+		jdbc.update("UPDATE irrigation_dispatches SET expires_at = ? WHERE status = 'PENDING'",
+				LocalDateTime.now().minusSeconds(1));
+		assertThat(pending.take(crop)).isEmpty();
+		assertThat(irrigations.findById(late.getIdIrrigation()).orElseThrow().getReason()).contains("caducó");
 	}
 
 	@Test
 	void anOrderThatWaitedTooLongExpires() {
 		Integer crop = cropOfTheDevice();
-		pending.offer(new IrrigationCommand(crop, 5, IrrigationCommand.MANUAL, null));
+		pending.offer(new IrrigationCommand(crop, 5, IrrigationCommand.MANUAL, null, null));
 		jdbc.update("UPDATE irrigation_dispatches SET expires_at = ? WHERE status = 'PENDING'",
 				LocalDateTime.now().minusSeconds(1));
 

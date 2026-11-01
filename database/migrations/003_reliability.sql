@@ -16,8 +16,11 @@ CREATE TABLE IF NOT EXISTS irrigation_dispatches (
     expires_at   TIMESTAMP   NOT NULL,
     delivered_at TIMESTAMP,
     confirmed_at TIMESTAMP,
+    id_irrigation INTEGER,
+    ran_seconds  INTEGER,
     CONSTRAINT fk_dispatches_crop FOREIGN KEY (id_crop) REFERENCES crops (id_crop) ON DELETE CASCADE,
-    CONSTRAINT ck_dispatches_status CHECK (status IN ('PENDING', 'DELIVERED', 'STARTED', 'REFUSED', 'EXPIRED')),
+    CONSTRAINT fk_dispatches_irrigation FOREIGN KEY (id_irrigation) REFERENCES irrigations (id_irrigation) ON DELETE SET NULL,
+    CONSTRAINT ck_dispatches_status CHECK (status IN ('PENDING', 'DELIVERED', 'STARTED', 'FINISHED', 'REFUSED', 'EXPIRED')),
     CONSTRAINT ck_dispatches_source CHECK (source IN ('MANUAL', 'AI')),
     CONSTRAINT ck_dispatches_minutes CHECK (minutes > 0)
 );

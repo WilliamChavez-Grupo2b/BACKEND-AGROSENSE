@@ -514,6 +514,9 @@ static void the_result_of_an_order_travels_in_the_next_event() {
   CHECK(bench.real.sent.back().find("\"ack\":{\"command_id\":12,\"result\":\"started\"}") != std::string::npos);
   bench.clock.ms += 30000;
   bench.ticks();
+  CHECK(bench.real.sent.back().find("\"result\":\"finished\",\"ran_seconds\":60}") != std::string::npos);
+  bench.clock.ms += 30000;
+  bench.ticks();
   CHECK(bench.real.sent.back().find("\"ack\"") == std::string::npos);  // reported once
 
   bench.hardware.rawSoil().set(6000);
@@ -524,6 +527,44 @@ static void the_result_of_an_order_travels_in_the_next_event() {
   bench.clock.ms += 30000;
   bench.ticks();
   CHECK(bench.real.sent.back().find("\"result\":\"refused\"") != std::string::npos);
+}
+
+static void an_order_above_the_maximum_reports_what_really_ran() {
+  Bench bench;
+  bench.start();
+  bench.real.body = "{\"command\":{\"id\":21,\"type\":\"irrigate\",\"source\":\"MANUAL\",\"minutes\":20}}";
+  bench.ticks();
+  CHECK(bench.hardware.actuator().running());
+  bench.real.body = "{\"status\":\"stored\"}";
+  bench.clock.ms += MAX_PUMP_ON_MS;
+  bench.ticks();
+  CHECK(!bench.hardware.actuator().running());
+  bench.clock.ms += 30000;
+  bench.ticks();
+  bool reported = false;
+  for (const std::string& event : bench.real.sent) {
+    if (event.find("\"command_id\":21,\"result\":\"finished\",\"ran_seconds\":300}") != std::string::npos) reported = true;
+  }
+  CHECK(reported);
+}
+
+static void stopping_an_order_by_hand_reports_the_shorter_run() {
+  Bench bench;
+  bench.start();
+  bench.real.body = MANUAL_ORDER;
+  bench.ticks();
+  bench.real.body = "{\"status\":\"stored\"}";
+  bench.clock.ms += 20000;
+  bench.hardware.simulatedButton().press();
+  bench.device.tick();
+  CHECK(!bench.hardware.actuator().running());
+  bench.clock.ms += 30000;
+  bench.ticks();
+  bool reported = false;
+  for (const std::string& event : bench.real.sent) {
+    if (event.find("\"ran_seconds\":20}") != std::string::npos) reported = true;
+  }
+  CHECK(reported);
 }
 
 static void the_button_starts_and_stops_the_pump() {
@@ -728,6 +769,8 @@ int main() {
   without_wifi_it_keeps_measuring_and_catches_up();
   the_order_in_an_answer_reaches_the_pump_through_the_facade();
   the_button_starts_and_stops_the_pump();
+  an_order_above_the_maximum_reports_what_really_ran();
+  stopping_an_order_by_hand_reports_the_shorter_run();
   the_result_of_an_order_travels_in_the_next_event();
   the_pump_is_off_after_begin_and_cannot_start_right_after_a_reset();
   no_order_runs_the_pump_past_the_absolute_maximum();

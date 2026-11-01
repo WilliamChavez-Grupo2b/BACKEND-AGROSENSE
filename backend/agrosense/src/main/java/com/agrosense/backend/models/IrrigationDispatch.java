@@ -50,4 +50,10 @@ public class IrrigationDispatch {
 
     @Column(name = "confirmed_at")
     private LocalDateTime confirmedAt;
+
+    @Column(name = "id_irrigation")
+    private Integer irrigationId;
+
+    @Column(name = "ran_seconds")
+    private Integer ranSeconds;
 }

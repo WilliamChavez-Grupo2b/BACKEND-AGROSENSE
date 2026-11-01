@@ -56,6 +56,7 @@ class AgroSenseDevice {
     ActuatorDriver& actuator = hardware_.actuator();
     actuator.update();
     if (hardware_.button().pressed()) toggleByHand();
+    reportFinishedOrder();
 
     uint32_t now = clock_.nowMs();
     if (reached(now, nextReadingAt_)) {
@@ -91,7 +92,7 @@ class AgroSenseDevice {
         .soilMoisture(soil_)
         .airTemperature(climate.temperature)
         .relativeHumidity(climate.humidity);
-    if (ackId_ != 0) builder.acknowledge(ackId_, ackStarted_);
+    if (ackId_ != 0) builder.acknowledge(ackId_, ackResult_, ackSeconds_);
     if (builder.build()) {
       backend_.begin(event);
       ackId_ = 0;
@@ -104,7 +105,18 @@ class AgroSenseDevice {
     bool started = command.fromAi ? AiIrrigationOrder(actuator, command.minutes, command.confidence, soil_).execute()
                                   : ManualIrrigationOrder(actuator, command.minutes).execute();
     ackId_ = command.id;
-    ackStarted_ = started;
+    ackResult_ = started ? AckResult::Started : AckResult::Refused;
+    runningOrder_ = started ? command.id : 0;
+  }
+
+  // What the history must show is what ran, which the device alone knows. A short run may replace the "started" not
+  // sent yet: the backend accepts "finished" directly.
+  void reportFinishedOrder() {
+    if (runningOrder_ == 0 || hardware_.actuator().running()) return;
+    ackId_ = runningOrder_;
+    ackResult_ = AckResult::Finished;
+    ackSeconds_ = hardware_.actuator().lastRunMs() / 1000;
+    runningOrder_ = 0;
   }
 
   HardwareFactory& hardware_;
@@ -113,7 +125,9 @@ class AgroSenseDevice {
   Reading soil_ = Reading::bad();
   uint32_t nextReadingAt_ = 0;
   uint32_t ackId_ = 0;
-  bool ackStarted_ = false;
+  uint32_t runningOrder_ = 0;
+  uint32_t ackSeconds_ = 0;
+  AckResult ackResult_ = AckResult::Started;
 };
 
 }  // namespace agro

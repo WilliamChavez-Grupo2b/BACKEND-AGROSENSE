@@ -35,19 +35,20 @@ public class AiIrrigationOrder extends IrrigationOrder {
     @Override
     protected Irrigation record() {
         LocalDateTime startedAt = LocalDateTime.now();
+        int minutes = runnable(prediction.durationMinutes());
         return Irrigation.builder()
                 .crop(crop)
                 .startedAt(startedAt)
-                .endedAt(startedAt.plusMinutes(prediction.durationMinutes()))
-                .durationMin(prediction.durationMinutes())
+                .endedAt(startedAt.plusMinutes(minutes))
+                .durationMin(minutes)
                 .type(IrrigationType.AUTOMATIC)
                 .reason("Predicción de " + prediction.modelUsed())
                 .build();
     }
 
     @Override
-    protected IrrigationCommand command() {
-        return new IrrigationCommand(crop.getIdCrop(), prediction.durationMinutes(), IrrigationCommand.AI,
-                prediction.confidence());
+    protected IrrigationCommand command(Irrigation stored) {
+        return new IrrigationCommand(crop.getIdCrop(), stored.getDurationMin(), IrrigationCommand.AI,
+                prediction.confidence(), stored.getIdIrrigation());
     }
 }

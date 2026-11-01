@@ -8,6 +8,8 @@
 
 namespace agro {
 
+enum class AckResult : uint8_t { Started, Refused, Finished };
+
 class ReadingJsonBuilder {
  public:
   ReadingJsonBuilder(char* buffer, size_t size) : buffer_(buffer), size_(size) {}
@@ -34,9 +36,10 @@ class ReadingJsonBuilder {
   }
 
   // The result of an irrigation order, reported in the next event so the backend can record it.
-  ReadingJsonBuilder& acknowledge(uint32_t commandId, bool started) {
+  ReadingJsonBuilder& acknowledge(uint32_t commandId, AckResult result, uint32_t ranSeconds) {
     ackId_ = commandId;
-    ackStarted_ = started;
+    ackResult_ = result;
+    ackSeconds_ = ranSeconds;
     return *this;
   }
 
@@ -55,10 +58,16 @@ class ReadingJsonBuilder {
         append(digits);
       }
       if (ackId_ != 0) {
-        char ack[56];
-        snprintf(ack, sizeof ack, ",\"ack\":{\"command_id\":%lu,\"result\":\"%s\"}",
-                 static_cast<unsigned long>(ackId_), ackStarted_ ? "started" : "refused");
+        static const char* const RESULTS[] = {"started", "refused", "finished"};
+        char ack[80];
+        snprintf(ack, sizeof ack, ",\"ack\":{\"command_id\":%lu,\"result\":\"%s\"",
+                 static_cast<unsigned long>(ackId_), RESULTS[static_cast<uint8_t>(ackResult_)]);
         append(ack);
+        if (ackResult_ == AckResult::Finished) {
+          snprintf(ack, sizeof ack, ",\"ran_seconds\":%lu", static_cast<unsigned long>(ackSeconds_));
+          append(ack);
+        }
+        append("}");
       }
       append(",\"data\":{");
       bool first = true;
@@ -116,7 +125,8 @@ class ReadingJsonBuilder {
   const char* device_ = nullptr;
   uint32_t epoch_ = 0;
   uint32_t ackId_ = 0;
-  bool ackStarted_ = false;
+  AckResult ackResult_ = AckResult::Started;
+  uint32_t ackSeconds_ = 0;
   Reading soil_ = Reading::bad();
   Reading air_ = Reading::bad();
   Reading humidity_ = Reading::bad();

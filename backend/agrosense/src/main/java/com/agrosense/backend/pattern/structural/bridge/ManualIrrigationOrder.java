@@ -48,7 +48,8 @@ public class ManualIrrigationOrder extends IrrigationOrder {
     }
 
     @Override
-    protected IrrigationCommand command() {
-        return new IrrigationCommand(crop.getIdCrop(), minutes, IrrigationCommand.MANUAL, null);
+    protected IrrigationCommand command(Irrigation stored) {
+        return new IrrigationCommand(crop.getIdCrop(), minutes, IrrigationCommand.MANUAL, null,
+                stored.getIdIrrigation());
     }
 }

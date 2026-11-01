@@ -20,7 +20,7 @@ public abstract class IrrigationOrder {
             return Optional.empty();
         }
         Irrigation stored = store.apply(record());
-        driver.start(command());
+        driver.start(command(stored));
         return Optional.of(stored);
     }
 
@@ -28,5 +28,11 @@ public abstract class IrrigationOrder {
 
     protected abstract Irrigation record();
 
-    protected abstract IrrigationCommand command();
+    protected abstract IrrigationCommand command(Irrigation stored);
+
+    /** What can really run on this driver. */
+    protected final int runnable(int minutes) {
+        int limit = driver.maxRunMinutes();
+        return limit > 0 ? Math.min(minutes, limit) : minutes;
+    }
 }

@@ -22,6 +22,7 @@ class ActuatorDriver {
   virtual bool start(uint32_t durationMs) = 0;    // false when refused
   virtual void stop() = 0;
   virtual bool running() const = 0;
+  virtual uint32_t lastRunMs() const = 0;         // how long the last run really lasted
   virtual void update() = 0;                      // from loop()
   virtual void enforceDeadline() = 0;             // safe from an interrupt
 };
@@ -36,18 +37,22 @@ class TimedDriver : public ActuatorDriver {
   bool start(uint32_t durationMs) override {
     if (durationMs == 0) return false;
     uint32_t length = durationMs > MAX_PUMP_ON_MS ? MAX_PUMP_ON_MS : durationMs;
-    stopAt_ = clock_.nowMs() + length;
+    startedAt_ = clock_.nowMs();
+    lastRunMs_ = 0;
+    stopAt_ = startedAt_ + length;
     running_ = true;  // after stopAt_: the interrupt must never see running with an old deadline
     apply(true);
     return true;
   }
 
   void stop() override {
+    if (running_) lastRunMs_ = clock_.nowMs() - startedAt_;
     running_ = false;
     apply(false);
   }
 
   bool running() const override { return running_; }
+  uint32_t lastRunMs() const override { return lastRunMs_; }
 
   void update() override { enforceDeadline(); }
 
@@ -60,6 +65,8 @@ class TimedDriver : public ActuatorDriver {
 
  private:
   IClock& clock_;
+  volatile uint32_t startedAt_ = 0;
+  volatile uint32_t lastRunMs_ = 0;
   volatile uint32_t stopAt_ = 0;
   volatile bool running_ = false;
 };
@@ -116,7 +123,6 @@ class PumpGuard : public ActuatorDriver {
     if (inner_.running() || !reached(now, lastStopAt_ + MIN_PUMP_GAP_MS) || usedMs_ >= MAX_PUMP_MS_PER_DAY) return false;
     uint32_t left = MAX_PUMP_MS_PER_DAY - usedMs_;
     if (!inner_.start(durationMs > left ? left : durationMs)) return false;
-    startedAt_ = now;
     wasRunning_ = true;
     return true;
   }
@@ -127,6 +133,7 @@ class PumpGuard : public ActuatorDriver {
   }
 
   bool running() const override { return inner_.running(); }
+  uint32_t lastRunMs() const override { return inner_.lastRunMs(); }
 
   void update() override {
     inner_.update();
@@ -142,15 +149,13 @@ class PumpGuard : public ActuatorDriver {
     if (!wasRunning_ || inner_.running()) return;
     wasRunning_ = false;
     lastStopAt_ = clock_.nowMs();
-    uint32_t ran = lastStopAt_ - startedAt_;
-    usedMs_ += ran > MAX_PUMP_ON_MS ? MAX_PUMP_ON_MS : ran;
+    usedMs_ += inner_.lastRunMs();
   }
 
   ActuatorDriver& inner_;
   IClock& clock_;
   uint32_t lastStopAt_ = 0;
   uint32_t dayStartedAt_ = 0;
-  uint32_t startedAt_ = 0;
   uint32_t usedMs_ = 0;
   bool wasRunning_ = false;
 };

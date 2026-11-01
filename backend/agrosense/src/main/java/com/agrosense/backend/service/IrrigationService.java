@@ -3,6 +3,7 @@ package com.agrosense.backend.service;
 import com.agrosense.backend.domain.enums.SensorType;
 import com.agrosense.backend.dto.request.IrrigationRequest;
 import com.agrosense.backend.dto.response.IrrigationResponse;
+import com.agrosense.backend.exception.ApiException;
 import com.agrosense.backend.exception.ResourceNotFoundException;
 import com.agrosense.backend.models.Crop;
 import com.agrosense.backend.models.Irrigation;
@@ -19,6 +20,7 @@ import com.agrosense.backend.repository.UserRepository;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -60,6 +62,11 @@ public class IrrigationService {
         Crop crop = ownedCrop(email, request.getCropId());
         User user = userRepository.findByEmail(email)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+        int limit = actuator.maxRunMinutes();
+        if (limit > 0 && request.getDurationMinutes() > limit) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "La bomba funciona como máximo " + limit
+                    + " minutos seguidos. Pide " + limit + " minutos o menos y repite el riego si hace falta.");
+        }
         Irrigation irrigation = new ManualIrrigationOrder(actuator, crop, user, request.getDurationMinutes(),
                 request.getWaterLiters(), request.getReason().trim())
                 .execute(this::storeWithMoisture).orElseThrow();

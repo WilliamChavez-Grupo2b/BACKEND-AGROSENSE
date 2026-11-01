@@ -4,4 +4,9 @@ package com.agrosense.backend.pattern.structural.bridge;
 public interface ActuatorDriver {
 
     void start(IrrigationCommand command);
+
+    /** The longest run this actuator accepts; 0 when nothing limits it. */
+    default int maxRunMinutes() {
+        return 0;
+    }
 }

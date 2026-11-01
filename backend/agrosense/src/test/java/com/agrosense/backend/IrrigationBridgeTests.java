@@ -2,6 +2,8 @@ package com.agrosense.backend;
 
 import com.agrosense.backend.domain.enums.IrrigationType;
 import com.agrosense.backend.dto.request.DeviceEventRequest;
+import com.agrosense.backend.dto.request.IrrigationRequest;
+import com.agrosense.backend.exception.ApiException;
 import com.agrosense.backend.models.Crop;
 import com.agrosense.backend.models.Irrigation;
 import com.agrosense.backend.models.User;
@@ -26,6 +28,7 @@ import com.agrosense.backend.service.DeviceEventService;
 import com.agrosense.backend.service.IrrigationService;
 import com.agrosense.backend.service.PredictionService;
 import org.junit.jupiter.api.Test;
+import org.springframework.http.HttpStatus;
 import org.mockito.ArgumentCaptor;
 import tools.jackson.databind.json.JsonMapper;
 
@@ -40,6 +43,7 @@ import java.util.Optional;
 import java.util.function.UnaryOperator;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -74,8 +78,8 @@ class IrrigationBridgeTests {
 		}
 
 		PendingIrrigationCommands pending = mock(PendingIrrigationCommands.class);
-		manual(new RelayActuatorDriver(pending)).execute(stored);
-		ai(new RelayActuatorDriver(pending)).execute(stored);
+		manual(new RelayActuatorDriver(pending, 120)).execute(stored);
+		ai(new RelayActuatorDriver(pending, 120)).execute(stored);
 
 		ArgumentCaptor<IrrigationCommand> offered = ArgumentCaptor.forClass(IrrigationCommand.class);
 		verify(pending, times(2)).offer(offered.capture());
@@ -127,6 +131,40 @@ class IrrigationBridgeTests {
 	}
 
 	@Test
+	void anAiOrderIsCutToWhatTheRelayCanRun() {
+		PendingIrrigationCommands pending = mock(PendingIrrigationCommands.class);
+		Irrigation cut = new AiIrrigationOrder(new RelayActuatorDriver(pending, 5), crop,
+				prediction(true, "0.90", 40, "m1")).execute(stored).orElseThrow();
+
+		assertThat(cut.getDurationMin()).isEqualTo(5);
+		ArgumentCaptor<IrrigationCommand> offered = ArgumentCaptor.forClass(IrrigationCommand.class);
+		verify(pending).offer(offered.capture());
+		assertThat(offered.getValue().minutes()).isEqualTo(5);
+	}
+
+	@Test
+	void aPersonAskingMoreThanTheRelayCanRunIsToldSo() {
+		IrrigationRepository irrigations = mock(IrrigationRepository.class);
+		CropRepository crops = mock(CropRepository.class);
+		UserRepository users = mock(UserRepository.class);
+		when(crops.findByIdCropAndEstateUserEmail(1, "a@b.co")).thenReturn(Optional.of(crop));
+		when(users.findByEmail("a@b.co")).thenReturn(Optional.of(new User()));
+		IrrigationRequest request = new IrrigationRequest();
+		request.setCropId(1);
+		request.setDurationMinutes(6);
+		request.setWaterLiters(BigDecimal.TEN);
+		request.setReason("Prueba");
+		IrrigationService relay = new IrrigationService(irrigations, crops, users, mock(SensorReadingRepository.class),
+				new RelayActuatorDriver(mock(PendingIrrigationCommands.class), 5), false);
+
+		assertThatThrownBy(() -> relay.register("a@b.co", request)).isInstanceOfSatisfying(ApiException.class, failure -> {
+			assertThat(failure.getStatus()).isEqualTo(HttpStatus.BAD_REQUEST);
+			assertThat(failure.getMessage()).contains("máximo 5 minutos");
+		});
+		verify(irrigations, never()).save(any());
+	}
+
+	@Test
 	void anAiOrderNeedsTheSettingOnTheService() {
 		IrrigationRepository irrigations = mock(IrrigationRepository.class);
 		CropRepository crops = mock(CropRepository.class);
@@ -155,7 +193,7 @@ class IrrigationBridgeTests {
 		});
 		PendingIrrigationCommands pending = mock(PendingIrrigationCommands.class);
 		when(pending.take(1)).thenReturn(Optional.of(new IrrigationCommand(12, 1, 7, IrrigationCommand.AI,
-				new BigDecimal("0.8")))).thenReturn(Optional.empty());
+				new BigDecimal("0.8"), 3))).thenReturn(Optional.empty());
 		DeviceIngestionFacade facade = new DeviceIngestionFacade(events, mock(PredictionService.class),
 				mock(AiConfigManager.class), pending, new DeviceRateLimiter(0), Duration.ZERO, Clock.systemUTC());
 
@@ -167,6 +205,12 @@ class IrrigationBridgeTests {
 		DeviceEventRequest confirmed = new DeviceEventRequest();
 		confirmed.setAck(JsonMapper.builder().build().readTree("{\"command_id\":12,\"result\":\"refused\"}"));
 		facade.ingest("key", confirmed);
-		verify(pending).confirm(1, 12, false);
+		verify(pending).confirm(1, 12, "refused", null);
+
+		DeviceEventRequest finished = new DeviceEventRequest();
+		finished.setAck(JsonMapper.builder().build().readTree(
+				"{\"command_id\":12,\"result\":\"finished\",\"ran_seconds\":90}"));
+		facade.ingest("key", finished);
+		verify(pending).confirm(1, 12, "finished", 90);
 	}
 }

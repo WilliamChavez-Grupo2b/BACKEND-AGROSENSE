@@ -85,8 +85,8 @@ public class DeviceIngestionFacade {
         if (ack == null || !ack.path("command_id").isIntegralNumber()) {
             return;
         }
-        boolean started = "started".equals(ack.path("result").asString(""));
-        if (!commands.confirm(cropId, ack.path("command_id").asInt(), started)) {
+        Integer ranSeconds = ack.path("ran_seconds").isIntegralNumber() ? ack.path("ran_seconds").asInt() : null;
+        if (!commands.confirm(cropId, ack.path("command_id").asInt(), ack.path("result").asString(""), ranSeconds)) {
             log.warn("Crop {} confirmed an order that was not waiting for it", cropId);
         }
     }

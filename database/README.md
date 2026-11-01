@@ -10,7 +10,7 @@ modifican tablas ni contienen datos de ejemplo: leen estos archivos y solo valid
 | Archivo         | Descripción                                                                          |
 |-----------------|--------------------------------------------------------------------------------------|
 | `schema.sql`    | Tablas, claves, restricciones e índices. Fuente de verdad del esquema.               |
-| `seed_demo.sql` | Datos de ejemplo: 1 usuario, 2 fincas, 3 cultivos, 6 sensores, 120 lecturas, 4 alertas, 4 riegos, 2 predicciones y 1 dispositivo. |
+| `seed_demo.sql` | Datos de ejemplo: 1 usuario, 2 fincas, 3 cultivos, 7 sensores, 144 lecturas, 4 alertas, 4 riegos, 2 predicciones y 1 dispositivo. |
 | `reset.sql`     | **Destructivo.** Borra todas las tablas y sus datos. Solo para desarrollo.           |
 | `migrations/`   | Cambios de esquema para bases que ya existían, numerados y para ejecutar a mano (ver «Migraciones»). |
 | `datasource.properties` | Configuración de base de datos que cargan el backend y el frontend: conexión, validación del esquema, ejecución de los scripts y perfiles `seed` y `demo`. |

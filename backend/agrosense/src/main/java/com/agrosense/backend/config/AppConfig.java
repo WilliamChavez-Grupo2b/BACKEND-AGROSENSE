@@ -29,8 +29,8 @@ public class AppConfig {
 
     @Bean
     public ActuatorDriver actuatorDriver(@Value("${irrigation.actuator:simulated}") String actuator,
-            PendingIrrigationCommands pending) {
-        return "relay".equalsIgnoreCase(actuator.trim()) ? new RelayActuatorDriver(pending)
+            @Value("${irrigation.max-run-minutes:5}") int maxRunMinutes, PendingIrrigationCommands pending) {
+        return "relay".equalsIgnoreCase(actuator.trim()) ? new RelayActuatorDriver(pending, maxRunMinutes)
                 : new SimulatedActuatorDriver();
     }
 
