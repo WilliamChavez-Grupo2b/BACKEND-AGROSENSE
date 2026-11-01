@@ -14,7 +14,8 @@ disponibles, y dónde está desplegado cada componente.
 | `api/`      | Contrato de la API del backend: `openapi.json`, peticiones de ejemplo y `tools/check_contract.py`, que comprueba un backend en marcha contra el contrato. |
 | `IA/`       | Servicio de IA (Python, FastAPI) que el backend llama en `AI_SERVICE_URL`: predicción de riego y asistente (`/chat`, `/voice`). |
 | `event-service/` | Manejador de eventos (Python, FastAPI): webhook de las Raspberry y canal en vivo (SSE) de cada usuario. |
-| `raspberry/` | Programa del dispositivo de campo: lee un DHT22 y un sensor de suelo por MCP3008 en la Raspberry Pi (simula en un PC) y envía cada 30 s al webhook, con reintentos y cola en SQLite. |
+| `firmware/` | Firmware del dispositivo final, un Arduino UNO R4 WiFi (decisión 28). Pruebas en PC con g++. |
+| `raspberry/` | Simulador de dispositivo para pruebas (decisión 28): envía cada 30 s al webhook, con reintentos y cola en SQLite. También lee un DHT22 y un sensor de suelo por MCP3008 si corre en una Raspberry Pi. |
 | `compose.yaml`, `.env.example` | Todos los servicios en una máquina (`docker compose up`) y todas sus variables. |
 
 ### Repositorios
@@ -30,7 +31,7 @@ tiene su propio historial y no comparte commits con el workspace:
 | `api/`                | `ssantivr/API-AGROSENSE`                 | los archivos de la carpeta                |
 | `IA/`                 | `ssantivr/IA-AGROSENSE`                  | los archivos de la carpeta                |
 | `event-service/`      | `ssantivr/API-AGROSENSE`, rama `feat/event-service` (desde el 20 de octubre de 2026) | `event-service/`, junto al contrato; sus pruebas son el job `event-service` de `.github/workflows/tests.yml` (la carpeta `.github` del workspace no se publica) |
-| `raspberry/`, `compose.yaml` | ninguno todavía; solo existen en el workspace |                  |
+| `firmware/`, `raspberry/`, `compose.yaml` | ninguno todavía; solo existen en el workspace |                  |
 | `docs/`               | ninguno; solo existe en el workspace     |                                           |
 
 Una rama del workspace no se puede subir tal cual a ninguno de ellos. Para publicar, los commits de
@@ -86,7 +87,8 @@ esa rama se sube con un `git push` normal, sin forzar.
 - **Dispositivos y eventos** (decisiones 25 y 26): `POST /api/devices`, `POST /api/internal/events` (solo el
   servicio de eventos) y `GET /api/events/token`.
 - **Patrones de diseño** en `pattern/`: builder, factory, prototype y singleton (creacionales); adapter,
-  decorator, facade y proxy (estructurales).
+  bridge, decorator, facade y proxy (estructurales). `docs/PATRONES.md` los documenta todos, con los del resto de
+  servicios.
 
 ### Frontend (`frontend/`)
 
@@ -257,9 +259,10 @@ en el backend; en el frontend, `/health` es público y no abre sesión ni consul
 
 Orden: base de datos, backend, IA, manejador de eventos, frontend.
 
-1. **Base de datos:** ejecuta a mano `database/migrations/001_devices.sql` en la base de producción
-   (Neon) antes de desplegar el backend nuevo; `database/README.md` explica cómo. El backend no arranca sin
-   la tabla `devices`.
+1. **Base de datos:** ejecuta a mano `database/migrations/001_devices.sql` y
+   `database/migrations/002_alert_types.sql` en la base de producción (Neon) antes de desplegar el backend nuevo;
+   `database/README.md` explica cómo. El backend no arranca sin la tabla `devices`, y sin la migración 002 la base
+   rechaza las alertas `FROST_RISK` y `SENSOR_OFFLINE`.
 2. **IA** (`ia-agrosense`, ya existe): define `INTERNAL_API_KEY` (generada) y la llave del proveedor. Sigue
    aceptando el `AI_SERVICE_TOKEN` actual, así que el backend desplegado no se rompe mientras tanto.
 3. **Backend** (`BACKEND-AGROSENSE`): añade `AI_SERVICE_KEY` (= `INTERNAL_API_KEY`), `EVENTS_INTERNAL_KEY`,
@@ -269,6 +272,10 @@ Orden: base de datos, backend, IA, manejador de eventos, frontend.
    proceso), con `BACKEND_URL`, `EVENTS_INTERNAL_KEY` y `EVENTS_STREAM_SECRET` iguales a los del backend y
    `EVENTS_ALLOWED_ORIGINS` con la dirección del frontend.
 5. **Frontend** (Vercel): `EVENTS_PUBLIC_URL` con la dirección pública del manejador de eventos.
+
+**Alertas nuevas:** despliega el frontend con el enum `AlertType` actualizado antes que el backend que genera
+`FROST_RISK` y `SENSOR_OFFLINE`. El frontend lee esas filas con JPA, y una versión anterior falla al encontrar un tipo
+que no conoce.
 
 **Plan gratuito:** Render duerme cada servicio tras unos 15 minutos sin uso y tarda entre 1 y 3 minutos en
 arrancarlo. Por eso los tiempos de espera son configurables y generosos (`AI_SERVICE_TIMEOUT_MS`,
@@ -307,7 +314,7 @@ done
 7. **Fotografías locales de dominio público.** El login, el inicio, Parcelas y Riego usan fotos del USDA
    en `static/img/photos/` (JPEG a 960 y 1600 px; no hay conversor a WebP sin añadir Node). Autoría y
    licencias están en `static/img/brand/CREDITS.md`.
-8. **El riego se registra, no se ejecuta.** No existe integración con bombas: el MQTT del backend solo
+8. **El riego se registra, no se ejecuta** *(sigue siendo lo predeterminado; la decisión 29 añade el relé como opción).* No existe integración con bombas: el MQTT del backend solo
    recibe lecturas, no envía órdenes. «Iniciar riego» guarda el riego manual y la interfaz lo dice de
    forma explícita.
 9. **Iconos:** Bootstrap Icons (fuente local). **Tipografía:** Plus Jakarta Sans variable, local, para toda la interfaz, con fuentes del
@@ -444,6 +451,20 @@ done
 27. **Frontend y BD: desviación aceptada por ahora** (opción b del 16 de octubre). Los servicios nuevos no
     tienen acceso a la BD; el frontend lo conserva en las 9 clases de la sección 2 hasta migrarlo, servicio
     por servicio, en una rama aparte.
+
+28. **El dispositivo final es un Arduino UNO R4 WiFi** (1 de noviembre de 2026). El firmware está en `firmware/` y
+    habla el mismo contrato que el programa de `raspberry/` (`POST /events`, `X-Device-Key`), que se conserva como
+    simulador para probar sin placa. El dispositivo de ejemplo `RPI-DEMO-01` sigue siendo el del simulador.
+29. **Órdenes de riego por la respuesta del dispositivo.** No hay conexión hacia el campo: con
+    `IRRIGATION_ACTUATOR=relay` la orden espera en memoria y sale en la respuesta al siguiente evento del dispositivo.
+    Caduca a los 5 minutos y se pierde si el backend se reinicia, porque no regar es más seguro que regar tarde. Con
+    `simulated`, el valor por defecto, todo sigue como en la decisión 8. La IA solo ordena riegos con
+    `IRRIGATION_AI_ORDERS=true`, confianza de al menos 0,70, un modelo real y hasta 120 minutos, y el dispositivo
+    aún los rechaza con el suelo al 85 % o más.
+30. **Vigilancia sin lecturas.** `FieldWatchService` revisa cada 5 minutos si un dispositivo que ya reportó lleva
+    `ALERTS_DEVICE_SILENT_MINUTES` (15) sin hacerlo (`SENSOR_OFFLINE`), y cada hora el pronóstico de Open-Meteo de las
+    fincas con coordenadas (`FROST_RISK`, mínima de 2 °C o menos; `ALERTS_FROST_WATCH`). Open-Meteo no necesita llave.
+    Con el plan gratuito de Render, un backend dormido no vigila.
 
 ## 4. Estructura del frontend
 

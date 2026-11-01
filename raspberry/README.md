@@ -1,4 +1,7 @@
-# Dispositivo de campo (Raspberry Pi) de AgroSense
+# Simulador de dispositivo de AgroSense
+
+El dispositivo final es un Arduino UNO R4 WiFi (`firmware/`). Este programa se conserva como simulador para probar
+sin placa, y habla el mismo contrato. También sigue pudiendo leer sensores reales si corre en una Raspberry Pi.
 
 `simulator.py` es el programa del dispositivo. En una Raspberry Pi lee los sensores reales, un **DHT22**
 (temperatura y humedad del aire) y un **sensor capacitivo de humedad del suelo** a través de un conversor
