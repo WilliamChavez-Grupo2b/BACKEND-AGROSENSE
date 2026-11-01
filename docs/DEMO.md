@@ -19,8 +19,9 @@ si sigue igual, pasa a la tabla «Si algo falla». Despertado el servicio, respo
 for url in https://backend-agrosense-u5mz.onrender.com/api/health \
            https://ia-agrosense.onrender.com/health \
            https://<manejador-de-eventos>.onrender.com/health; do
-  curl -s -o /dev/null -w "%{http_code} $url\n" --max-time 180 "$url"
+  curl -s -o /dev/null -w "%{http_code} $url\n" --max-time 180 "$url" &
 done
+wait
 ```
 
 Para mantenerlos despiertos durante la demo, deja esto en una terminal:
