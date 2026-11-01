@@ -32,13 +32,16 @@ import com.agrosense.backend.service.EstateCropService;
 import com.agrosense.backend.service.FieldWatchService;
 import com.agrosense.backend.service.IrrigationService;
 import com.agrosense.backend.service.PredictionService;
+import com.agrosense.backend.websocket.SensorWebSocketHandler;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
 
@@ -56,6 +59,9 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.atLeastOnce;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /** Against the real schema: its CHECK has to accept the new alert types, and the orders have to live in its tables. */
@@ -118,6 +124,8 @@ class FieldWatchIntegrationTests {
 	private JdbcTemplate jdbc;
 	@MockitoBean
 	private WeatherProvider weather;
+	@MockitoSpyBean
+	private SimpMessagingTemplate messaging;
 
 	private long allOf(AlertType type) {
 		return alerts.findAll().stream().filter(alert -> alert.getAlertType() == type).count();
@@ -279,6 +287,15 @@ class FieldWatchIntegrationTests {
 
 		assertThat(readings.count()).isEqualTo(before + 1);
 		assertThat(ph.getSensorCode()).isNotBlank();
+	}
+
+	@Test
+	void anEventReachesTheWebSocketOfItsOwnerWithItsAlert() {
+		ingestion.ingest(KEY, event(DEVICE, "{\"ts\":1793000100,\"data\":{\"air_temperature\":79}}"));
+
+		verify(messaging).convertAndSendToUser(eq(EMAIL), eq(SensorWebSocketHandler.READINGS_QUEUE), any(Object.class));
+		verify(messaging, atLeastOnce()).convertAndSendToUser(eq(EMAIL), eq(SensorWebSocketHandler.ALERTS_QUEUE),
+				any(Object.class));
 	}
 
 	@Test
