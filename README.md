@@ -40,7 +40,7 @@ flowchart LR
 | `event-service/` | Webhook de dispositivos y canal en vivo | `pytest` (necesita FastAPI) |
 | `firmware/` | Dispositivo final | `sh firmware/test/run-tests.sh`, `sh firmware/test/compile.sh` |
 | `raspberry/` | Simulador de dispositivo | `pytest` |
-| `database/`, `api/` | Esquema y migraciones; contrato OpenAPI | `python api/tools/validate_spec.py` |
+| `database/`, `api/` | Esquema y migraciones (`database/README.md`); contrato OpenAPI | `python api/tools/validate_spec.py` |
 | `tools/e2e/` | Recorrido completo sin hardware | `python tools/e2e/run_e2e.py` |
 
 `docs/ARQUITECTURA.md` tiene las decisiones, `docs/PATRONES.md` los patrones de diseño y `docs/DEMO.md` el plan de la demo.
@@ -78,9 +78,23 @@ pública si no tiene credencial.
 | `ALERTS_STUCK_READINGS` | Backend | `10` | Lecturas iguales en 0 o 100 % antes de `SENSOR_FAULT`; 0 lo apaga |
 | `DEVICE_MAX_EVENTS_PER_MINUTE` | Backend | `60` | Eventos por dispositivo; después responde 429; 0 lo apaga |
 | `READINGS_RETENTION_DAYS` | Backend | `0` | Días de lecturas crudas. Las anteriores pasan a promedios por hora y **se borran**; 0 lo conserva todo |
-| `SENSOR_CALIBRATION` | Backend | vacío | Corrección por tipo de sensor, `PH=0.1:1.02` |
+| `IRRIGATION_MAX_RUN_MINUTES` | Backend | `5` | Con relé, duración máxima. Debe coincidir con `MAX_PUMP_ON_MS` del firmware: una persona que pida más recibe 400 y una orden de la IA se recorta |
+| `SENSOR_CALIBRATION` | Backend | vacío | Corrección por tipo de sensor, ver abajo |
 | `AI_PROVIDER_REQUESTS_PER_MINUTE` | IA | `60` | Límite de llamadas al proveedor |
 | `AI_REPLY_CACHE_SECONDS` | IA | `60` | Reutiliza una respuesta idéntica |
+
+### Calibrar un tipo de sensor en el backend
+
+Cada tipo empieza neutro, sin corrección: inventar valores falsearía todas las lecturas. Para corregir, mide con una
+referencia y define `SENSOR_CALIBRATION` como `TIPO=desplazamiento:ganancia`, separados por comas:
+
+```bash
+SENSOR_CALIBRATION=PH=0.1:1.02,SOIL_MOISTURE=-1.5:1
+```
+
+El valor guardado es `lectura × ganancia + desplazamiento`: con ese ejemplo, un pH de 6 se guarda como 6,22. Se aplica antes
+de validar el rango, y a todos los sensores de ese tipo. Una entrada mal escrita impide arrancar. Reinicia el backend para
+aplicar un cambio. Es distinto de `soilDryRaw` y `soilWetRaw`, que calibran el firmware.
 
 ## Orden de despliegue
 
@@ -89,7 +103,7 @@ pública si no tiene credencial.
 2. **Frontend:** antes que el backend, porque una versión vieja falla al leer un tipo de alerta que no conoce.
 3. **Backend**, con las variables nuevas.
 4. **Servicio de IA.** Exige `INTERNAL_API_KEY` o `AI_SERVICE_TOKEN`.
-5. **Manejador de eventos.**
+5. **Manejador de eventos.** `docs/EVENT-SERVICE.md` compara mantenerlo o quitarlo.
 6. **Dispositivo.**
 
 ## Avisos

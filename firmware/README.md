@@ -113,5 +113,5 @@ sh firmware/test/run-tests.sh   # la lógica, en el PC, con g++
 sh firmware/test/compile.sh     # el sketch real, con arduino-cli y sus tres variantes
 ```
 
-Compilado el 1 de noviembre de 2026 con `arduino:renesas_uno` 1.6.0: 33 % de flash (87 440 bytes) y 46 % de RAM
-(15 080 bytes) con DHT22; cifras similares con SHT31 y hardware simulado.
+Compilado el 1 de noviembre de 2026 con `arduino:renesas_uno` 1.6.0: 33 % de flash (88 380 bytes) y 46 % de RAM
+(15 176 bytes) con DHT22; cifras similares con SHT31 y hardware simulado.

@@ -17,11 +17,11 @@ simulador de dispositivo para pruebas.
 
 | Parte | Comando | Resultado del 1 de noviembre de 2026 |
 |---|---|---|
-| Backend | `cd backend/agrosense && ./mvnw test` | 144 pruebas, 0 fallos, 3 omitidas (PostgreSQL) |
-| Frontend, Java | `cd frontend && ./mvnw test` | 113 pruebas, 0 fallos, 2 omitidas (PostgreSQL) |
-| Frontend, TypeScript | `cd frontend && npm run build && npm test` | 10 pruebas, 0 fallos |
+| Backend | `cd backend/agrosense && ./mvnw test` | 151 pruebas, 0 fallos, 3 omitidas (PostgreSQL) |
+| Frontend, Java | `cd frontend && ./mvnw test` | 115 pruebas, 0 fallos, 2 omitidas (PostgreSQL) |
+| Frontend, TypeScript | `cd frontend && npm run build && npm test` | 12 pruebas, 0 fallos |
 | IA, patrones y reglas | `cd IA && python -m unittest tests.test_patterns tests.test_rules` | 31 pruebas, 0 fallos |
-| Firmware en el PC | `sh firmware/test/run-tests.sh` | 213 comprobaciones, 0 fallos |
+| Firmware en el PC | `sh firmware/test/run-tests.sh` | 225 comprobaciones, 0 fallos |
 | Firmware con el compilador real | `sh firmware/test/compile.sh` | Compila; 33 % de flash y 46 % de RAM. No ejecutado en una placa |
 
 Las suites FastAPI de `IA/` y `event-service/` no pueden correr en este equipo: quedan para CI (`.github/workflows/agrosense.yml`).
@@ -35,7 +35,7 @@ correcciones de los sensores.
 |---|---|---|---|
 | `DeviceConfig`, instancia estática | C++ | `F/DeviceConfig.h` | `singletons_are_one_instance_and_refuse_incomplete_settings` |
 | `WifiManager`, instancia estática | C++ | `F/WifiManager.h` | `wifi_retries_with_a_growing_wait_and_resets_once_connected` |
-| `CalibrationRegistry`, enum | Java | `B/pattern/creational/singleton/CalibrationRegistry.java` | `singletonCalibrationRegistryIsOneInstanceAndReadsItsSettings` |
+| `CalibrationRegistry`, enum | Java | `B/pattern/creational/singleton/CalibrationRegistry.java` | `singletonCalibrationRegistryIsOneInstanceAndReadsItsSettings`, `theCalibrationChangesTheValueThatIsStored` |
 | `AiConfigManager`, **ya existía** | Java | `B/pattern/creational/singleton/AiConfigManager.java` | `PatternTests.singletonAlwaysReturnsTheSameConfiguredInstance` |
 
 ```mermaid
@@ -78,7 +78,7 @@ alteraría el catálogo para todos los demás.
 | Clase | Lenguaje | Archivo | Prueba |
 |---|---|---|---|
 | `CropTemplate`, `clone()` profundo | Java | `B/pattern/creational/prototype/CropTemplate.java` | `prototypeHandsOutDeepCopiesSoTheCatalogueNeverChanges` |
-| `CropTemplateCatalog` | Java | `B/pattern/creational/prototype/CropTemplateCatalog.java` | `aCropStartsFromItsTemplateAndItsOwnRangesWin` |
+| `CropTemplateCatalog` | Java | `B/pattern/creational/prototype/CropTemplateCatalog.java` | `aCropStartsFromItsTemplateAndItsOwnRangesWin`, `theFormOffersTheTemplatesWithTheirRanges` |
 | `SensorReadingPrototype`, **ya existía** | Java | `B/pattern/creational/prototype/SensorReadingPrototype.java` | `PatternTests.prototypeCreatesIndependentReadingsWithTheTypesDefaults` |
 
 ```mermaid
@@ -113,9 +113,8 @@ La copia es profunda porque `Range` es mutable: cambiar un cultivo nunca toca el
 
 Los rangos del catálogo son valores de partida, no recomendaciones agronómicas validadas.
 
-**Uso real limitado:** hoy solo se llega a las plantillas por `POST /api/cultivos`. El formulario web crea cultivos con
-`CatalogService`, por JPA, y no las ofrece. Para que el patrón se note en la demo faltaría un selector de plantilla en ese
-formulario.
+El formulario web de cultivos ofrece el catálogo en un selector (`GET /api/crop-templates`) que rellena los rangos, y se
+pueden editar antes de guardar. Sin backend, el formulario funciona sin el selector.
 
 ## 3. Builder
 
@@ -322,7 +321,7 @@ simulado). Combinarlas por herencia daría cuatro clases, y una por cada novedad
 | Clase | Lenguaje | Archivo | Prueba |
 |---|---|---|---|
 | `IrrigationOrder`, `ManualIrrigationOrder`, `AiIrrigationOrder` | Java | `B/pattern/structural/bridge/` | `everyOrderWorksWithEveryDriver`, `aPredictionHasToEarnTheWater` en `IrrigationBridgeTests` |
-| `ActuatorDriver`, `RelayActuatorDriver`, `SimulatedActuatorDriver` | Java | `B/pattern/structural/bridge/` | `theFacadeHandsTheOrderToTheDeviceInItsAnswer`, `anOrderIsDeliveredOnceAndItsResultIsRecorded`, `anOrderThatWaitedTooLongExpires` |
+| `ActuatorDriver`, `RelayActuatorDriver`, `SimulatedActuatorDriver` | Java | `B/pattern/structural/bridge/` | `theFacadeHandsTheOrderToTheDeviceInItsAnswer`, `anOrderIsDeliveredOnceAndItsResultIsRecorded`, `theHistoryKeepsWhatTheDeviceReallyRan` |
 | `IrrigationOrder`, `ManualIrrigationOrder`, `AiIrrigationOrder` | C++ | `F/Irrigation.h` | `every_order_works_with_every_driver`, `the_device_has_the_last_word_on_an_ai_order` |
 | `ActuatorDriver`, `RelayDriver`, `SimulatedDriver`, decorados por `PumpGuard` | C++ | `F/Irrigation.h` | `the_pump_stops_by_itself`, `no_order_runs_the_pump_past_the_absolute_maximum`, `the_interrupt_stops_the_pump_while_the_loop_is_blocked`, `the_daily_limit_cuts_and_then_refuses_until_the_next_day` |
 

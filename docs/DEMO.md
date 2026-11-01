@@ -2,8 +2,18 @@
 
 ## Antes de empezar
 
-**15 minutos antes**, despierta los servicios. El plan gratuito de Render duerme cada uno tras unos 15 minutos sin uso y
-tarda entre 1 y 3 minutos en arrancar. El manejador de eventos es un servicio aparte y también se duerme.
+**15 minutos antes**, despierta los servicios. El plan gratuito de Render duerme cada uno tras unos 15 minutos sin uso.
+
+| Servicio | Salud | Público | Espera esperada si duerme |
+|---|---|---|---|
+| Backend | `GET /api/health` | Sí | 1 a 3 minutos (80 s medidos el 11 de octubre) |
+| Servicio de IA | `GET /health` | Sí | 1 a 3 minutos |
+| Manejador de eventos | `GET /health` | Sí | 1 a 3 minutos. Es un servicio aparte y **aún no está desplegado** |
+| Frontend | `GET /health` | Sí | Vercel no duerme igual, pero su primera petición puede tardar |
+
+Despiértalos a la vez: la primera petición inicia el arranque. Cuenta hasta 3 minutos antes de darlo por fallido, que es
+el `--max-time 180` de abajo. Cada línea debe mostrar `200`; `000` significa que no respondió a tiempo. Repite entonces, y
+si sigue igual, pasa a la tabla «Si algo falla». Despertado el servicio, responde en menos de un segundo.
 
 ```bash
 for url in https://backend-agrosense-u5mz.onrender.com/api/health \

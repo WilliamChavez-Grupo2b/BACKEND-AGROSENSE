@@ -482,6 +482,14 @@ done
     2 880 lecturas por sensor al día, unas 8 600 con tres sensores, y el plan gratuito de Neon tiene espacio limitado.
     Está apagada porque borra datos y porque ni las gráficas ni los reportes leen aún los promedios: tras activarla, lo
     anterior a ese plazo deja de verse. Decídelo mirando el tamaño real de la base.
+36. **El historial muestra lo que funcionó la bomba.** Con relé, el backend rechaza con 400 más minutos de los que admite la
+    bomba (`IRRIGATION_MAX_RUN_MINUTES`) y recorta los de la IA. El dispositivo informa de los segundos reales (`ack` con
+    `finished`) y el riego se corrige, con agua proporcional; uno rechazado o caducado queda sin agua y sin duración.
+37. **Calibración neutra por defecto.** `CalibrationRegistry` tiene una entrada por tipo de sensor, sin corrección hasta que
+    `SENSOR_CALIBRATION` aporte una medida. Inventar valores falsearía las lecturas.
+38. **Perro guardián alimentado por la interrupción.** Su máximo, 5,6 s, es menor que un comando AT de `WiFiS3`, así que
+    `loop()` no puede alimentarlo; lo hace el temporizador mientras `loop()` haya dado señal en los últimos 60 s.
+39. **Manejador de eventos: decisión abierta.** `docs/EVENT-SERVICE.md` compara mantenerlo o enviar directo al backend.
 35. **Lecturas en vivo por SSE, no por `/ws`.** La decisión 26 sigue vigente: el navegador recibe lecturas y alertas del
     manejador de eventos. El backend publica también por WebSocket, y una prueba lo comprueba, pero la interfaz no usa ese
     canal. Añadir un segundo cliente duplicaría lo que ya funciona.
