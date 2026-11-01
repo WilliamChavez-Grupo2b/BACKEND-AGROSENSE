@@ -16,6 +16,8 @@ import com.agrosense.backend.models.Crop;
 import com.agrosense.backend.models.Sensor;
 import com.agrosense.backend.models.SensorReading;
 import com.agrosense.backend.pattern.creational.builder.AlertBuilder;
+import com.agrosense.backend.pattern.creational.factory.alert.AlertContext;
+import com.agrosense.backend.pattern.creational.factory.alert.AlertCreator;
 import com.agrosense.backend.pattern.creational.prototype.SensorReadingPrototype;
 import com.agrosense.backend.pattern.structural.adapter.SensorReadingData;
 import com.agrosense.backend.pattern.structural.decorator.SensorReadingProcessor;
@@ -86,7 +88,8 @@ public class SensorFacade {
         events.publishEvent(new SensorReadingRecordedEvent(ownerEmail, SensorReadingResponse.from(reading)));
 
         Optional<Alert> alert = ValidationDecorator.QUALITY_OK.equals(reading.getQuality())
-                ? raiseAlertIfOutOfCropRange(sensor, reading, ownerEmail)
+                ? AlertCreator.firstFor(AlertContext.ofReading(sensor, reading.getValue(), reading.getUnit()))
+                        .flatMap(raised -> saveIfNoneOpen(raised, ownerEmail))
                 : Optional.empty();
         return new Recorded(reading, alert);
     }
@@ -95,40 +98,23 @@ public class SensorFacade {
     public Optional<Alert> raiseAlert(Crop crop, AlertType type, String message, Severity severity,
             BigDecimal detectedValue) {
         AlertBuilder alert = AlertBuilder.forCrop(crop).type(type).message(message).detectedValue(detectedValue);
-        return saveIfNoneOpen(crop, type, severity == null ? alert.automaticSeverity() : alert.severity(severity),
+        return saveIfNoneOpen((severity == null ? alert.automaticSeverity() : alert.severity(severity)).build(),
                 crop.getEstate().getUser().getEmail());
     }
 
-    private Optional<Alert> raiseAlertIfOutOfCropRange(Sensor sensor, SensorReading reading, String ownerEmail) {
-        Crop crop = sensor.getCrop();
-        BigDecimal value = reading.getValue();
-        AlertType type = switch (sensor.getSensorType()) {
-            // The crop's humidity range is the soil's; the air's humidity has none, so it raises no alert here.
-            case SOIL_MOISTURE -> below(value, crop.getHumidityMin()) ? AlertType.LOW_HUMIDITY
-                    : above(value, crop.getHumidityMax()) ? AlertType.HIGH_HUMIDITY : null;
-            case AIR_TEMPERATURE, SOIL_TEMPERATURE -> below(value, crop.getTempMin()) ? AlertType.LOW_TEMPERATURE
-                    : above(value, crop.getTempMax()) ? AlertType.HIGH_TEMPERATURE : null;
-            case PH -> below(value, crop.getPhMin()) || above(value, crop.getPhMax())
-                    ? AlertType.PH_OUT_OF_RANGE : null;
-            default -> null;
-        };
-        if (type == null) {
-            return Optional.empty();
-        }
-        return saveIfNoneOpen(crop, type, AlertBuilder.forCrop(crop)
-                .sensor(sensor)
-                .type(type)
-                .detectedValue(value)
-                .message(describe(type, reading))
-                .automaticSeverity(), ownerEmail);
+    @Transactional
+    public Optional<Alert> raise(AlertCreator creator, AlertContext context) {
+        return creator.evaluate(context)
+                .flatMap(alert -> saveIfNoneOpen(alert, context.crop().getEstate().getUser().getEmail()));
     }
 
-    private Optional<Alert> saveIfNoneOpen(Crop crop, AlertType type, AlertBuilder alert, String ownerEmail) {
-        cropRepository.findByIdForUpdate(crop.getIdCrop());
-        if (alertRepository.existsByCropIdCropAndAlertTypeAndAcknowledgedFalse(crop.getIdCrop(), type)) {
+    private Optional<Alert> saveIfNoneOpen(Alert alert, String ownerEmail) {
+        Integer cropId = alert.getCrop().getIdCrop();
+        cropRepository.findByIdForUpdate(cropId);
+        if (alertRepository.existsByCropIdCropAndAlertTypeAndAcknowledgedFalse(cropId, alert.getAlertType())) {
             return Optional.empty();
         }
-        Alert saved = alertRepository.save(alert.build());
+        Alert saved = alertRepository.save(alert);
         events.publishEvent(new AlertRaisedEvent(ownerEmail, AlertResponse.from(saved)));
         return Optional.of(saved);
     }
@@ -164,25 +150,5 @@ public class SensorFacade {
         return readingRepository.findFirstBySensorCropIdCropAndSensorSensorTypeOrderByRecordedAtDesc(cropId, type)
                 .map(SensorReading::getValue)
                 .orElse(null);
-    }
-
-    private static String describe(AlertType type, SensorReading reading) {
-        String measured = reading.getValue().toPlainString() + " " + reading.getUnit();
-        return switch (type) {
-            case LOW_HUMIDITY -> "La humedad está por debajo del mínimo del cultivo (" + measured + ").";
-            case HIGH_HUMIDITY -> "La humedad está por encima del máximo del cultivo (" + measured + ").";
-            case LOW_TEMPERATURE -> "La temperatura está por debajo del mínimo del cultivo (" + measured + ").";
-            case HIGH_TEMPERATURE -> "La temperatura está por encima del máximo del cultivo (" + measured + ").";
-            case PH_OUT_OF_RANGE -> "El pH está fuera del rango del cultivo (" + measured + ").";
-            default -> "Lectura fuera del rango del cultivo (" + measured + ").";
-        };
-    }
-
-    private static boolean below(BigDecimal value, BigDecimal minimum) {
-        return minimum != null && value.compareTo(minimum) < 0;
-    }
-
-    private static boolean above(BigDecimal value, BigDecimal maximum) {
-        return maximum != null && value.compareTo(maximum) > 0;
     }
 }

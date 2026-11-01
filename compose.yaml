@@ -47,6 +47,8 @@ services:
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       AI_TIMEOUT_MS: ${AI_TIMEOUT_MS:-20000}
       AI_MAX_OUTPUT_TOKENS: ${AI_MAX_OUTPUT_TOKENS:-2048}
+      AI_PROVIDER_REQUESTS_PER_MINUTE: ${AI_PROVIDER_REQUESTS_PER_MINUTE:-60}
+      AI_REPLY_CACHE_SECONDS: ${AI_REPLY_CACHE_SECONDS:-60}
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=4)"]
       interval: 10s
@@ -68,6 +70,12 @@ services:
       SPRING_PROFILES_ACTIVE: seed
       SEED_USER_PASSWORD: ${SEED_USER_PASSWORD:?Set SEED_USER_PASSWORD in .env}
       SEED_DEVICE_KEY: ${SEED_DEVICE_KEY:-}
+      SENSOR_CALIBRATION: ${SENSOR_CALIBRATION:-}
+      AI_INGESTION_PREDICTION_MINUTES: ${AI_INGESTION_PREDICTION_MINUTES:-30}
+      ALERTS_DEVICE_SILENT_MINUTES: ${ALERTS_DEVICE_SILENT_MINUTES:-15}
+      ALERTS_FROST_WATCH: ${ALERTS_FROST_WATCH:-true}
+      IRRIGATION_ACTUATOR: ${IRRIGATION_ACTUATOR:-simulated}
+      IRRIGATION_AI_ORDERS: ${IRRIGATION_AI_ORDERS:-false}
       JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in .env}
       CORS_ALLOWED_ORIGINS: http://localhost:8080
       # Every sign-in reaches the backend from the frontend's address.

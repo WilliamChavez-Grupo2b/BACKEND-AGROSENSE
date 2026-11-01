@@ -1,5 +1,6 @@
 package com.agrosense.backend.service;
 
+import com.agrosense.backend.pattern.creational.builder.PredictionRequest;
 import com.agrosense.backend.pattern.structural.proxy.AiService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -8,8 +9,6 @@ import org.springframework.web.reactive.function.client.WebClient;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
-import java.util.LinkedHashMap;
-import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
@@ -34,13 +33,12 @@ public class AiClientService implements AiService {
             log.info("Irrigation prediction skipped: crop {} has no soil moisture readings", cropId);
             return Optional.empty();
         }
-        Map<String, Object> body = new LinkedHashMap<>();
-        body.put("id_crop", cropId);
-        for (String measurement : List.of(SOIL_MOISTURE, "air_temperature", "ph",
-                "humidity_min", "humidity_max", "ph_min", "ph_max")) {
-            if (sensorData.get(measurement) != null) {
-                body.put(measurement, sensorData.get(measurement));
-            }
+        Map<String, Object> body;
+        try {
+            body = PredictionRequest.fromConditions(cropId, sensorData).toBody();
+        } catch (IllegalStateException | NumberFormatException invalid) {
+            log.warn("Irrigation prediction skipped for crop {}: {}", cropId, invalid.getMessage());
+            return Optional.empty();
         }
         Map<?, ?> result = aiWebClient.post()
                 .uri(irrigationPath)
@@ -55,7 +53,9 @@ public class AiClientService implements AiService {
         return Optional.of(new IrrigationPrediction(
                 result.get("recommendation").toString(),
                 confidence(result.get("confidence")),
-                model == null ? null : model.toString()));
+                model == null ? null : model.toString(),
+                Boolean.TRUE.equals(result.get("irrigate")),
+                result.get("duration_minutes") instanceof Number minutes ? minutes.intValue() : null));
     }
 
     private static BigDecimal confidence(Object value) {

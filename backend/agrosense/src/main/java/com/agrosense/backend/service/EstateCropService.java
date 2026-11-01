@@ -8,6 +8,7 @@ import com.agrosense.backend.exception.ResourceNotFoundException;
 import com.agrosense.backend.models.Crop;
 import com.agrosense.backend.models.Estate;
 import com.agrosense.backend.models.User;
+import com.agrosense.backend.pattern.creational.prototype.CropTemplateCatalog;
 import com.agrosense.backend.repository.CropRepository;
 import com.agrosense.backend.repository.EstateRepository;
 import com.agrosense.backend.repository.UserRepository;
@@ -24,6 +25,7 @@ public class EstateCropService {
     private final EstateRepository estateRepository;
     private final CropRepository cropRepository;
     private final UserRepository userRepository;
+    private final CropTemplateCatalog templates;
 
     @Transactional(readOnly = true)
     public List<EstateResponse> findEstates(String email) {
@@ -64,6 +66,9 @@ public class EstateCropService {
                         ? null : request.getVariety().trim())
                 .sowingDate(request.getSowingDate())
                 .build();
+        if (request.getTemplate() != null && !request.getTemplate().isBlank()) {
+            templates.cloneOf(request.getTemplate()).applyTo(crop);
+        }
         if (request.getHumidityMin() != null) {
             crop.setHumidityMin(request.getHumidityMin());
             crop.setHumidityMax(request.getHumidityMax());

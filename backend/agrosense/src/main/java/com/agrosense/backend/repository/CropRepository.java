@@ -2,6 +2,7 @@ package com.agrosense.backend.repository;
 
 import com.agrosense.backend.models.Crop;
 import jakarta.persistence.LockModeType;
+import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
@@ -13,6 +14,9 @@ import java.util.Optional;
 public interface CropRepository extends JpaRepository<Crop, Integer> {
 
     List<Crop> findByActiveTrue();
+
+    @EntityGraph(attributePaths = {"estate", "estate.user"})
+    List<Crop> findByActiveTrueAndEstateLatitudeIsNotNull();
 
     List<Crop> findByEstateIdEstate(Integer idEstate);
 

@@ -19,6 +19,7 @@ import com.agrosense.backend.repository.SensorReadingRepository;
 import com.agrosense.backend.repository.SensorRepository;
 import com.agrosense.backend.security.LoginAttemptService;
 import com.agrosense.backend.service.AiClientService;
+import com.agrosense.backend.service.IrrigationService;
 import com.agrosense.backend.service.PredictionService;
 import com.agrosense.backend.service.SensorService;
 import org.junit.jupiter.api.Test;
@@ -83,7 +84,7 @@ class ServiceTests {
 		AiPredictionRepository predictions = mock(AiPredictionRepository.class);
 		CropRepository crops = mock(CropRepository.class);
 		PredictionService service = new PredictionService(proxy, predictions, crops,
-				mock(SensorReadingRepository.class));
+				mock(SensorReadingRepository.class), mock(IrrigationService.class));
 		Crop crop = crop(7);
 
 		service.requestIrrigationPrediction(99, Map.of());
@@ -113,7 +114,7 @@ class ServiceTests {
 		CropRepository crops = mock(CropRepository.class);
 		SensorReadingRepository readings = mock(SensorReadingRepository.class);
 		PredictionService service = new PredictionService(mock(AiServiceProxy.class),
-				mock(AiPredictionRepository.class), crops, readings);
+				mock(AiPredictionRepository.class), crops, readings, mock(IrrigationService.class));
 		Crop rice = crop(7);
 		rice.setHumidityMin(new BigDecimal("70.0"));
 		rice.setHumidityMax(new BigDecimal("95.0"));

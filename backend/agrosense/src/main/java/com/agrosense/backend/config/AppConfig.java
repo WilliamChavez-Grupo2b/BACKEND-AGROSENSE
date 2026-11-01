@@ -1,6 +1,10 @@
 package com.agrosense.backend.config;
 
 import com.agrosense.backend.pattern.creational.singleton.AiConfigManager;
+import com.agrosense.backend.pattern.structural.bridge.ActuatorDriver;
+import com.agrosense.backend.pattern.structural.bridge.PendingIrrigationCommands;
+import com.agrosense.backend.pattern.structural.bridge.RelayActuatorDriver;
+import com.agrosense.backend.pattern.structural.bridge.SimulatedActuatorDriver;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -21,6 +25,13 @@ public class AppConfig {
         AiConfigManager manager = AiConfigManager.getInstance();
         manager.configure(serviceUrl, timeoutMs, !serviceUrl.isBlank(), maxAttempts);
         return manager;
+    }
+
+    @Bean
+    public ActuatorDriver actuatorDriver(@Value("${irrigation.actuator:simulated}") String actuator,
+            PendingIrrigationCommands pending) {
+        return "relay".equalsIgnoreCase(actuator.trim()) ? new RelayActuatorDriver(pending)
+                : new SimulatedActuatorDriver();
     }
 
     @Bean(ASYNC_EXECUTOR)

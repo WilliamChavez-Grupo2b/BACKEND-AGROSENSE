@@ -1,7 +1,7 @@
 package com.agrosense.backend.controller;
 
 import com.agrosense.backend.dto.request.DeviceEventRequest;
-import com.agrosense.backend.service.DeviceEventService;
+import com.agrosense.backend.pattern.structural.facade.DeviceIngestionFacade;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -18,11 +18,11 @@ public class InternalEventController {
 
     public static final String DEVICE_KEY_HEADER = "X-Device-Key";
 
-    private final DeviceEventService events;
+    private final DeviceIngestionFacade ingestion;
 
     @PostMapping("/events")
     public Map<String, Object> receive(@RequestHeader(value = DEVICE_KEY_HEADER, required = false) String deviceKey,
             @RequestBody DeviceEventRequest request) {
-        return events.receive(request.getDeviceId(), deviceKey, request.getType(), request.getTs(), request.getData());
+        return ingestion.ingest(deviceKey, request);
     }
 }

@@ -60,7 +60,8 @@ public final class AlertBuilder {
             case LOW_HUMIDITY -> value < 20 ? Severity.VERY_HIGH : value < 30 ? Severity.HIGH : Severity.MEDIUM;
             case HIGH_TEMPERATURE -> value > 45 ? Severity.VERY_HIGH : value > 40 ? Severity.HIGH : Severity.MEDIUM;
             case PH_OUT_OF_RANGE -> Severity.HIGH;
-            case PEST_DETECTED -> Severity.VERY_HIGH;
+            case PEST_DETECTED, FROST_RISK -> Severity.VERY_HIGH;
+            case SENSOR_OFFLINE -> Severity.HIGH;
             default -> Severity.MEDIUM;
         };
         return this;

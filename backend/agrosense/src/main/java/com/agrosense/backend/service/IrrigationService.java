@@ -1,27 +1,28 @@
 package com.agrosense.backend.service;
 
-import com.agrosense.backend.domain.enums.IrrigationType;
 import com.agrosense.backend.dto.request.IrrigationRequest;
 import com.agrosense.backend.dto.response.IrrigationResponse;
 import com.agrosense.backend.exception.ResourceNotFoundException;
 import com.agrosense.backend.models.Crop;
 import com.agrosense.backend.models.Irrigation;
 import com.agrosense.backend.models.User;
+import com.agrosense.backend.pattern.structural.bridge.ActuatorDriver;
+import com.agrosense.backend.pattern.structural.bridge.AiIrrigationOrder;
+import com.agrosense.backend.pattern.structural.bridge.ManualIrrigationOrder;
+import com.agrosense.backend.pattern.structural.proxy.AiService.IrrigationPrediction;
 import com.agrosense.backend.repository.CropRepository;
 import com.agrosense.backend.repository.IrrigationRepository;
 import com.agrosense.backend.repository.UserRepository;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.time.LocalDateTime;
 import java.util.List;
 
 @Slf4j
 @Service
-@RequiredArgsConstructor
 public class IrrigationService {
 
     private static final int MAX_IRRIGATIONS = 200;
@@ -29,26 +30,41 @@ public class IrrigationService {
     private final IrrigationRepository irrigationRepository;
     private final CropRepository cropRepository;
     private final UserRepository userRepository;
+    private final ActuatorDriver actuator;
+    private final boolean aiOrders;
+
+    public IrrigationService(IrrigationRepository irrigationRepository, CropRepository cropRepository,
+            UserRepository userRepository, ActuatorDriver actuator,
+            @Value("${irrigation.ai-orders:false}") boolean aiOrders) {
+        this.irrigationRepository = irrigationRepository;
+        this.cropRepository = cropRepository;
+        this.userRepository = userRepository;
+        this.actuator = actuator;
+        this.aiOrders = aiOrders;
+    }
 
     @Transactional
     public IrrigationResponse register(String email, IrrigationRequest request) {
         Crop crop = ownedCrop(email, request.getCropId());
         User user = userRepository.findByEmail(email)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
-        LocalDateTime startedAt = LocalDateTime.now();
-        Irrigation irrigation = irrigationRepository.save(Irrigation.builder()
-                .crop(crop)
-                .startedAt(startedAt)
-                .endedAt(startedAt.plusMinutes(request.getDurationMinutes()))
-                .durationMin(request.getDurationMinutes())
-                .waterLiters(request.getWaterLiters())
-                .type(IrrigationType.MANUAL)
-                .reason(request.getReason().trim())
-                .activatedBy(user)
-                .build());
+        Irrigation irrigation = new ManualIrrigationOrder(actuator, crop, user, request.getDurationMinutes(),
+                request.getWaterLiters(), request.getReason().trim())
+                .execute(irrigationRepository::save).orElseThrow();
         log.info("Manual irrigation recorded for crop {}: {} L in {} min",
                 crop.getIdCrop(), irrigation.getWaterLiters(), irrigation.getDurationMin());
         return IrrigationResponse.from(irrigation);
+    }
+
+    @Transactional
+    public void orderFromPrediction(Integer cropId, IrrigationPrediction prediction) {
+        if (!aiOrders) {
+            return;
+        }
+        new AiIrrigationOrder(actuator, cropRepository.getReferenceById(cropId), prediction)
+                .execute(irrigationRepository::save)
+                .ifPresent(irrigation -> log.info("AI irrigation ordered for crop {}: {} min", cropId,
+                        irrigation.getDurationMin()));
     }
 
     @Transactional(readOnly = true)

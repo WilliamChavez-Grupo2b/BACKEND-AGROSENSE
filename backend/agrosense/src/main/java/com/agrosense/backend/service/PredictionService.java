@@ -35,6 +35,7 @@ public class PredictionService {
     private final AiPredictionRepository predictionRepository;
     private final CropRepository cropRepository;
     private final SensorReadingRepository readingRepository;
+    private final IrrigationService irrigationService;
 
     @Transactional(readOnly = true)
     public List<PredictionResponse> findHistory(String email, Integer cropId, int limit) {
@@ -81,6 +82,7 @@ public class PredictionService {
                     .modelUsed(prediction.modelUsed())
                     .build());
             log.info("Irrigation prediction saved for crop {}", cropId);
+            irrigationService.orderFromPrediction(cropId, prediction);
         });
     }
 

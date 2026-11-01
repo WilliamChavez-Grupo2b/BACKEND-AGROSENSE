@@ -28,6 +28,9 @@ public class CropRequest {
 
     private LocalDate sowingDate;
 
+    @Size(max = 32, message = "La plantilla es demasiado larga.")
+    private String template;
+
     @DecimalMin(value = "0", message = "La humedad debe estar entre 0 y 100.")
     @DecimalMax(value = "100", message = "La humedad debe estar entre 0 y 100.")
     @Digits(integer = 3, fraction = 2, message = "La humedad admite hasta 2 decimales.")
