@@ -13,6 +13,7 @@ import com.agrosense.backend.models.Device;
 import com.agrosense.backend.models.Irrigation;
 import com.agrosense.backend.models.Sensor;
 import com.agrosense.backend.models.SensorReading;
+import com.agrosense.backend.pattern.creational.singleton.CalibrationRegistry;
 import com.agrosense.backend.pattern.structural.adapter.SensorReadingData;
 import com.agrosense.backend.pattern.structural.adapter.WeatherProvider;
 import com.agrosense.backend.pattern.structural.adapter.WeatherProvider.Outlook;
@@ -339,6 +340,25 @@ class FieldWatchIntegrationTests {
 
 		assertThat(readings.count()).isEqualTo(before + 1);
 		assertThat(ph.getSensorCode()).isNotBlank();
+	}
+
+	@Test
+	void theCalibrationChangesTheValueThatIsStored() {
+		String code = firstSensor(SensorType.PH).getSensorCode();
+		BigDecimal raw = new BigDecimal("6");
+		SensorReading before = sensorFacade.record(SensorReadingData.builder().sensorCode(code).value(raw)
+				.recordedAt(LocalDateTime.now().plusDays(3)).build()).reading();
+		assertThat(before.getValue()).as("neutral by default").isEqualByComparingTo("6.00");
+
+		CalibrationRegistry.INSTANCE.load("PH=0.1:1.02");
+		try {
+			SensorReading after = sensorFacade.record(SensorReadingData.builder().sensorCode(code).value(raw)
+					.recordedAt(LocalDateTime.now().plusDays(3).plusMinutes(1)).build()).reading();
+			assertThat(after.getValue()).as("6 x 1.02 + 0.1").isEqualByComparingTo("6.22");
+			assertThat(readings.findById(after.getIdReading()).orElseThrow().getValue()).isEqualByComparingTo("6.22");
+		} finally {
+			CalibrationRegistry.INSTANCE.clear();
+		}
 	}
 
 	@Test

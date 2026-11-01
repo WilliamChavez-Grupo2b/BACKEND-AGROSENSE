@@ -1,5 +1,6 @@
 package com.agrosense.backend;
 
+import com.agrosense.backend.config.SensorReadingProcessingConfig;
 import com.agrosense.backend.domain.enums.AlertType;
 import com.agrosense.backend.domain.enums.SensorType;
 import com.agrosense.backend.domain.enums.Severity;
@@ -118,6 +119,23 @@ class DesignPatternTests {
 				.isEqualByComparingTo("30");
 		assertThatThrownBy(() -> CalibrationRegistry.INSTANCE.load("PH=0.1")).isInstanceOf(IllegalArgumentException.class);
 		assertThatThrownBy(() -> CalibrationRegistry.INSTANCE.load("PH=0:0")).isInstanceOf(IllegalArgumentException.class);
+	}
+
+	@Test
+	void everySensorTypeHasANeutralCalibrationUntilOneIsMeasured() {
+		for (SensorType type : SensorType.values()) {
+			assertThat(CalibrationRegistry.INSTANCE.of(type)).isEqualTo(CalibrationRegistry.Calibration.NONE);
+		}
+	}
+
+	@Test
+	void theStartUpReadsTheCalibrationIntoTheChainOfEveryReading() {
+		SensorReadingProcessor chain = new SensorReadingProcessingConfig().sensorReadingProcessor("PH=-1:1");
+
+		SensorReading reading = chain.process(SensorReading.builder().sensor(sensor(SensorType.PH))
+				.value(new BigDecimal("7")).quality("OK").build());
+
+		assertThat(reading.getValue()).isEqualByComparingTo("6.00");
 	}
 
 	@Test
