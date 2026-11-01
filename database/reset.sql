@@ -3,6 +3,8 @@
 
 DROP TABLE IF EXISTS spring_session_attributes;
 DROP TABLE IF EXISTS spring_session;
+DROP TABLE IF EXISTS irrigation_dispatches;
+DROP TABLE IF EXISTS sensor_readings_hourly;
 DROP TABLE IF EXISTS devices;
 DROP TABLE IF EXISTS ai_predictions;
 DROP TABLE IF EXISTS irrigations;
