@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "AgroSenseDevice.h"
+#include "HttpResponseReader.h"
 
 using namespace agro;
 
@@ -94,13 +95,34 @@ class FakeBackend : public IBackend {
   std::vector<std::string> sent;
   std::vector<int> statuses{200};
   std::string body = "{\"status\":\"stored\"}";
-  BackendResponse post(const char* json) override {
+  int busyPolls = 0;
+  int left = 0;
+  bool canStart = true;
+  bool begin(const char* json) override {
+    if (!canStart) return false;
     sent.push_back(json);
-    int status = statuses.size() > 1 ? statuses[sent.size() - 1 < statuses.size() ? sent.size() - 1 : statuses.size() - 1]
-                                     : statuses[0];
-    return BackendResponse{status, body.c_str()};
+    left = busyPolls;
+    return true;
+  }
+  SendState poll(BackendResponse& response) override {
+    if (left-- > 0) return SendState::Busy;
+    size_t at = sent.size() - 1 < statuses.size() ? sent.size() - 1 : statuses.size() - 1;
+    response = BackendResponse{statuses[at], body.c_str()};
+    return SendState::Done;
   }
 };
+
+static BackendResponse send(BackendProxy& proxy) {
+  BackendResponse response{0, nullptr};
+  while (proxy.poll(response) == SendState::Busy) {
+  }
+  return response;
+}
+
+static BackendResponse post(BackendProxy& proxy, const char* json) {
+  proxy.begin(json);
+  return send(proxy);
+}
 
 static const float NOT_A_NUMBER = std::strtof("nan", nullptr);
 
@@ -221,7 +243,9 @@ static void the_factories_give_interchangeable_families() {
   CHECK(hardware.climateSensor().begin());
   CHECK(hardware.climateSensor().read().humidity.valid);
   CHECK(!hardware.button().pressed());
-  hardware.actuator().start(1000);
+  hardware.actuator().begin();
+  clock.ms += MIN_PUMP_GAP_MS;
+  CHECK(hardware.actuator().start(1000));
   CHECK(simulated.simulatedDriver().starts() == 1);
 }
 
@@ -259,25 +283,25 @@ static void the_proxy_delivers_in_order_and_retries_with_a_growing_wait() {
   FakeBackend real;
   real.statuses = {500, 500, 500, 200, 200};
   BackendProxy proxy(real, clock);
-  CHECK(proxy.post("uno").status == 500);
-  proxy.enqueue("dos");
+  CHECK(post(proxy, "uno").status == 500);
+  proxy.begin("dos");
   CHECK(proxy.pending() == 2);
 
-  proxy.flush();
+  send(proxy);
   CHECK(real.sent.size() == 1);  // still waiting
   clock.ms += BackendProxy::FIRST_WAIT_MS;
-  proxy.flush();
+  send(proxy);
   CHECK(real.sent.size() == 2);
   clock.ms += BackendProxy::FIRST_WAIT_MS;
-  proxy.flush();
+  send(proxy);
   CHECK(real.sent.size() == 2);  // the wait doubled
   clock.ms += BackendProxy::FIRST_WAIT_MS;
-  proxy.flush();
+  send(proxy);
   CHECK(real.sent.size() == 3);
   clock.ms += BackendProxy::MAX_WAIT_MS;
-  CHECK(proxy.flush().status == 200);
+  CHECK(send(proxy).status == 200);
   clock.ms += 1;
-  CHECK(proxy.flush().status == 200);
+  CHECK(send(proxy).status == 200);
   CHECK(real.sent[3] == "uno" && real.sent[4] == "dos");
   CHECK(proxy.pending() == 0);
 }
@@ -287,26 +311,26 @@ static void the_proxy_waits_steadily_while_render_wakes_up_then_backs_off() {
   FakeBackend real;
   real.statuses = {0};
   BackendProxy proxy(real, clock);
-  proxy.post("uno");
+  post(proxy, "uno");
   CHECK(proxy.waking());
   for (int i = 0; i < 3; i++) {
     clock.ms += BackendProxy::WAKE_RETRY_MS;
-    proxy.flush();
+    send(proxy);
   }
   CHECK(real.sent.size() == 4);
   clock.ms += BackendProxy::WAKE_WINDOW_MS;
-  proxy.flush();
+  send(proxy);
   CHECK(!proxy.waking());  // it did not wake: this is an outage
   size_t before = real.sent.size();
   clock.ms += BackendProxy::FIRST_WAIT_MS;
-  proxy.flush();
+  send(proxy);
   CHECK(real.sent.size() == before + 1);
   clock.ms += BackendProxy::FIRST_WAIT_MS;
-  proxy.flush();
+  send(proxy);
   CHECK(real.sent.size() == before + 1);  // now the wait doubles
   real.statuses = {200};
   clock.ms += BackendProxy::MAX_WAIT_MS;
-  proxy.flush();
+  send(proxy);
   CHECK(proxy.pending() == 0 && !proxy.waking());
 }
 
@@ -315,28 +339,28 @@ static void the_proxy_drops_a_refused_event_and_the_oldest_when_full() {
   FakeBackend real;
   real.statuses = {400};
   BackendProxy refused(real, clock);
-  refused.post("malo");
+  post(refused, "malo");
   CHECK(refused.pending() == 0 && refused.dropped() == 1);
 
   real.sent.clear();
   real.statuses = {429};
   BackendProxy busy(real, clock);
-  busy.post("x");
+  post(busy, "x");
   CHECK(busy.pending() == 1);  // too many requests is no fault of the event
 
   BackendProxy full(real, clock);
   char event[8];
   for (int i = 0; i < BackendProxy::CAPACITY + 2; i++) {
     std::snprintf(event, sizeof event, "e%d", i);
-    full.enqueue(event);
+    full.begin(event);
   }
   CHECK(full.pending() == BackendProxy::CAPACITY && full.lost() == 2);
   real.sent.clear();
   real.statuses = {200};
-  full.flush();
+  send(full);
   CHECK(real.sent[0] == "e2");
   std::string oversized(BackendProxy::EVENT_BYTES, 'x');
-  CHECK(!full.enqueue(oversized.c_str()));
+  CHECK(!full.begin(oversized.c_str()));
 }
 
 static void every_order_works_with_every_driver() {
@@ -344,7 +368,9 @@ static void every_order_works_with_every_driver() {
   FakeDigital pins;
   RelayDriver relay(pins, 7, true, clock);
   SimulatedDriver simulated(clock);
-  CHECK(pins.writes.size() == 1 && pins.writes[0] == true);  // active low: high is off, from the start
+  CHECK(pins.writes.empty());  // nothing touches a pin from a constructor, before the core is up
+  relay.begin();
+  CHECK(pins.writes.size() == 1 && pins.writes[0] == true);  // active low: high is off
 
   CHECK(ManualIrrigationOrder(relay, 10).execute());
   CHECK(pins.writes.back() == false && relay.running());
@@ -412,20 +438,33 @@ struct Bench {
     WifiManager::instance().attach(wifi, "red", "k");
     wifi.up = true;
   }
+
+  void start() {
+    device.begin();
+    clock.ms += MIN_PUMP_GAP_MS;  // the gap counts from the boot
+  }
+
+  void ticks(int count = 4) {
+    for (int i = 0; i < count; i++) device.tick();
+  }
 };
+
+static const char* AI_ORDER =
+    "{\"command\":{\"id\":12,\"type\":\"irrigate\",\"source\":\"AI\",\"minutes\":1,\"confidence\":0.9}}";
+static const char* MANUAL_ORDER = "{\"command\":{\"id\":13,\"type\":\"irrigate\",\"source\":\"MANUAL\",\"minutes\":1}}";
 
 static void the_facade_measures_each_interval_and_sends() {
   Bench bench;
   CHECK(bench.device.begin());
-  bench.device.tick();
+  bench.ticks();
   CHECK(bench.real.sent.size() == 1);
   CHECK(bench.real.sent[0].find("\"soil_moisture\":50.0") != std::string::npos);
   CHECK(bench.real.sent[0].find("\"air_temperature\":24.1") != std::string::npos);
   bench.clock.ms += 29999;
-  bench.device.tick();
+  bench.ticks();
   CHECK(bench.real.sent.size() == 1);
   bench.clock.ms += 1;
-  bench.device.tick();
+  bench.ticks();
   CHECK(bench.real.sent.size() == 2);
 }
 
@@ -433,47 +472,238 @@ static void without_wifi_it_keeps_measuring_and_catches_up() {
   Bench bench;
   bench.wifi.up = false;
   bench.device.begin();
-  bench.device.tick();
+  bench.ticks();
   bench.clock.ms += 30000;
-  bench.device.tick();
+  bench.ticks();
   CHECK(bench.real.sent.empty() && bench.proxy.pending() == 2);
   bench.wifi.up = true;
-  bench.device.tick();
-  bench.device.tick();
+  bench.ticks(6);
   CHECK(bench.real.sent.size() == 2 && bench.proxy.pending() == 0);
 }
 
 static void the_order_in_an_answer_reaches_the_pump_through_the_facade() {
   Bench bench;
-  bench.device.begin();
-  bench.real.body = "{\"command\":{\"type\":\"irrigate\",\"source\":\"AI\",\"minutes\":1,\"confidence\":0.9}}";
-  bench.device.tick();
+  bench.start();
+  bench.real.body = AI_ORDER;
+  bench.ticks();
   CHECK(bench.hardware.actuator().running());
   bench.real.body = "{\"status\":\"stored\"}";
   bench.clock.ms += 60000;
-  bench.device.tick();
+  bench.ticks();
   CHECK(!bench.hardware.actuator().running());
 
   bench.hardware.rawSoil().set(6000);  // soaked: 100 %
-  bench.clock.ms += 30000;
-  bench.real.body = "{\"command\":{\"type\":\"irrigate\",\"source\":\"AI\",\"minutes\":1,\"confidence\":0.9}}";
-  bench.device.tick();
+  bench.clock.ms += MIN_PUMP_GAP_MS;
+  bench.real.body = AI_ORDER;
+  bench.ticks();
   CHECK(!bench.hardware.actuator().running());
-  bench.real.body = "{\"command\":{\"type\":\"irrigate\",\"source\":\"MANUAL\",\"minutes\":1}}";
+  bench.real.body = MANUAL_ORDER;
   bench.clock.ms += 30000;
-  bench.device.tick();
+  bench.ticks();
   CHECK(bench.hardware.actuator().running());  // a person may overrule the soil
+}
+
+static void the_result_of_an_order_travels_in_the_next_event() {
+  Bench bench;
+  bench.start();
+  bench.real.body = AI_ORDER;
+  bench.ticks();
+  bench.real.body = "{\"status\":\"stored\"}";
+  bench.clock.ms += 30000;
+  bench.ticks();
+  CHECK(bench.real.sent.back().find("\"ack\":{\"command_id\":12,\"result\":\"started\"}") != std::string::npos);
+  bench.clock.ms += 30000;
+  bench.ticks();
+  CHECK(bench.real.sent.back().find("\"ack\"") == std::string::npos);  // reported once
+
+  bench.hardware.rawSoil().set(6000);
+  bench.clock.ms += MIN_PUMP_GAP_MS;
+  bench.real.body = AI_ORDER;
+  bench.ticks();
+  bench.real.body = "{\"status\":\"stored\"}";
+  bench.clock.ms += 30000;
+  bench.ticks();
+  CHECK(bench.real.sent.back().find("\"result\":\"refused\"") != std::string::npos);
 }
 
 static void the_button_starts_and_stops_the_pump() {
   Bench bench;
-  bench.device.begin();
+  bench.start();
   bench.hardware.simulatedButton().press();
   bench.device.tick();
   CHECK(bench.hardware.actuator().running());
   bench.hardware.simulatedButton().press();
   bench.device.tick();
   CHECK(!bench.hardware.actuator().running());
+}
+
+static void the_pump_is_off_after_begin_and_cannot_start_right_after_a_reset() {
+  Bench bench;
+  bench.device.begin();
+  CHECK(!bench.hardware.actuator().running());
+  CHECK(!bench.hardware.actuator().start(60000));
+  CHECK(bench.hardware.simulatedDriver().starts() == 0);
+  bench.clock.ms += MIN_PUMP_GAP_MS;
+  CHECK(bench.hardware.actuator().start(60000));
+}
+
+static void no_order_runs_the_pump_past_the_absolute_maximum() {
+  FakeClock clock;
+  SimulatedDriver driver(clock);
+  CHECK(ManualIrrigationOrder(driver, IrrigationOrder::MAX_MINUTES).execute());
+  clock.ms += MAX_PUMP_ON_MS - 1;
+  driver.update();
+  CHECK(driver.running());
+  clock.ms += 1;
+  driver.update();
+  CHECK(!driver.running());
+}
+
+static void the_interrupt_stops_the_pump_while_the_loop_is_blocked() {
+  FakeClock clock;
+  FakeDigital pins;
+  RelayDriver relay(pins, 7, true, clock);
+  PumpGuard guard(relay, clock);
+  guard.begin();
+  clock.ms += MIN_PUMP_GAP_MS;
+  guard.start(60000);
+  clock.ms += 60000;
+  guard.enforceDeadline();  // what the timer does: loop() never ran
+  CHECK(!guard.running());
+  CHECK(pins.writes.back() == true);
+  guard.update();
+  CHECK(guard.usedTodayMs() == 60000);
+}
+
+static void a_dead_connection_does_not_keep_the_pump_on() {
+  Bench bench;
+  bench.start();
+  bench.real.body = AI_ORDER;
+  bench.ticks();
+  CHECK(bench.hardware.actuator().running());
+  bench.real.busyPolls = 1000000;  // the server never answers again
+  bench.wifi.up = false;
+  bench.clock.ms += 30000;
+  bench.ticks();
+  bench.clock.ms += 30000;
+  bench.ticks();
+  CHECK(!bench.hardware.actuator().running());
+}
+
+static void the_loop_keeps_running_while_an_answer_is_pending() {
+  Bench bench;
+  bench.start();
+  bench.real.busyPolls = 1000000;
+  bench.ticks();
+  CHECK(bench.proxy.busy());
+  bench.hardware.simulatedButton().press();
+  bench.device.tick();
+  CHECK(bench.hardware.actuator().running());  // the button still answers, mid send
+}
+
+static void the_gap_between_runs_is_respected() {
+  FakeClock clock;
+  SimulatedDriver driver(clock);
+  PumpGuard guard(driver, clock);
+  guard.begin();
+  clock.ms += MIN_PUMP_GAP_MS;
+  CHECK(guard.start(1000));
+  CHECK(!guard.start(1000));  // already running
+  clock.ms += 1000;
+  guard.update();
+  clock.ms += MIN_PUMP_GAP_MS - 1;
+  CHECK(!guard.start(1000));
+  clock.ms += 1;
+  CHECK(guard.start(1000));
+}
+
+static void the_daily_limit_cuts_and_then_refuses_until_the_next_day() {
+  FakeClock clock;
+  SimulatedDriver driver(clock);
+  PumpGuard guard(driver, clock);
+  guard.begin();
+  for (uint32_t used = 0; used < MAX_PUMP_MS_PER_DAY; used += MAX_PUMP_ON_MS) {
+    clock.ms += MIN_PUMP_GAP_MS;
+    CHECK(guard.start(MAX_PUMP_ON_MS));
+    clock.ms += MAX_PUMP_ON_MS;
+    guard.update();
+    CHECK(!guard.running());
+  }
+  CHECK(guard.usedTodayMs() == MAX_PUMP_MS_PER_DAY);
+  clock.ms += MIN_PUMP_GAP_MS;
+  CHECK(!guard.start(1000));
+  clock.ms += DAY_MS;
+  CHECK(guard.start(1000));
+
+  FakeClock second;
+  SimulatedDriver other(second);
+  PumpGuard limited(other, second);
+  limited.begin();
+  for (int i = 0; i < 5; i++) {
+    second.ms += MIN_PUMP_GAP_MS;
+    limited.start(MAX_PUMP_ON_MS);
+    second.ms += MAX_PUMP_ON_MS;
+    limited.update();
+  }
+  second.ms += MIN_PUMP_GAP_MS;
+  limited.start(MAX_PUMP_ON_MS);
+  second.ms += 60000;
+  limited.stop();
+  second.ms += MIN_PUMP_GAP_MS;
+  CHECK(limited.start(MAX_PUMP_ON_MS));  // only four minutes are left today
+  second.ms += 4UL * 60000UL;
+  limited.update();
+  CHECK(!limited.running());
+}
+
+static void the_answer_is_read_byte_by_byte() {
+  HttpResponseReader reader;
+  reader.reset();
+  const char* answer = "HTTP/1.1 200 OK\r\nDate: x\r\ncontent-LENGTH: 7\r\n\r\n{\"a\":1}";
+  for (const char* c = answer; *c != '\0'; c++) {
+    CHECK(!reader.complete());
+    reader.feed(*c);
+  }
+  CHECK(reader.complete());
+  CHECK(reader.status() == 200);
+  CHECK(std::string(reader.body()) == "{\"a\":1}");
+
+  reader.reset();
+  for (const char* c = "HTTP/1.1 502 Bad Gateway\r\n\r\nno"; *c != '\0'; c++) reader.feed(*c);
+  CHECK(reader.status() == 502 && !reader.complete());  // without a length, the end is the closed connection
+
+  reader.reset();
+  CHECK(reader.status() == 0);
+  std::string big = "HTTP/1.1 200 OK\r\n\r\n" + std::string(HttpResponseReader::BODY_BYTES * 2, 'x');
+  for (char c : big) reader.feed(c);
+  CHECK(std::strlen(reader.body()) == HttpResponseReader::BODY_BYTES - 1);
+}
+
+static void a_send_that_cannot_start_waits_and_an_event_lost_in_flight_is_not_popped_twice() {
+  FakeClock clock;
+  FakeBackend real;
+  real.canStart = false;
+  BackendProxy proxy(real, clock);
+  post(proxy, "uno");
+  CHECK(proxy.pending() == 1 && proxy.waking());
+
+  FakeBackend slow;
+  slow.busyPolls = 1;
+  BackendProxy full(slow, clock);
+  char event[8];
+  for (int i = 0; i < BackendProxy::CAPACITY; i++) {
+    std::snprintf(event, sizeof event, "e%d", i);
+    full.begin(event);
+  }
+  BackendResponse response{0, nullptr};
+  full.poll(response);  // e0 leaves
+  CHECK(full.busy());
+  full.begin("nuevo");  // and the buffer drops it while it travels
+  CHECK(full.lost() == 1);
+  send(full);
+  CHECK(full.pending() == BackendProxy::CAPACITY);
+  send(full);
+  CHECK(slow.sent[1] == "e1");
 }
 
 int main() {
@@ -498,6 +728,16 @@ int main() {
   without_wifi_it_keeps_measuring_and_catches_up();
   the_order_in_an_answer_reaches_the_pump_through_the_facade();
   the_button_starts_and_stops_the_pump();
+  the_result_of_an_order_travels_in_the_next_event();
+  the_pump_is_off_after_begin_and_cannot_start_right_after_a_reset();
+  no_order_runs_the_pump_past_the_absolute_maximum();
+  the_interrupt_stops_the_pump_while_the_loop_is_blocked();
+  a_dead_connection_does_not_keep_the_pump_on();
+  the_loop_keeps_running_while_an_answer_is_pending();
+  the_gap_between_runs_is_respected();
+  the_daily_limit_cuts_and_then_refuses_until_the_next_day();
+  the_answer_is_read_byte_by_byte();
+  a_send_that_cannot_start_waits_and_an_event_lost_in_flight_is_not_popped_twice();
   printf("%d checks, %d failed\n", checks, failures);
   return failures == 0 ? 0 : 1;
 }

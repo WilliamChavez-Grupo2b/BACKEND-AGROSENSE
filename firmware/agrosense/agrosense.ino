@@ -9,9 +9,11 @@
 
 using namespace agro;
 
+constexpr uint32_t STATUS_EVERY_MS = 60000;
+
 BoardClock boardClock;
 BoardWifi boardWifi;
-HttpBackend httpBackend;
+HttpBackend httpBackend(boardClock);
 BackendProxy backend(httpBackend, boardClock);
 
 DeviceSettings settings() {
@@ -40,22 +42,33 @@ RealHardwareFactory hardware(airSensor, boardClock, DeviceSettings().soilDryRaw,
 #endif
 
 AgroSenseDevice device(hardware, backend, boardClock);
+uint32_t nextStatusAt = 0;
 
 void setup() {
-  Serial.begin(115200);
-  analogReadResolution(14);
+  // The level first and the direction after: the other way round an active-low relay closes for an instant.
+  digitalWrite(PIN_RELAY, RELAY_ACTIVE_LOW ? HIGH : LOW);
   pinMode(PIN_RELAY, OUTPUT);
   pinMode(PIN_BUTTON, INPUT_PULLUP);
-  digitalWrite(PIN_RELAY, RELAY_ACTIVE_LOW ? HIGH : LOW);
+  Serial.begin(115200);
+  analogReadResolution(14);
   Wire1.begin();
 
   DeviceConfig::instance().load(settings());
   const DeviceSettings& config = DeviceConfig::instance().get();
   WifiManager::instance().attach(boardWifi, config.wifiSsid, config.wifiPassword);
   if (!device.begin()) Serial.println("AgroSense: revisa arduino_secrets.h y el sensor de aire");
+  if (!startPumpWatch(hardware.actuator())) Serial.println("AgroSense: sin temporizador de la bomba");
 }
 
 void loop() {
   device.tick();
-  delay(50);
+  if (reached(millis(), nextStatusAt)) {
+    nextStatusAt = millis() + STATUS_EVERY_MS;
+    Serial.print("en cola=");
+    Serial.print(backend.pending());
+    Serial.print(" perdidos=");
+    Serial.print(backend.lost());
+    Serial.print(" rechazados=");
+    Serial.println(backend.dropped());
+  }
 }

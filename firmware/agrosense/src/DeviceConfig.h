@@ -13,9 +13,11 @@ struct DeviceSettings {
   uint16_t port = 443;
   bool tls = true;
   uint32_t intervalMs = 30000;
-  int soilDryRaw = 12000;  // 14-bit readings; measure both with the sensor in dry soil and in water
+  // STARTING VALUES, NOT MEASURED. Run firmware/calibrate_soil with your own sensor and soil, and write its numbers
+  // here: until then every soil percentage, and every decision made from it, is wrong.
+  int soilDryRaw = 12000;
   int soilWetRaw = 6000;
-  uint8_t manualMinutes = 10;
+  uint8_t manualMinutes = 5;
 };
 
 class DeviceConfig {

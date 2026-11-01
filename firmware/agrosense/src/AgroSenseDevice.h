@@ -1,5 +1,5 @@
 // Facade: the sketch only calls begin() and tick(). Reading the chain, building the event, the proxy, Wi-Fi, the
-// button and the pump's timer all stay behind these two calls.
+// button and the pump's safety all stay behind these two calls.
 #pragma once
 #include <stdlib.h>
 #include <string.h>
@@ -20,11 +20,13 @@ struct IrrigationCommand {
   bool fromAi;
   uint16_t minutes;
   float confidence;
+  uint32_t id;
 };
 
-// The answer to POST /events may carry {"command":{"type":"irrigate","source":"AI","minutes":7,"confidence":0.8}}.
+// The answer to POST /events may carry
+// {"command":{"id":12,"type":"irrigate","source":"AI","minutes":7,"confidence":0.8}}.
 inline IrrigationCommand parseCommand(const char* body) {
-  IrrigationCommand none{false, false, 0, 0.0f};
+  IrrigationCommand none{false, false, 0, 0.0f, 0};
   const char* command = body == nullptr ? nullptr : strstr(body, "\"command\"");
   if (command == nullptr || strstr(command, "\"irrigate\"") == nullptr) return none;
   const char* minutes = strstr(command, "\"minutes\":");
@@ -32,8 +34,10 @@ inline IrrigationCommand parseCommand(const char* body) {
   long length = strtol(minutes + 10, nullptr, 10);
   if (length <= 0 || length > 65535) return none;
   const char* confidence = strstr(command, "\"confidence\":");
+  const char* id = strstr(command, "\"id\":");
   return IrrigationCommand{true, strstr(command, "\"source\":\"AI\"") != nullptr, static_cast<uint16_t>(length),
-                           confidence == nullptr ? 0.0f : static_cast<float>(strtod(confidence + 13, nullptr))};
+                           confidence == nullptr ? 0.0f : static_cast<float>(strtod(confidence + 13, nullptr)),
+                           id == nullptr ? 0 : static_cast<uint32_t>(strtoul(id + 5, nullptr, 10))};
 }
 
 class AgroSenseDevice {
@@ -42,6 +46,7 @@ class AgroSenseDevice {
       : hardware_(hardware), backend_(backend), clock_(clock) {}
 
   bool begin() {
+    hardware_.actuator().begin();
     bool climateReady = hardware_.climateSensor().begin();
     nextReadingAt_ = clock_.nowMs();
     return DeviceConfig::instance().valid() && climateReady;
@@ -57,7 +62,10 @@ class AgroSenseDevice {
       nextReadingAt_ = now + DeviceConfig::instance().get().intervalMs;
       measure();
     }
-    if (WifiManager::instance().ensureConnected(now)) obey(parseCommand(backend_.flush().body));
+    if (WifiManager::instance().ensureConnected(now) || backend_.busy()) {
+      BackendResponse response{0, nullptr};
+      if (backend_.poll(response) == SendState::Done) obey(parseCommand(response.body));
+    }
     actuator.update();
   }
 
@@ -77,24 +85,26 @@ class AgroSenseDevice {
     soil_ = hardware_.soilSensor().read();
     Climate climate = hardware_.climateSensor().read();
     char event[BackendProxy::EVENT_BYTES];
-    bool built = ReadingJsonBuilder(event, sizeof event)
-                     .device(DeviceConfig::instance().get().deviceId)
-                     .timestamp(clock_.epochSeconds())
-                     .soilMoisture(soil_)
-                     .airTemperature(climate.temperature)
-                     .relativeHumidity(climate.humidity)
-                     .build();
-    if (built) backend_.enqueue(event);
+    ReadingJsonBuilder builder(event, sizeof event);
+    builder.device(DeviceConfig::instance().get().deviceId)
+        .timestamp(clock_.epochSeconds())
+        .soilMoisture(soil_)
+        .airTemperature(climate.temperature)
+        .relativeHumidity(climate.humidity);
+    if (ackId_ != 0) builder.acknowledge(ackId_, ackStarted_);
+    if (builder.build()) {
+      backend_.begin(event);
+      ackId_ = 0;
+    }
   }
 
   void obey(const IrrigationCommand& command) {
     if (!command.present) return;
     ActuatorDriver& actuator = hardware_.actuator();
-    if (command.fromAi) {
-      AiIrrigationOrder(actuator, command.minutes, command.confidence, soil_).execute();
-    } else {
-      ManualIrrigationOrder(actuator, command.minutes).execute();
-    }
+    bool started = command.fromAi ? AiIrrigationOrder(actuator, command.minutes, command.confidence, soil_).execute()
+                                  : ManualIrrigationOrder(actuator, command.minutes).execute();
+    ackId_ = command.id;
+    ackStarted_ = started;
   }
 
   HardwareFactory& hardware_;
@@ -102,6 +112,8 @@ class AgroSenseDevice {
   IClock& clock_;
   Reading soil_ = Reading::bad();
   uint32_t nextReadingAt_ = 0;
+  uint32_t ackId_ = 0;
+  bool ackStarted_ = false;
 };
 
 }  // namespace agro

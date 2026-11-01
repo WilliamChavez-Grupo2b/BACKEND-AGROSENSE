@@ -1,17 +1,29 @@
 // Bridge: IrrigationOrder says who asks for water and on what terms; ActuatorDriver says how it is started. The same
 // two hierarchies as the backend, ending here at the relay.
+//
+// The pump's safety lives in this file and depends on no network. TimedDriver stops at a deadline measured with the
+// local clock and refuses to run past MAX_PUMP_ON_MS; PumpGuard, a decorator, adds the limits per day and between
+// runs. An interrupt (ArduinoPorts.h) calls enforceDeadline() ten times a second, so a blocked loop() cannot keep
+// the pump running.
 #pragma once
 #include "Core.h"
 
 namespace agro {
 
+constexpr uint32_t MAX_PUMP_ON_MS = 5UL * 60UL * 1000UL;
+constexpr uint32_t MAX_PUMP_MS_PER_DAY = 30UL * 60UL * 1000UL;
+constexpr uint32_t MIN_PUMP_GAP_MS = 5UL * 60UL * 1000UL;
+constexpr uint32_t DAY_MS = 24UL * 60UL * 60UL * 1000UL;
+
 class ActuatorDriver {
  public:
   virtual ~ActuatorDriver() = default;
-  virtual void start(uint32_t durationMs) = 0;
+  virtual void begin() = 0;                       // pump off; call it from setup(), never from a constructor
+  virtual bool start(uint32_t durationMs) = 0;    // false when refused
   virtual void stop() = 0;
   virtual bool running() const = 0;
-  virtual void update() = 0;
+  virtual void update() = 0;                      // from loop()
+  virtual void enforceDeadline() = 0;             // safe from an interrupt
 };
 
 // Keeps the time; the subclasses only say what on and off mean.
@@ -19,10 +31,15 @@ class TimedDriver : public ActuatorDriver {
  public:
   explicit TimedDriver(IClock& clock) : clock_(clock) {}
 
-  void start(uint32_t durationMs) override {
-    stopAt_ = clock_.nowMs() + durationMs;
-    running_ = true;
+  void begin() override { stop(); }
+
+  bool start(uint32_t durationMs) override {
+    if (durationMs == 0) return false;
+    uint32_t length = durationMs > MAX_PUMP_ON_MS ? MAX_PUMP_ON_MS : durationMs;
+    stopAt_ = clock_.nowMs() + length;
+    running_ = true;  // after stopAt_: the interrupt must never see running with an old deadline
     apply(true);
+    return true;
   }
 
   void stop() override {
@@ -32,7 +49,9 @@ class TimedDriver : public ActuatorDriver {
 
   bool running() const override { return running_; }
 
-  void update() override {
+  void update() override { enforceDeadline(); }
+
+  void enforceDeadline() override {
     if (running_ && reached(clock_.nowMs(), stopAt_)) stop();
   }
 
@@ -41,16 +60,14 @@ class TimedDriver : public ActuatorDriver {
 
  private:
   IClock& clock_;
-  uint32_t stopAt_ = 0;
-  bool running_ = false;
+  volatile uint32_t stopAt_ = 0;
+  volatile bool running_ = false;
 };
 
 class RelayDriver : public TimedDriver {
  public:
   RelayDriver(DigitalPort& port, uint8_t pin, bool activeLow, IClock& clock)
-      : TimedDriver(clock), port_(port), pin_(pin), activeLow_(activeLow) {
-    apply(false);  // whatever happened before a reset, the pump starts off
-  }
+      : TimedDriver(clock), port_(port), pin_(pin), activeLow_(activeLow) {}
 
  protected:
   void apply(bool on) override { port_.write(pin_, on != activeLow_); }
@@ -75,9 +92,72 @@ class SimulatedDriver : public TimedDriver {
   uint16_t starts_ = 0;
 };
 
+// Decorator of a driver. The counters are in RAM: a reset forgets the day's total, so the gap also counts from the
+// boot, and a board stuck rebooting cannot run the pump again and again.
+class PumpGuard : public ActuatorDriver {
+ public:
+  PumpGuard(ActuatorDriver& inner, IClock& clock) : inner_(inner), clock_(clock) {}
+
+  void begin() override {
+    inner_.begin();
+    lastStopAt_ = clock_.nowMs();
+    dayStartedAt_ = lastStopAt_;
+    usedMs_ = 0;
+    wasRunning_ = false;
+  }
+
+  bool start(uint32_t durationMs) override {
+    update();
+    uint32_t now = clock_.nowMs();
+    if (now - dayStartedAt_ >= DAY_MS) {
+      dayStartedAt_ = now;
+      usedMs_ = 0;
+    }
+    if (inner_.running() || !reached(now, lastStopAt_ + MIN_PUMP_GAP_MS) || usedMs_ >= MAX_PUMP_MS_PER_DAY) return false;
+    uint32_t left = MAX_PUMP_MS_PER_DAY - usedMs_;
+    if (!inner_.start(durationMs > left ? left : durationMs)) return false;
+    startedAt_ = now;
+    wasRunning_ = true;
+    return true;
+  }
+
+  void stop() override {
+    inner_.stop();
+    account();
+  }
+
+  bool running() const override { return inner_.running(); }
+
+  void update() override {
+    inner_.update();
+    account();
+  }
+
+  void enforceDeadline() override { inner_.enforceDeadline(); }
+
+  uint32_t usedTodayMs() const { return usedMs_; }
+
+ private:
+  void account() {
+    if (!wasRunning_ || inner_.running()) return;
+    wasRunning_ = false;
+    lastStopAt_ = clock_.nowMs();
+    uint32_t ran = lastStopAt_ - startedAt_;
+    usedMs_ += ran > MAX_PUMP_ON_MS ? MAX_PUMP_ON_MS : ran;
+  }
+
+  ActuatorDriver& inner_;
+  IClock& clock_;
+  uint32_t lastStopAt_ = 0;
+  uint32_t dayStartedAt_ = 0;
+  uint32_t startedAt_ = 0;
+  uint32_t usedMs_ = 0;
+  bool wasRunning_ = false;
+};
+
 class IrrigationOrder {
  public:
-  static constexpr uint16_t MAX_MINUTES = 120;
+  static constexpr uint16_t MAX_MINUTES = 120;  // an order above this is an error; what runs is capped by the driver
 
   explicit IrrigationOrder(ActuatorDriver& driver) : driver_(driver) {}
   virtual ~IrrigationOrder() = default;
@@ -85,8 +165,7 @@ class IrrigationOrder {
   bool execute() {
     uint16_t length = minutes();
     if (length == 0 || length > MAX_MINUTES || !authorized()) return false;
-    driver_.start(static_cast<uint32_t>(length) * 60000UL);
-    return true;
+    return driver_.start(static_cast<uint32_t>(length) * 60000UL);
   }
 
  protected:

@@ -48,11 +48,11 @@ class SimulatedButton : public IButton {
 class SimulatedHardwareFactory : public HardwareFactory {
  public:
   SimulatedHardwareFactory(IClock& clock, int dryRaw, int wetRaw)
-      : raw_((dryRaw + wetRaw) / 2), soil_(raw_, static_cast<float>(dryRaw), static_cast<float>(wetRaw)), driver_(clock) {}
+      : raw_((dryRaw + wetRaw) / 2), soil_(raw_, static_cast<float>(dryRaw), static_cast<float>(wetRaw)), driver_(clock), guard_(driver_, clock) {}
 
   ISensor& soilSensor() override { return soil_.end(); }
   IClimateSensor& climateSensor() override { return climate_; }
-  ActuatorDriver& actuator() override { return driver_; }
+  ActuatorDriver& actuator() override { return guard_; }
   IButton& button() override { return button_; }
 
   SimulatedSoil& rawSoil() { return raw_; }
@@ -64,6 +64,7 @@ class SimulatedHardwareFactory : public HardwareFactory {
   SoilChain soil_;
   SimulatedClimate climate_;
   SimulatedDriver driver_;
+  PumpGuard guard_;
   SimulatedButton button_;
 };
 

@@ -33,6 +33,13 @@ class ReadingJsonBuilder {
     return *this;
   }
 
+  // The result of an irrigation order, reported in the next event so the backend can record it.
+  ReadingJsonBuilder& acknowledge(uint32_t commandId, bool started) {
+    ackId_ = commandId;
+    ackStarted_ = started;
+    return *this;
+  }
+
   // False, and an empty buffer, without a safe device code, without a single measure or without room.
   bool build() {
     used_ = 0;
@@ -46,6 +53,12 @@ class ReadingJsonBuilder {
         char digits[24];
         snprintf(digits, sizeof digits, ",\"ts\":%lu", static_cast<unsigned long>(epoch_));
         append(digits);
+      }
+      if (ackId_ != 0) {
+        char ack[56];
+        snprintf(ack, sizeof ack, ",\"ack\":{\"command_id\":%lu,\"result\":\"%s\"}",
+                 static_cast<unsigned long>(ackId_), ackStarted_ ? "started" : "refused");
+        append(ack);
       }
       append(",\"data\":{");
       bool first = true;
@@ -102,6 +115,8 @@ class ReadingJsonBuilder {
   bool overflow_ = false;
   const char* device_ = nullptr;
   uint32_t epoch_ = 0;
+  uint32_t ackId_ = 0;
+  bool ackStarted_ = false;
   Reading soil_ = Reading::bad();
   Reading air_ = Reading::bad();
   Reading humidity_ = Reading::bad();
