@@ -1,0 +1,6 @@
+# The Wi-Fi password and the device key live here; arduino_secrets.example.h documents every value.
+arduino_secrets.h
+build/
+test/*.exe
+test/run_tests
+test/*.o
