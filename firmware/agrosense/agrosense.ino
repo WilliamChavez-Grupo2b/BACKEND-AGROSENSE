@@ -45,9 +45,7 @@ AgroSenseDevice device(hardware, backend, boardClock);
 uint32_t nextStatusAt = 0;
 
 void setup() {
-  // The level first and the direction after: the other way round an active-low relay closes for an instant.
-  digitalWrite(PIN_RELAY, RELAY_ACTIVE_LOW ? HIGH : LOW);
-  pinMode(PIN_RELAY, OUTPUT);
+  configureRelayPinOff();  // the first thing, so the pump cannot run while the rest of setup() takes its time
   pinMode(PIN_BUTTON, INPUT_PULLUP);
   Serial.begin(115200);
   analogReadResolution(14);

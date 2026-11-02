@@ -30,11 +30,19 @@ using Sht31Adapter = Sht31AdapterT<Adafruit_SHT31>;
 class BoardClock : public IClock {
  public:
   uint32_t nowMs() override { return millis(); }
+  // getTime() is an AT command that can hold the loop 10 s: without a network it cannot know anyway.
   uint32_t epochSeconds() override {
-    unsigned long time = WiFi.getTime();
-    return WiFi.status() == WL_CONNECTED ? static_cast<uint32_t>(time) : 0;
+    return WiFi.status() == WL_CONNECTED ? static_cast<uint32_t>(WiFi.getTime()) : 0;
   }
 };
+
+// The pin becomes an output already at the level that opens the relay. digitalWrite() followed by pinMode() does not
+// do this on this board: pinMode() rewrites the whole PFS register, whose bit 0 is the level, and leaves the pin low,
+// which closes an active-low relay until the firmware gets to open it.
+inline void configureRelayPinOff() {
+  ioport_cfg_options_t level = RELAY_ACTIVE_LOW ? IOPORT_CFG_PORT_OUTPUT_HIGH : IOPORT_CFG_PORT_OUTPUT_LOW;
+  R_IOPORT_PinCfg(NULL, g_pin_cfg[PIN_RELAY].pin, IOPORT_CFG_PORT_DIRECTION_OUTPUT | level);
+}
 
 class BoardAnalog : public AnalogPort {
  public:
