@@ -24,20 +24,25 @@ struct IrrigationCommand {
 };
 
 // The answer to POST /events may carry
-// {"command":{"id":12,"type":"irrigate","source":"AI","minutes":7,"confidence":0.8}}.
+// {"command":{"id":12,"type":"irrigate","source":"AI","minutes":7,"confidence":0.8}}. Anything less than a whole order
+// with an id and a known origin is no order: an unknown origin must not become a manual one, the kind that skips the
+// soil check, and a cut answer could turn 12 minutes into 1.
 inline IrrigationCommand parseCommand(const char* body) {
   IrrigationCommand none{false, false, 0, 0.0f, 0};
   const char* command = body == nullptr ? nullptr : strstr(body, "\"command\"");
-  if (command == nullptr || strstr(command, "\"irrigate\"") == nullptr) return none;
+  if (command == nullptr || strstr(command, "\"irrigate\"") == nullptr || strchr(command, '}') == nullptr) return none;
   const char* minutes = strstr(command, "\"minutes\":");
-  if (minutes == nullptr) return none;
-  long length = strtol(minutes + 10, nullptr, 10);
-  if (length <= 0 || length > 65535) return none;
-  const char* confidence = strstr(command, "\"confidence\":");
   const char* id = strstr(command, "\"id\":");
-  return IrrigationCommand{true, strstr(command, "\"source\":\"AI\"") != nullptr, static_cast<uint16_t>(length),
+  if (minutes == nullptr || id == nullptr) return none;
+  long length = strtol(minutes + 10, nullptr, 10);
+  long order = strtol(id + 5, nullptr, 10);
+  if (length <= 0 || length > 65535 || order <= 0) return none;
+  bool fromAi = strstr(command, "\"source\":\"AI\"") != nullptr;
+  if (!fromAi && strstr(command, "\"source\":\"MANUAL\"") == nullptr) return none;
+  const char* confidence = strstr(command, "\"confidence\":");
+  return IrrigationCommand{true, fromAi, static_cast<uint16_t>(length),
                            confidence == nullptr ? 0.0f : static_cast<float>(strtod(confidence + 13, nullptr)),
-                           id == nullptr ? 0 : static_cast<uint32_t>(strtoul(id + 5, nullptr, 10))};
+                           static_cast<uint32_t>(order)};
 }
 
 class AgroSenseDevice {
@@ -65,7 +70,8 @@ class AgroSenseDevice {
     }
     if (WifiManager::instance().ensureConnected(now) || backend_.busy()) {
       BackendResponse response{0, nullptr};
-      if (backend_.poll(response) == SendState::Done) obey(parseCommand(response.body));
+      bool answered = backend_.poll(response) == SendState::Done;
+      if (answered && response.status >= 200 && response.status < 300) obey(parseCommand(response.body));
     }
     actuator.update();
   }

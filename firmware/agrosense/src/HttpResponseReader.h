@@ -51,6 +51,12 @@ class HttpResponseReader {
   }
 
   bool complete() const { return inBody_ && contentLength_ >= 0 && received_ >= contentLength_; }
+  // The status of an answer known to be whole, else 0, which is what "nothing came back" means to the proxy. A length
+  // says when the answer ended; without one only the closed connection does.
+  int finalStatus(bool closed) const {
+    bool whole = complete() || (closed && inBody_ && contentLength_ < 0);
+    return whole ? status_ : 0;
+  }
   int status() const { return status_; }
   const char* body() const { return body_; }
 

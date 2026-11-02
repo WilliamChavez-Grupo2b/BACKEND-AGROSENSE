@@ -410,11 +410,11 @@ static void the_device_has_the_last_word_on_an_ai_order() {
 
 static void a_command_is_read_from_the_answer() {
   IrrigationCommand ai = parseCommand(
-      "{\"status\":\"stored\",\"readings\":2,\"command\":{\"type\":\"irrigate\",\"source\":\"AI\",\"minutes\":7,"
+      "{\"status\":\"stored\",\"readings\":2,\"command\":{\"id\":5,\"type\":\"irrigate\",\"source\":\"AI\",\"minutes\":7,"
       "\"confidence\":0.85}}");
   CHECK(ai.present && ai.fromAi && ai.minutes == 7 && ai.confidence > 0.84f && ai.confidence < 0.86f);
   IrrigationCommand manual =
-      parseCommand("{\"command\":{\"type\":\"irrigate\",\"source\":\"MANUAL\",\"minutes\":12}}");
+      parseCommand("{\"command\":{\"id\":6,\"type\":\"irrigate\",\"source\":\"MANUAL\",\"minutes\":12}}");
   CHECK(manual.present && !manual.fromAi && manual.minutes == 12);
   CHECK(!parseCommand("{\"status\":\"stored\",\"delivered\":1}").present);
   CHECK(!parseCommand(nullptr).present);
@@ -792,7 +792,65 @@ static void the_timer_firing_during_a_start_cannot_leave_the_relay_closed_and_un
   CHECK(pin.level == true);  // high is off: never closed with nobody watching
 }
 
+static void what_is_not_a_whole_order_starts_nothing() {
+  // Cut in the middle of the number: "minutes":12 would read as 1, and a shorter run is still an unasked one.
+  CHECK(!parseCommand("{\"command\":{\"id\":6,\"type\":\"irrigate\",\"source\":\"MANUAL\",\"minutes\":1").present);
+  // No id: it could be neither confirmed nor told from a repetition.
+  CHECK(!parseCommand("{\"command\":{\"type\":\"irrigate\",\"source\":\"MANUAL\",\"minutes\":1}}").present);
+  CHECK(!parseCommand("{\"command\":{\"id\":0,\"type\":\"irrigate\",\"source\":\"MANUAL\",\"minutes\":1}}").present);
+  CHECK(!parseCommand("{\"command\":{\"id\":-4,\"type\":\"irrigate\",\"source\":\"MANUAL\",\"minutes\":1}}").present);
+  // An unknown origin must not fall into the manual order, the one that skips the soil check.
+  CHECK(!parseCommand("{\"command\":{\"id\":6,\"type\":\"irrigate\",\"minutes\":1}}").present);
+  CHECK(!parseCommand("{\"command\":{\"id\":6,\"type\":\"irrigate\",\"source\":\"Ai\",\"minutes\":1}}").present);
+  CHECK(!parseCommand("{\"command\":null}").present);
+  CHECK(!parseCommand("<html>irrigate \"command\" \"minutes\":5</html>").present);
+}
+
+static void only_a_stored_event_may_carry_an_order() {
+  for (int status : {201, 302, 400, 401, 404, 429, 500, 503}) {
+    Bench bench;
+    bench.start();
+    bench.real.statuses = {status};
+    bench.real.body = MANUAL_ORDER;
+    bench.ticks();
+    CHECK(bench.hardware.actuator().running() == (status == 201));
+  }
+}
+
+static void feed(HttpResponseReader& reader, const char* text) {
+  for (const char* c = text; *c != '\0'; c++) reader.feed(*c);
+}
+
+static void an_answer_cut_short_counts_as_no_answer() {
+  HttpResponseReader reader;
+  reader.reset();
+  feed(reader, "HTTP/1.1 200 OK\r\nContent-Length: 90\r\n\r\n{\"command\":{\"id\":6");
+  CHECK(reader.finalStatus(true) == 0);   // closed before the promised length
+  CHECK(reader.finalStatus(false) == 0);  // or still waiting at the deadline
+
+  reader.reset();
+  feed(reader, "HTTP/1.1 200 OK\r\nContent-Le");
+  CHECK(reader.finalStatus(true) == 0);  // the headers never ended
+
+  reader.reset();
+  feed(reader, "HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\n{}");
+  CHECK(reader.finalStatus(false) == 200);
+
+  reader.reset();
+  feed(reader, "HTTP/1.1 502 Bad Gateway\r\n\r\nno");
+  CHECK(reader.finalStatus(true) == 502);  // without a length, the closed connection is the end
+  CHECK(reader.finalStatus(false) == 0);   // and while it stays open nothing says the answer ended
+
+  reader.reset();
+  CHECK(reader.finalStatus(true) == 0);
+  feed(reader, "garbage-without-a-space\r\n\r\n");
+  CHECK(reader.finalStatus(true) == 0);
+}
+
 int main() {
+  what_is_not_a_whole_order_starts_nothing();
+  only_a_stored_event_may_carry_an_order();
+  an_answer_cut_short_counts_as_no_answer();
   the_timer_firing_during_a_start_cannot_leave_the_relay_closed_and_unwatched();
   singletons_are_one_instance_and_refuse_incomplete_settings();
   wifi_retries_with_a_growing_wait_and_resets_once_connected();

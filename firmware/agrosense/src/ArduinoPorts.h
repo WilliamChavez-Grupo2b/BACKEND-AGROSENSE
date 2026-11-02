@@ -105,7 +105,7 @@ class HttpBackend : public IBackend {
     bool closed = client_->available() == 0 && !client_->connected();
     if (!reader_.complete() && !closed && !reached(clock_.nowMs(), deadline_)) return SendState::Busy;
     client_->stop();
-    response = BackendResponse{reader_.status(), reader_.body()};
+    response = BackendResponse{reader_.finalStatus(closed), reader_.body()};
     return SendState::Done;
   }
 
