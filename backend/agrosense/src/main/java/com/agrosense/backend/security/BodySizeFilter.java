@@ -31,7 +31,7 @@ public class BodySizeFilter extends OncePerRequestFilter {
         String type = request.getContentType();
         boolean multipart = type != null && type.toLowerCase().startsWith(MediaType.MULTIPART_FORM_DATA_VALUE);
         if (!multipart && request.getContentLengthLong() > MAX_JSON_BYTES) {
-            response.setStatus(HttpStatus.PAYLOAD_TOO_LARGE.value());
+            response.setStatus(HttpStatus.CONTENT_TOO_LARGE.value());
             response.setContentType(MediaType.APPLICATION_JSON_VALUE);
             response.setCharacterEncoding(StandardCharsets.UTF_8.name());
             response.getWriter().write("{\"message\":\"La solicitud es demasiado grande.\"}");
