@@ -302,7 +302,7 @@ class DesignPatternTests {
 		when(predictions.currentConditions("demo@agrosense.co", 1)).thenReturn(Map.of("soil_moisture", 30));
 		MovableClock clock = new MovableClock();
 		DeviceIngestionFacade facade = new DeviceIngestionFacade(events, predictions, ai, mock(PendingIrrigationCommands.class),
-				new DeviceRateLimiter(0), Duration.ofMinutes(30), clock);
+				new DeviceRateLimiter(0), mock(com.agrosense.backend.service.DeviceService.class), Duration.ofMinutes(30), clock);
 
 		facade.ingest("key", readingEvent());
 		facade.ingest("key", readingEvent());
@@ -323,14 +323,14 @@ class DesignPatternTests {
 		when(events.receive(any(), any(), any(), any(), any())).thenReturn(stored("SOIL_MOISTURE"));
 		when(predictions.currentConditions(any(), any())).thenThrow(new IllegalStateException("database down"));
 		DeviceIngestionFacade facade = new DeviceIngestionFacade(events, predictions, ai, mock(PendingIrrigationCommands.class),
-				new DeviceRateLimiter(0), Duration.ofMinutes(30),
+				new DeviceRateLimiter(0), mock(com.agrosense.backend.service.DeviceService.class), Duration.ofMinutes(30),
 				new MovableClock());
 
 		assertThat(facade.ingest("key", readingEvent())).containsKey("event");
 
 		when(events.receive(any(), any(), any(), any(), any())).thenReturn(stored("PH"));
 		DeviceIngestionFacade noMoisture = new DeviceIngestionFacade(events, predictions, ai, mock(PendingIrrigationCommands.class),
-				new DeviceRateLimiter(0), Duration.ofMinutes(30),
+				new DeviceRateLimiter(0), mock(com.agrosense.backend.service.DeviceService.class), Duration.ofMinutes(30),
 				new MovableClock());
 		noMoisture.ingest("key", readingEvent());
 		verify(predictions, never()).requestIrrigationPrediction(any(), any());

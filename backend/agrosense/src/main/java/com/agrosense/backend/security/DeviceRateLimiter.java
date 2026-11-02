@@ -16,11 +16,18 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
-/** Events per device and minute. It counts before the key is checked, so it also slows down someone guessing keys. */
+/**
+ * Events per device and minute, counted once the key is known to be right, and wrong keys on an allowance of their
+ * own: a code is no secret, so anyone could otherwise spend a real device's allowance and silence it. The wrong keys
+ * are counted by the code they were sent with, and those codes are invented at will: the memory they take is bounded.
+ */
 @Component
 public class DeviceRateLimiter {
 
+    public static final int MAX_TRACKED = 10_000;
+
     private static final Duration WINDOW = Duration.ofMinutes(1);
+    private static final String WRONG_KEY = "!";
 
     private final int perMinute;
     private final Clock clock;
@@ -37,12 +44,31 @@ public class DeviceRateLimiter {
     }
 
     public void count(String deviceCode) {
+        spend(deviceCode, "");
+    }
+
+    public void countFailure(String deviceCode) {
+        spend(deviceCode, WRONG_KEY);
+    }
+
+    public int tracked() {
+        return recent.size();
+    }
+
+    private void spend(String deviceCode, String allowance) {
         if (perMinute <= 0 || deviceCode == null) {
             return;
         }
         Instant now = clock.instant();
+        String key = allowance + deviceCode.trim().toUpperCase(Locale.ROOT);
+        if (recent.size() >= MAX_TRACKED && !recent.containsKey(key)) {
+            forgetIdleDevices();
+            if (recent.size() >= MAX_TRACKED) {
+                return;
+            }
+        }
         boolean[] refused = {false};
-        recent.compute(deviceCode.trim().toUpperCase(Locale.ROOT), (code, known) -> {
+        recent.compute(key, (code, known) -> {
             Deque<Instant> events = known == null ? new ArrayDeque<>() : known;
             forgetOld(events, now);
             if (events.size() >= perMinute) {

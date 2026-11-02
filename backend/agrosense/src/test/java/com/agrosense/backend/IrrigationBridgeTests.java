@@ -195,7 +195,7 @@ class IrrigationBridgeTests {
 		when(pending.take(1)).thenReturn(Optional.of(new IrrigationCommand(12, 1, 7, IrrigationCommand.AI,
 				new BigDecimal("0.8"), 3))).thenReturn(Optional.empty());
 		DeviceIngestionFacade facade = new DeviceIngestionFacade(events, mock(PredictionService.class),
-				mock(AiConfigManager.class), pending, new DeviceRateLimiter(0), Duration.ZERO, Clock.systemUTC());
+				mock(AiConfigManager.class), pending, new DeviceRateLimiter(0), mock(com.agrosense.backend.service.DeviceService.class), Duration.ZERO, Clock.systemUTC());
 
 		Map<String, Object> first = facade.ingest("key", new DeviceEventRequest());
 		assertThat(first.get("command")).isEqualTo(Map.of("id", 12, "type", "irrigate", "source", "AI", "minutes", 7,

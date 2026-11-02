@@ -3,11 +3,13 @@ package com.agrosense.backend.pattern.structural.facade;
 import com.agrosense.backend.domain.enums.SensorType;
 import com.agrosense.backend.dto.request.DeviceEventRequest;
 import com.agrosense.backend.dto.response.SensorReadingResponse;
+import com.agrosense.backend.exception.ApiException;
 import com.agrosense.backend.pattern.creational.singleton.AiConfigManager;
 import com.agrosense.backend.pattern.structural.bridge.IrrigationCommand;
 import com.agrosense.backend.pattern.structural.bridge.PendingIrrigationCommands;
 import com.agrosense.backend.security.DeviceRateLimiter;
 import com.agrosense.backend.service.DeviceEventService;
+import com.agrosense.backend.service.DeviceService;
 import com.agrosense.backend.service.PredictionService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -38,34 +40,34 @@ public class DeviceIngestionFacade {
     private final AiConfigManager aiConfig;
     private final PendingIrrigationCommands commands;
     private final DeviceRateLimiter rateLimiter;
+    private final DeviceService deviceService;
     private final Duration predictionInterval;
     private final Clock clock;
     private final Map<Integer, Instant> lastPrediction = new ConcurrentHashMap<>();
 
     @Autowired
     public DeviceIngestionFacade(DeviceEventService events, PredictionService predictions, AiConfigManager aiConfig,
-            PendingIrrigationCommands commands, DeviceRateLimiter rateLimiter,
+            PendingIrrigationCommands commands, DeviceRateLimiter rateLimiter, DeviceService deviceService,
             @Value("${ai.ingestion.prediction-minutes:30}") int predictionMinutes) {
-        this(events, predictions, aiConfig, commands, rateLimiter, Duration.ofMinutes(predictionMinutes),
-                Clock.systemUTC());
+        this(events, predictions, aiConfig, commands, rateLimiter, deviceService,
+                Duration.ofMinutes(predictionMinutes), Clock.systemUTC());
     }
 
     public DeviceIngestionFacade(DeviceEventService events, PredictionService predictions, AiConfigManager aiConfig,
-            PendingIrrigationCommands commands, DeviceRateLimiter rateLimiter, Duration predictionInterval,
-            Clock clock) {
+            PendingIrrigationCommands commands, DeviceRateLimiter rateLimiter, DeviceService deviceService,
+            Duration predictionInterval, Clock clock) {
         this.events = events;
         this.predictions = predictions;
         this.aiConfig = aiConfig;
         this.commands = commands;
         this.rateLimiter = rateLimiter;
+        this.deviceService = deviceService;
         this.predictionInterval = predictionInterval;
         this.clock = clock;
     }
 
     public Map<String, Object> ingest(String deviceKey, DeviceEventRequest request) {
-        rateLimiter.count(request.getDeviceId());
-        Map<String, Object> answer = events.receive(request.getDeviceId(), deviceKey, request.getType(),
-                request.getTs(), request.getData());
+        Map<String, Object> answer = received(deviceKey, request);
         try {
             requestPredictionIfDue(answer);
         } catch (RuntimeException failure) {
@@ -79,6 +81,17 @@ public class DeviceIngestionFacade {
             log.warn("The event was stored but its irrigation order could not be handled: {}", failure.getMessage());
         }
         return answer;
+    }
+
+    private Map<String, Object> received(String deviceKey, DeviceEventRequest request) {
+        try {
+            deviceService.require(request.getDeviceId(), deviceKey);
+        } catch (ApiException refused) {
+            rateLimiter.countFailure(request.getDeviceId());
+            throw refused;
+        }
+        rateLimiter.count(request.getDeviceId());
+        return events.receive(request.getDeviceId(), deviceKey, request.getType(), request.getTs(), request.getData());
     }
 
     private void confirm(Integer cropId, JsonNode ack) {
