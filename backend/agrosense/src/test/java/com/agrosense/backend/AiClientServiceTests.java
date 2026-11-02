@@ -20,6 +20,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class AiClientServiceTests {
 
@@ -99,8 +100,13 @@ class AiClientServiceTests {
 
 	@Test
 	void anAnswerWithoutARecommendationOrWithAnImpossibleConfidenceIsNotTrusted() {
+		// A failure, not "no prediction": the proxy counts it and the local rules answer instead of nobody.
 		answer.set("{\"confidence\":0.9}");
-		assertThat(client.predictIrrigation(7, Map.of("soil_moisture", 30))).isEmpty();
+		assertThatThrownBy(() -> client.predictIrrigation(7, Map.of("soil_moisture", 30)))
+				.isInstanceOf(IllegalStateException.class);
+		answer.set("{\"recommendation\":\"  \"}");
+		assertThatThrownBy(() -> client.predictIrrigation(7, Map.of("soil_moisture", 30)))
+				.isInstanceOf(IllegalStateException.class);
 
 		answer.set("{\"recommendation\":\"Riega.\",\"confidence\":7,\"model\":\"otro\"}");
 		IrrigationPrediction prediction = client.predictIrrigation(7, Map.of("soil_moisture", 30)).orElseThrow();

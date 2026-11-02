@@ -46,8 +46,9 @@ public class AiClientService implements AiService {
                 .retrieve()
                 .bodyToMono(Map.class)
                 .block();
-        if (result == null || result.get("recommendation") == null) {
-            return Optional.empty();
+        // A failed answer, not an absent one: the proxy must count it and let the local rules answer.
+        if (result == null || result.get("recommendation") == null || result.get("recommendation").toString().isBlank()) {
+            throw new IllegalStateException("The AI service answered without a recommendation");
         }
         Object model = result.get("model_used") != null ? result.get("model_used") : result.get("model");
         return Optional.of(new IrrigationPrediction(
