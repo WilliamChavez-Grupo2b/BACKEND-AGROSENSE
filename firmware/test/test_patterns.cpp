@@ -847,7 +847,79 @@ static void an_answer_cut_short_counts_as_no_answer() {
   CHECK(reader.finalStatus(true) == 0);
 }
 
+static int countOf(const Bench& bench, const std::string& text) {
+  int found = 0;
+  for (const std::string& event : bench.real.sent) {
+    if (event.find(text) != std::string::npos) found++;
+  }
+  return found;
+}
+
+static const char* ORDER_21 = "{\"command\":{\"id\":21,\"type\":\"irrigate\",\"source\":\"MANUAL\",\"minutes\":1}}";
+static const char* ORDER_22 = "{\"command\":{\"id\":22,\"type\":\"irrigate\",\"source\":\"MANUAL\",\"minutes\":1}}";
+
+static void an_order_refused_while_another_runs_does_not_lose_the_one_running() {
+  Bench bench;
+  bench.start();
+  bench.real.body = ORDER_21;
+  bench.ticks();
+  CHECK(bench.hardware.actuator().running());
+  bench.real.body = ORDER_22;  // answered to the next event, with the pump still on
+  bench.clock.ms += 30000;
+  bench.ticks();
+  CHECK(bench.hardware.actuator().running());
+  bench.real.body = "{\"status\":\"stored\"}";
+  for (int i = 0; i < 5; i++) {
+    bench.clock.ms += 30000;
+    bench.ticks();
+  }
+  CHECK(countOf(bench, "\"command_id\":22,\"result\":\"refused\"") == 1);
+  CHECK(countOf(bench, "\"command_id\":21,\"result\":\"finished\",\"ran_seconds\":60") == 1);
+}
+
+static void no_result_is_overwritten_by_the_next_one() {
+  Bench bench;
+  bench.start();
+  bench.real.body = ORDER_21;
+  bench.ticks();
+  bench.real.body = ORDER_22;  // both results wait for the same event when the next one arrives
+  bench.clock.ms += 30000;
+  bench.ticks();
+  bench.real.body = "{\"status\":\"stored\"}";
+  for (int i = 0; i < 5; i++) {
+    bench.clock.ms += 30000;
+    bench.ticks();
+  }
+  CHECK(countOf(bench, "\"command_id\":21,\"result\":\"started\"") == 1);
+  CHECK(countOf(bench, "\"command_id\":22,\"result\":\"refused\"") == 1);
+}
+
+static void an_order_that_arrives_twice_runs_once_and_reports_once() {
+  Bench bench;
+  bench.start();
+  bench.real.body = ORDER_21;
+  bench.ticks();
+  CHECK(bench.hardware.simulatedDriver().starts() == 1);
+  bench.clock.ms += 30000;
+  bench.ticks();  // the same order again, say a retry of the answer: no refusal may reach the backend
+  bench.clock.ms += 90000;
+  bench.ticks();
+  bench.clock.ms += MIN_PUMP_GAP_MS;
+  bench.ticks();  // and past the gap it must not run a second time
+  CHECK(bench.hardware.simulatedDriver().starts() == 1);
+  bench.real.body = "{\"status\":\"stored\"}";
+  for (int i = 0; i < 4; i++) {
+    bench.clock.ms += 30000;
+    bench.ticks();
+  }
+  CHECK(countOf(bench, "\"command_id\":21,\"result\":\"refused\"") == 0);
+  CHECK(countOf(bench, "\"command_id\":21,\"result\":\"finished\",\"ran_seconds\":60") == 1);
+}
+
 int main() {
+  an_order_refused_while_another_runs_does_not_lose_the_one_running();
+  no_result_is_overwritten_by_the_next_one();
+  an_order_that_arrives_twice_runs_once_and_reports_once();
   what_is_not_a_whole_order_starts_nothing();
   only_a_stored_event_may_carry_an_order();
   an_answer_cut_short_counts_as_no_answer();

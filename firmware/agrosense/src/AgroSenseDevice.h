@@ -79,6 +79,13 @@ class AgroSenseDevice {
   Reading lastSoil() const { return soil_; }
 
  private:
+  struct Ack {
+    uint32_t id;
+    AckResult result;
+    uint32_t seconds;
+  };
+  static constexpr uint8_t MAX_ACKS = 4;  // one travels per event, and two orders can be decided between two events
+
   void toggleByHand() {
     ActuatorDriver& actuator = hardware_.actuator();
     if (actuator.running()) {
@@ -98,31 +105,47 @@ class AgroSenseDevice {
         .soilMoisture(soil_)
         .airTemperature(climate.temperature)
         .relativeHumidity(climate.humidity);
-    if (ackId_ != 0) builder.acknowledge(ackId_, ackResult_, ackSeconds_);
+    if (ackCount_ > 0) builder.acknowledge(acks_[0].id, acks_[0].result, acks_[0].seconds);
     if (builder.build()) {
       backend_.begin(event);
-      ackId_ = 0;
+      forgetFirstAck();
     }
   }
 
+  // An order seen again is one already decided: running it, or refusing it, would contradict what was reported.
   void obey(const IrrigationCommand& command) {
-    if (!command.present) return;
+    if (!command.present || command.id == lastOrder_) return;
+    lastOrder_ = command.id;
     ActuatorDriver& actuator = hardware_.actuator();
     bool started = command.fromAi ? AiIrrigationOrder(actuator, command.minutes, command.confidence, soil_).execute()
                                   : ManualIrrigationOrder(actuator, command.minutes).execute();
-    ackId_ = command.id;
-    ackResult_ = started ? AckResult::Started : AckResult::Refused;
-    runningOrder_ = started ? command.id : 0;
+    report(Ack{command.id, started ? AckResult::Started : AckResult::Refused, 0});
+    if (started) runningOrder_ = command.id;
   }
 
   // What the history must show is what ran, which the device alone knows. A short run may replace the "started" not
   // sent yet: the backend accepts "finished" directly.
   void reportFinishedOrder() {
     if (runningOrder_ == 0 || hardware_.actuator().running()) return;
-    ackId_ = runningOrder_;
-    ackResult_ = AckResult::Finished;
-    ackSeconds_ = hardware_.actuator().lastRunMs() / 1000;
+    report(Ack{runningOrder_, AckResult::Finished, hardware_.actuator().lastRunMs() / 1000});
     runningOrder_ = 0;
+  }
+
+  void report(const Ack& ack) {
+    for (uint8_t i = 0; i < ackCount_; i++) {
+      if (acks_[i].id == ack.id) {
+        acks_[i] = ack;
+        return;
+      }
+    }
+    if (ackCount_ == MAX_ACKS) forgetFirstAck();
+    acks_[ackCount_++] = ack;
+  }
+
+  void forgetFirstAck() {
+    if (ackCount_ == 0) return;
+    ackCount_--;
+    for (uint8_t i = 0; i < ackCount_; i++) acks_[i] = acks_[i + 1];
   }
 
   HardwareFactory& hardware_;
@@ -130,10 +153,10 @@ class AgroSenseDevice {
   IClock& clock_;
   Reading soil_ = Reading::bad();
   uint32_t nextReadingAt_ = 0;
-  uint32_t ackId_ = 0;
+  uint32_t lastOrder_ = 0;
   uint32_t runningOrder_ = 0;
-  uint32_t ackSeconds_ = 0;
-  AckResult ackResult_ = AckResult::Started;
+  Ack acks_[MAX_ACKS];
+  uint8_t ackCount_ = 0;
 };
 
 }  // namespace agro
