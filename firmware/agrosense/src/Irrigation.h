@@ -40,8 +40,10 @@ class TimedDriver : public ActuatorDriver {
     startedAt_ = clock_.nowMs();
     lastRunMs_ = 0;
     stopAt_ = startedAt_ + length;
-    running_ = true;  // after stopAt_: the interrupt must never see running with an old deadline
+    // The relay first and running_ last: with these two the other way round, an interrupt between them could stop a
+    // run that this line then turns on, leaving the relay closed with running_ false and nothing watching it.
     apply(true);
+    running_ = true;  // and after stopAt_: the interrupt must never see running with an old deadline
     return true;
   }
 

@@ -761,7 +761,39 @@ static void the_watchdog_is_fed_while_the_loop_lives_even_inside_a_long_connect(
   CHECK(supervisor.mayFeed(0x00000100UL));  // across the wrap of millis()
 }
 
+// The timer fires in the instant between "running" being set and the relay being written. Only a very short run can
+// expire there, and it is what the last milliseconds of the day's allowance give.
+class InterruptedPort : public DigitalPort {
+ public:
+  ActuatorDriver* driver = nullptr;
+  FakeClock* clock = nullptr;
+  bool level = true;
+  void write(uint8_t, bool high) override {
+    if (!high && driver != nullptr) {  // low is on: the interrupt lands just before the write takes effect
+      ActuatorDriver* interrupting = driver;
+      driver = nullptr;
+      clock->ms += 10;
+      interrupting->enforceDeadline();
+    }
+    level = high;
+  }
+};
+
+static void the_timer_firing_during_a_start_cannot_leave_the_relay_closed_and_unwatched() {
+  FakeClock clock;
+  InterruptedPort pin;
+  RelayDriver relay(pin, 7, true, clock);
+  relay.begin();
+  pin.clock = &clock;
+  pin.driver = &relay;
+  relay.start(1);
+  relay.enforceDeadline();  // the next tick of the timer
+  CHECK(!relay.running());
+  CHECK(pin.level == true);  // high is off: never closed with nobody watching
+}
+
 int main() {
+  the_timer_firing_during_a_start_cannot_leave_the_relay_closed_and_unwatched();
   singletons_are_one_instance_and_refuse_incomplete_settings();
   wifi_retries_with_a_growing_wait_and_resets_once_connected();
   the_median_ignores_a_spike_and_needs_a_majority();
