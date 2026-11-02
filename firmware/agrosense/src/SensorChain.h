@@ -57,7 +57,7 @@ class Calibration : public ISensor {
   // outside is what lets RangeCheck notice a broken sensor.
   Reading read() override {
     Reading raw = inner_.read();
-    if (!raw.valid) return raw;
+    if (!raw.valid || wetRaw_ == dryRaw_) return Reading::bad();
     return Reading::ok((raw.value - dryRaw_) / (wetRaw_ - dryRaw_) * 100.0f);
   }
 

@@ -997,7 +997,44 @@ static void the_retry_wait_and_the_wifi_wait_cross_the_wrap() {
   CHECK(wifi.begins == 2);
 }
 
+static void a_calibration_with_no_span_gives_no_reading() {
+  FakeAnalog analog;
+  analog.value = 9000;
+  CapacitiveSoilSensor sensor(analog, 0);
+  SoilChain flat(sensor, 9000, 9000);  // 0 / 0
+  CHECK(!flat.end().read().valid);
+  analog.value = 9100;  // something / 0
+  CHECK(!flat.end().read().valid);
+}
+
+static void what_is_not_a_number_is_never_a_valid_reading() {
+  CHECK(!Reading::ok(NOT_A_NUMBER).valid);
+  CHECK(!Reading::ok(std::strtof("inf", nullptr)).valid);
+  CHECK(!Reading::ok(std::strtof("-inf", nullptr)).valid);
+  Scripted broken({Reading::ok(NOT_A_NUMBER)});
+  CHECK(!RangeCheck(broken, 0, 100, 15).read().valid);
+  char buffer[200];
+  CHECK(!ReadingJsonBuilder(buffer, sizeof buffer).device("UNO").soilMoisture(Reading::ok(NOT_A_NUMBER)).build());
+}
+
+static void a_clock_that_never_synchronized_stamps_nothing() {
+  Bench bench;
+  bench.clock.epoch = 12;  // seconds since the module booted: it has no time from the network yet
+  bench.ticks();
+  bench.device.begin();
+  bench.ticks();
+  CHECK(!bench.real.sent.empty());
+  CHECK(bench.real.sent.back().find("\"ts\"") == std::string::npos);
+  bench.clock.epoch = 1793500000;
+  bench.clock.ms += 30000;
+  bench.ticks();
+  CHECK(bench.real.sent.back().find("\"ts\":1793500000") != std::string::npos);
+}
+
 int main() {
+  a_calibration_with_no_span_gives_no_reading();
+  what_is_not_a_number_is_never_a_valid_reading();
+  a_clock_that_never_synchronized_stamps_nothing();
   a_month_without_watering_does_not_lock_the_pump();
   a_month_without_network_does_not_stop_the_retries();
   the_pump_keeps_its_times_across_the_wrap_of_millis();

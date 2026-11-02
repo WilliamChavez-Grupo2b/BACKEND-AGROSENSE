@@ -9,7 +9,8 @@ namespace agro {
 struct Reading {
   float value;
   bool valid;
-  static Reading ok(float value) { return Reading{value, true}; }
+  // NaN and the infinities pass every < and > by failing them, so no check further down could stop them.
+  static Reading ok(float value) { return value - value == 0.0f ? Reading{value, true} : bad(); }
   static Reading bad() { return Reading{0.0f, false}; }
 };
 

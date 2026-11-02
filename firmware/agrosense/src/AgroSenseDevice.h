@@ -85,6 +85,11 @@ class AgroSenseDevice {
     uint32_t seconds;
   };
   static constexpr uint8_t MAX_ACKS = 4;  // one travels per event, and two orders can be decided between two events
+  static constexpr uint32_t EARLIEST_EPOCH = 1735689600UL;  // 2025-01-01
+
+  // Before its first network time the module counts from its own boot. Such a time would be stored as 1970; with no
+  // time at all the backend stamps the arrival.
+  static uint32_t usableTime(uint32_t epochSeconds) { return epochSeconds < EARLIEST_EPOCH ? 0 : epochSeconds; }
 
   void toggleByHand() {
     ActuatorDriver& actuator = hardware_.actuator();
@@ -101,7 +106,7 @@ class AgroSenseDevice {
     char event[BackendProxy::EVENT_BYTES];
     ReadingJsonBuilder builder(event, sizeof event);
     builder.device(DeviceConfig::instance().get().deviceId)
-        .timestamp(clock_.epochSeconds())
+        .timestamp(usableTime(clock_.epochSeconds()))
         .soilMoisture(soil_)
         .airTemperature(climate.temperature)
         .relativeHumidity(climate.humidity);
