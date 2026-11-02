@@ -5,8 +5,10 @@ const uint8_t PIN_RELAY = 7;
 const bool RELAY_ACTIVE_LOW = true;
 
 void setup() {
-  digitalWrite(PIN_RELAY, RELAY_ACTIVE_LOW ? HIGH : LOW);
-  pinMode(PIN_RELAY, OUTPUT);
+  // Not digitalWrite() and pinMode(): pinMode() leaves the pin low on this board, which closes an active-low relay, and
+  // this sketch has no timer to open it again. Direction and level go in one register write.
+  ioport_cfg_options_t level = RELAY_ACTIVE_LOW ? IOPORT_CFG_PORT_OUTPUT_HIGH : IOPORT_CFG_PORT_OUTPUT_LOW;
+  R_IOPORT_PinCfg(NULL, g_pin_cfg[PIN_RELAY].pin, IOPORT_CFG_PORT_DIRECTION_OUTPUT | level);
   Serial.begin(115200);
   analogReadResolution(14);
 }

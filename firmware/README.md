@@ -58,7 +58,7 @@ Ninguna de estas protecciones depende de la red. Los valores son constantes en `
 | Máximo absoluto de **5 minutos** encendida, sea cual sea la orden. El backend rechaza más minutos de una persona y recorta los de la IA (`IRRIGATION_MAX_RUN_MINUTES`, mantenlo igual a esta constante) | `TimedDriver`, con `MAX_PUMP_ON_MS` |
 | Máximo de **30 minutos por día** | `PumpGuard`, con `MAX_PUMP_MS_PER_DAY` |
 | Al menos **5 minutos** entre riegos, contados también desde el arranque | `PumpGuard`, con `MIN_PUMP_GAP_MS` |
-| Apagada tras cualquier reinicio; el nivel del pin se fija antes de su dirección para evitar un pulso | `setup()` y `begin()` |
+| Apagada tras cualquier reinicio: el pin pasa a salida ya con el nivel que abre el relé, en una sola escritura de registro. `digitalWrite()` seguido de `pinMode()` no sirve en esta placa: `pinMode()` reescribe el registro `PFS` y deja el pin en bajo, lo que cierra un relé activo en bajo. **Hay que comprobarlo con un multímetro:** D7 debe medir alto desde el arranque | `configureRelayPinOff()`, `setup()` y `begin()` |
 | Una interrupción a 10 Hz hace cumplir la hora de apagado aunque `loop()` esté bloqueado | `startPumpWatch` |
 | Enviar no detiene el programa: la respuesta se lee poco a poco en cada vuelta de `loop()` | `HttpBackend` |
 
