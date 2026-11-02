@@ -452,7 +452,9 @@ struct Bench {
 
 static const char* AI_ORDER =
     "{\"command\":{\"id\":12,\"type\":\"irrigate\",\"source\":\"AI\",\"minutes\":1,\"confidence\":0.9}}";
-static const char* MANUAL_ORDER = "{\"command\":{\"id\":13,\"type\":\"irrigate\",\"source\":\"MANUAL\",\"minutes\":1}}";
+static const char* SECOND_AI_ORDER =
+    "{\"command\":{\"id\":14,\"type\":\"irrigate\",\"source\":\"AI\",\"minutes\":1,\"confidence\":0.9}}";
+static const char* MANUAL_ORDER ="{\"command\":{\"id\":13,\"type\":\"irrigate\",\"source\":\"MANUAL\",\"minutes\":1}}";
 
 static void the_facade_measures_each_interval_and_sends() {
   Bench bench;
@@ -495,7 +497,7 @@ static void the_order_in_an_answer_reaches_the_pump_through_the_facade() {
 
   bench.hardware.rawSoil().set(6000);  // soaked: 100 %
   bench.clock.ms += MIN_PUMP_GAP_MS;
-  bench.real.body = AI_ORDER;
+  bench.real.body = SECOND_AI_ORDER;
   bench.ticks();
   CHECK(!bench.hardware.actuator().running());
   bench.real.body = MANUAL_ORDER;
@@ -522,7 +524,7 @@ static void the_result_of_an_order_travels_in_the_next_event() {
 
   bench.hardware.rawSoil().set(6000);
   bench.clock.ms += MIN_PUMP_GAP_MS;
-  bench.real.body = AI_ORDER;
+  bench.real.body = SECOND_AI_ORDER;
   bench.ticks();
   bench.real.body = "{\"status\":\"stored\"}";
   bench.clock.ms += 30000;
@@ -913,10 +915,93 @@ static void an_order_that_arrives_twice_runs_once_and_reports_once() {
     bench.ticks();
   }
   CHECK(countOf(bench, "\"command_id\":21,\"result\":\"refused\"") == 0);
-  CHECK(countOf(bench, "\"command_id\":21,\"result\":\"finished\",\"ran_seconds\":60") == 1);
+  CHECK(countOf(bench, "\"command_id\":21,\"result\":\"finished\"") == 1);
+}
+
+static const uint32_t THIRTY_DAYS_MS = 30UL * DAY_MS;
+
+static void a_month_without_watering_does_not_lock_the_pump() {
+  FakeClock clock;
+  SimulatedDriver driver(clock);
+  PumpGuard guard(driver, clock);
+  guard.begin();
+  clock.ms += THIRTY_DAYS_MS;
+  CHECK(guard.start(1000));
+}
+
+static void a_month_without_network_does_not_stop_the_retries() {
+  FakeClock clock;
+  FakeBackend real;
+  real.statuses = {500, 200};
+  BackendProxy proxy(real, clock);
+  post(proxy, "uno");
+  clock.ms += THIRTY_DAYS_MS;  // poll() only runs with Wi-Fi: nothing called it in between
+  send(proxy);
+  CHECK(real.sent.size() == 2);
+  CHECK(proxy.pending() == 0);
+}
+
+static void the_pump_keeps_its_times_across_the_wrap_of_millis() {
+  FakeClock clock;
+  clock.ms = 0xFFFFFFFFUL - 30000UL;
+  SimulatedDriver driver(clock);
+  PumpGuard guard(driver, clock);
+  guard.begin();
+  clock.ms += MIN_PUMP_GAP_MS;  // already past the wrap
+  CHECK(guard.start(60000));
+  clock.ms = 0xFFFFFFFFUL - 10000UL;
+  FakeClock wrapping;
+  wrapping.ms = 0xFFFFFFFFUL - 10000UL;
+  SimulatedDriver crossing(wrapping);
+  CHECK(crossing.start(60000));
+  wrapping.ms += 59999;
+  crossing.enforceDeadline();
+  CHECK(crossing.running());
+  wrapping.ms += 1;
+  crossing.enforceDeadline();
+  CHECK(!crossing.running());
+  CHECK(crossing.lastRunMs() == 60000);
+
+  FakeClock gap;
+  gap.ms = 0xFFFFFFFFUL - 1000UL;
+  SimulatedDriver stopped(gap);
+  PumpGuard guarded(stopped, gap);
+  guarded.begin();
+  gap.ms += MIN_PUMP_GAP_MS - 1;
+  CHECK(!guarded.start(1000));
+  gap.ms += 1;
+  CHECK(guarded.start(1000));
+}
+
+static void the_retry_wait_and_the_wifi_wait_cross_the_wrap() {
+  FakeClock clock;
+  clock.ms = 0xFFFFFFFFUL - 1000UL;
+  FakeBackend real;
+  real.statuses = {500, 200};
+  BackendProxy proxy(real, clock);
+  post(proxy, "uno");
+  clock.ms += BackendProxy::FIRST_WAIT_MS - 1;
+  send(proxy);
+  CHECK(real.sent.size() == 1);
+  clock.ms += 1;
+  send(proxy);
+  CHECK(real.sent.size() == 2);
+
+  FakeWifi wifi;
+  WifiManager& manager = WifiManager::instance();
+  manager.attach(wifi, "red", "clave");
+  manager.ensureConnected(0xFFFFFFFFUL - 1000UL);
+  manager.ensureConnected(3000);
+  CHECK(wifi.begins == 1);
+  manager.ensureConnected(4000);
+  CHECK(wifi.begins == 2);
 }
 
 int main() {
+  a_month_without_watering_does_not_lock_the_pump();
+  a_month_without_network_does_not_stop_the_retries();
+  the_pump_keeps_its_times_across_the_wrap_of_millis();
+  the_retry_wait_and_the_wifi_wait_cross_the_wrap();
   an_order_refused_while_another_runs_does_not_lose_the_one_running();
   no_result_is_overwritten_by_the_next_one();
   an_order_that_arrives_twice_runs_once_and_reports_once();

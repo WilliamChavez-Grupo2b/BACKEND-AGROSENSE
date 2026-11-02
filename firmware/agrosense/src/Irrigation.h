@@ -122,7 +122,7 @@ class PumpGuard : public ActuatorDriver {
       dayStartedAt_ = now;
       usedMs_ = 0;
     }
-    if (inner_.running() || !reached(now, lastStopAt_ + MIN_PUMP_GAP_MS) || usedMs_ >= MAX_PUMP_MS_PER_DAY) return false;
+    if (inner_.running() || !elapsed(now, lastStopAt_, MIN_PUMP_GAP_MS) || usedMs_ >= MAX_PUMP_MS_PER_DAY) return false;
     uint32_t left = MAX_PUMP_MS_PER_DAY - usedMs_;
     if (!inner_.start(durationMs > left ? left : durationMs)) return false;
     wasRunning_ = true;

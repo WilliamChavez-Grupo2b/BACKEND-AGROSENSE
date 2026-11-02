@@ -59,7 +59,7 @@ class BackendProxy : public IBackend {
       settle(response.status);
       return SendState::Done;
     }
-    if (count_ == 0 || (waiting_ && !reached(clock_.nowMs(), retryAt_))) return SendState::Idle;
+    if (count_ == 0 || (waiting_ && !elapsed(clock_.nowMs(), waitingSince_, retryAfter_))) return SendState::Idle;
     if (!real_.begin(events_[head_])) {
       settle(0);
       return SendState::Done;
@@ -108,7 +108,8 @@ class BackendProxy : public IBackend {
       delay = wait_;
       wait_ = wait_ * 2 > MAX_WAIT_MS ? MAX_WAIT_MS : wait_ * 2;
     }
-    retryAt_ = now + delay;
+    waitingSince_ = now;
+    retryAfter_ = delay;
     waiting_ = true;
   }
 
@@ -120,7 +121,8 @@ class BackendProxy : public IBackend {
   uint16_t lost_ = 0;
   uint16_t dropped_ = 0;
   uint32_t wait_ = FIRST_WAIT_MS;
-  uint32_t retryAt_ = 0;
+  uint32_t waitingSince_ = 0;
+  uint32_t retryAfter_ = 0;
   uint32_t failingSince_ = 0;
   bool waiting_ = false;
   bool failing_ = false;

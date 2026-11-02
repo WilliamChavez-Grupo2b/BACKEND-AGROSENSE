@@ -57,6 +57,10 @@ class DigitalPort {
 };
 
 // millis() wraps every 49 days; the unsigned difference stays right across the wrap.
+inline bool elapsed(uint32_t now, uint32_t since, uint32_t length) { return now - since >= length; }
+
+// For a moment in the near future that is checked often: past 24.8 days late it reads as not reached yet. Anything
+// that may go unchecked for weeks has to use elapsed().
 inline bool reached(uint32_t now, uint32_t moment) { return static_cast<int32_t>(now - moment) >= 0; }
 
 }  // namespace agro
