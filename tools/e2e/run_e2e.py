@@ -85,7 +85,9 @@ def main() -> None:
                      {"X-Device-Key": KEY})
     step("unknown measure: 400", status == 400, status)
 
-    crop = int(os.environ.get("CROP_ID", "1"))
+    # The demo device's crop: its id depends on the order the seed happened to insert the crops.
+    crops = call(f"{BACKEND}/api/cultivos", headers=auth)[1]
+    crop = int(os.environ.get("CROP_ID") or next(item["idCrop"] for item in crops if item["name"] == "Café"))
     seen = call(f"{BACKEND}/api/crops/{crop}/predictions?limit=1", headers=auth)[1]
     before = seen[0]["idPrediction"] if seen else 0
 
