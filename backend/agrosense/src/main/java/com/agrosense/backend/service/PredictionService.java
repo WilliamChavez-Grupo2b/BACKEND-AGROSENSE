@@ -147,7 +147,7 @@ public class PredictionService {
     }
 
     private void putLatest(Map<String, Object> conditions, String key, Integer cropId, SensorType type) {
-        readingRepository.findFirstBySensorCropIdCropAndSensorSensorTypeOrderByRecordedAtDesc(cropId, type)
-                .ifPresent(reading -> conditions.put(key, reading.getValue()));
+        readingRepository.findFirstBySensorCropIdCropAndSensorSensorTypeAndQualityOrderByRecordedAtDesc(cropId, type,
+                ValidationDecorator.QUALITY_OK).ifPresent(reading -> conditions.put(key, reading.getValue()));
     }
 }

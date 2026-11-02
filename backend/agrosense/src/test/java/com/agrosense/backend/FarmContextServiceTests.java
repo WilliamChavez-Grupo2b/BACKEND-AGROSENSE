@@ -64,9 +64,9 @@ class FarmContextServiceTests {
 		estate.setLocation("Pasto, Nariño");
 		coffee.setEstate(estate);
 		when(crops.findByEstateUserEmailAndActiveTrueOrderByNameAsc(EMAIL)).thenReturn(List.of(coffee));
-		when(readings.findFirstBySensorCropIdCropAndSensorSensorTypeOrderByRecordedAtDesc(any(), any()))
+		when(readings.findFirstBySensorCropIdCropAndSensorSensorTypeAndQualityOrderByRecordedAtDesc(any(), any(), any()))
 				.thenReturn(Optional.empty());
-		when(readings.findFirstBySensorCropIdCropAndSensorSensorTypeOrderByRecordedAtDesc(1, SensorType.SOIL_MOISTURE))
+		when(readings.findFirstBySensorCropIdCropAndSensorSensorTypeAndQualityOrderByRecordedAtDesc(1, SensorType.SOIL_MOISTURE, "OK"))
 				.thenReturn(Optional.of(reading("22.5000")));
 		when(alerts.countByCropEstateUserEmailAndAcknowledgedFalse(EMAIL)).thenReturn(1L);
 		when(alertService.findOpen(EMAIL, FarmContextService.MAX_ALERTS)).thenReturn(List.of(AlertResponse.builder()
@@ -128,9 +128,9 @@ class FarmContextServiceTests {
 		rice.setHumidityMax(new BigDecimal("95.0"));
 		Crop potato = crop(2, "Papa");
 		when(crops.findByEstateUserEmailAndActiveTrueOrderByNameAsc(EMAIL)).thenReturn(List.of(rice, potato));
-		when(readings.findFirstBySensorCropIdCropAndSensorSensorTypeOrderByRecordedAtDesc(any(), any()))
+		when(readings.findFirstBySensorCropIdCropAndSensorSensorTypeAndQualityOrderByRecordedAtDesc(any(), any(), any()))
 				.thenReturn(Optional.empty());
-		when(readings.findFirstBySensorCropIdCropAndSensorSensorTypeOrderByRecordedAtDesc(1, SensorType.SOIL_MOISTURE))
+		when(readings.findFirstBySensorCropIdCropAndSensorSensorTypeAndQualityOrderByRecordedAtDesc(1, SensorType.SOIL_MOISTURE, "OK"))
 				.thenReturn(Optional.of(reading("65.0000")));
 		when(sensors.countByCropEstateUserEmailAndActiveTrue(EMAIL)).thenReturn(3L);
 		when(alerts.countByCropEstateUserEmailAndAcknowledgedFalse(EMAIL)).thenReturn(7L);
@@ -161,7 +161,7 @@ class FarmContextServiceTests {
 	void aLargeFarmIsDescribedByItsFirstCropsAndCountedWhole() {
 		List<Crop> many = IntStream.rangeClosed(1, 11).mapToObj(id -> crop(id, "Cultivo " + id)).toList();
 		when(crops.findByEstateUserEmailAndActiveTrueOrderByNameAsc(EMAIL)).thenReturn(many);
-		when(readings.findFirstBySensorCropIdCropAndSensorSensorTypeOrderByRecordedAtDesc(any(), any()))
+		when(readings.findFirstBySensorCropIdCropAndSensorSensorTypeAndQualityOrderByRecordedAtDesc(any(), any(), any()))
 				.thenReturn(Optional.empty());
 		when(alertService.findOpen(eq(EMAIL), anyInt())).thenReturn(List.of());
 
@@ -170,7 +170,7 @@ class FarmContextServiceTests {
 		assertThat(farm.totalCrops()).isEqualTo(11);
 		assertThat(farm.crops()).hasSize(FarmContextService.MAX_CROPS);
 		assertThat(farm.describe()).contains("Hay 3 cultivos más que no se detallan.");
-		verify(readings, never()).findFirstBySensorCropIdCropAndSensorSensorTypeOrderByRecordedAtDesc(eq(9), any());
+		verify(readings, never()).findFirstBySensorCropIdCropAndSensorSensorTypeAndQualityOrderByRecordedAtDesc(eq(9), any(), any());
 	}
 
 	private static Crop crop(int id, String name) {

@@ -190,7 +190,9 @@ public class SensorFacade {
     }
 
     private BigDecimal latestValue(Integer cropId, SensorType type) {
-        return readingRepository.findFirstBySensorCropIdCropAndSensorSensorTypeOrderByRecordedAtDesc(cropId, type)
+        return readingRepository
+                .findFirstBySensorCropIdCropAndSensorSensorTypeAndQualityOrderByRecordedAtDesc(cropId, type,
+                        ValidationDecorator.QUALITY_OK)
                 .map(SensorReading::getValue)
                 .orElse(null);
     }

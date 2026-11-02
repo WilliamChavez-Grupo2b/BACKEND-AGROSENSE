@@ -7,6 +7,7 @@ import com.agrosense.backend.domain.enums.SensorType;
 import com.agrosense.backend.models.Crop;
 import com.agrosense.backend.models.Estate;
 import com.agrosense.backend.models.SensorReading;
+import com.agrosense.backend.pattern.structural.decorator.ValidationDecorator;
 import com.agrosense.backend.repository.AlertRepository;
 import com.agrosense.backend.repository.CropRepository;
 import com.agrosense.backend.repository.IrrigationRepository;
@@ -79,7 +80,8 @@ public class FarmContextService {
 
     private BigDecimal latest(Crop crop, SensorType type) {
         return readingRepository
-                .findFirstBySensorCropIdCropAndSensorSensorTypeOrderByRecordedAtDesc(crop.getIdCrop(), type)
+                .findFirstBySensorCropIdCropAndSensorSensorTypeAndQualityOrderByRecordedAtDesc(crop.getIdCrop(), type,
+                        ValidationDecorator.QUALITY_OK)
                 .map(SensorReading::getValue)
                 .orElse(null);
     }

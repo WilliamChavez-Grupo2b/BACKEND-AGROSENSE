@@ -12,6 +12,7 @@ import com.agrosense.backend.models.User;
 import com.agrosense.backend.pattern.structural.bridge.ActuatorDriver;
 import com.agrosense.backend.pattern.structural.bridge.AiIrrigationOrder;
 import com.agrosense.backend.pattern.structural.bridge.ManualIrrigationOrder;
+import com.agrosense.backend.pattern.structural.decorator.ValidationDecorator;
 import com.agrosense.backend.pattern.structural.proxy.AiService.IrrigationPrediction;
 import com.agrosense.backend.repository.CropRepository;
 import com.agrosense.backend.repository.IrrigationRepository;
@@ -87,22 +88,29 @@ public class IrrigationService {
     }
 
     private Irrigation storeWithMoisture(Irrigation irrigation) {
-        latestMoisture(irrigation.getCrop().getIdCrop()).ifPresent(irrigation::setMoistureBefore);
+        latestMoisture(irrigation.getCrop().getIdCrop()).map(SensorReading::getValue)
+                .ifPresent(irrigation::setMoistureBefore);
         return irrigationRepository.save(irrigation);
     }
 
-    private Optional<BigDecimal> latestMoisture(Integer cropId) {
-        return readingRepository.findFirstBySensorCropIdCropAndSensorSensorTypeOrderByRecordedAtDesc(cropId,
-                SensorType.SOIL_MOISTURE).map(SensorReading::getValue);
+    private Optional<SensorReading> latestMoisture(Integer cropId) {
+        return readingRepository.findFirstBySensorCropIdCropAndSensorSensorTypeAndQualityOrderByRecordedAtDesc(cropId,
+                SensorType.SOIL_MOISTURE, ValidationDecorator.QUALITY_OK);
     }
 
-    /** Waits for the water to soak in, then notes the moisture that the irrigation left. */
+    /**
+     * Waits for the water to soak in, then notes the moisture that the irrigation left. Only a reading taken after the
+     * water counts: with the device silent, the last one is the soil before it, which would teach that watering does
+     * nothing. It waits for a newer one.
+     */
     @Transactional
     public void recordResults() {
         LocalDateTime limit = LocalDateTime.now().minusMinutes(SOAK_MINUTES);
         for (Irrigation irrigation : irrigationRepository
                 .findByMoistureBeforeIsNotNullAndMoistureAfterIsNullAndEndedAtBefore(limit)) {
-            latestMoisture(irrigation.getCrop().getIdCrop()).ifPresent(irrigation::setMoistureAfter);
+            latestMoisture(irrigation.getCrop().getIdCrop())
+                    .filter(reading -> reading.getRecordedAt().isAfter(irrigation.getEndedAt()))
+                    .map(SensorReading::getValue).ifPresent(irrigation::setMoistureAfter);
         }
     }
 
