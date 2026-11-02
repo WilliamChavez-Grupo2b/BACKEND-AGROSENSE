@@ -23,4 +23,10 @@ public interface IrrigationDispatchRepository extends JpaRepository<IrrigationDi
             + "d.deliveredAt = :now where d.idDispatch = :id "
             + "and d.status = com.agrosense.backend.domain.enums.DispatchStatus.PENDING")
     int claim(@Param("id") Integer id, @Param("now") LocalDateTime now);
+
+    /** Conditional for the same reason: an order delivered a moment ago is on the device and must not be undone. */
+    @Modifying
+    @Query("update IrrigationDispatch d set d.status = com.agrosense.backend.domain.enums.DispatchStatus.EXPIRED "
+            + "where d.idDispatch = :id and d.status = com.agrosense.backend.domain.enums.DispatchStatus.PENDING")
+    int expire(@Param("id") Integer id);
 }

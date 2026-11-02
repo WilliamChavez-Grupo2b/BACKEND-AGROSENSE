@@ -11,6 +11,7 @@ import com.agrosense.backend.models.Device;
 import com.agrosense.backend.models.Sensor;
 import com.agrosense.backend.pattern.structural.adapter.SensorReadingData;
 import com.agrosense.backend.pattern.structural.facade.SensorFacade;
+import com.agrosense.backend.repository.CropRepository;
 import com.agrosense.backend.repository.SensorReadingRepository;
 import com.agrosense.backend.repository.SensorRepository;
 import lombok.RequiredArgsConstructor;
@@ -45,6 +46,11 @@ public class DeviceEventService {
 
     static final int MAX_MEASUREMENTS = 16;
     static final Duration ALLOWED_CLOCK_AHEAD = Duration.ofMinutes(5);
+    /** A clock that has not synchronized counts from its own boot; such a time would be stored as 1970. */
+    static final Instant EARLIEST_EVENT = Instant.parse("2025-01-01T00:00:00Z");
+    /** reading_value is NUMERIC(12, 4): past this it does not even fit as a reading marked impossible. */
+    private static final double LARGEST_VALUE = 1e8;
+    private static final double LARGEST_TS = 1e15;
 
     private static final String MEASUREMENTS = Arrays.stream(SensorType.values())
             .map(DeviceEventService::measurementName).collect(Collectors.joining(", "));
@@ -52,6 +58,7 @@ public class DeviceEventService {
     private final DeviceService deviceService;
     private final SensorRepository sensorRepository;
     private final SensorReadingRepository readingRepository;
+    private final CropRepository cropRepository;
     private final SensorFacade sensorFacade;
     private final Clock clock = Clock.systemDefaultZone();
 
@@ -93,6 +100,10 @@ public class DeviceEventService {
         }
         if (data.size() > MAX_MEASUREMENTS) {
             throw invalid("Un evento admite como máximo " + MAX_MEASUREMENTS + " medidas.");
+        }
+        if (stamped) {
+            // Two copies of one event at once, the second a retry of the first, must not both find nothing stored.
+            cropRepository.findByIdForUpdate(crop.getIdCrop());
         }
         List<Sensor> active = sensorRepository.findByCropIdCropAndActiveTrue(crop.getIdCrop());
         for (Map.Entry<String, JsonNode> measurement : data.properties()) {
@@ -178,6 +189,9 @@ public class DeviceEventService {
         if (value == null || !value.isNumber()) {
             throw invalid("El valor de '" + name + "' debe ser un número.");
         }
+        if (Math.abs(value.asDouble()) >= LARGEST_VALUE) {
+            throw invalid("El valor de '" + name + "' está fuera de toda escala.");
+        }
         return value.decimalValue();
     }
 
@@ -196,8 +210,12 @@ public class DeviceEventService {
         Instant instant;
         try {
             if (ts.isNumber()) {
-                long number = ts.asLong();
-                instant = number > 100_000_000_000L ? Instant.ofEpochMilli(number) : Instant.ofEpochSecond(number);
+                double number = ts.asDouble();
+                if (Math.abs(number) >= LARGEST_TS) {
+                    throw invalid("El campo 'ts' debe ser una fecha ISO-8601 o un número de segundos.");
+                }
+                instant = number > 100_000_000_000L ? Instant.ofEpochMilli((long) number)
+                        : Instant.ofEpochSecond((long) number);
             } else if (ts.isString()) {
                 String text = ts.asString().trim();
                 instant = text.matches(".*([zZ]|[+-]\\d\\d:?\\d\\d)$")
@@ -211,6 +229,9 @@ public class DeviceEventService {
         }
         if (instant.isAfter(clock.instant().plus(ALLOWED_CLOCK_AHEAD))) {
             throw invalid("La hora del evento ('ts') está en el futuro; revisa el reloj del dispositivo.");
+        }
+        if (instant.isBefore(EARLIEST_EVENT)) {
+            throw invalid("La hora del evento ('ts') es anterior a AgroSense; revisa el reloj del dispositivo.");
         }
         return LocalDateTime.ofInstant(instant, ZoneId.systemDefault());
     }

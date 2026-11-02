@@ -30,6 +30,7 @@ public class PendingIrrigationCommands {
     public static final String REFUSED = "refused";
 
     private static final int MAX_REASON = 255;
+    private static final int MAX_RAN_SECONDS = 24 * 60 * 60;
 
     private final IrrigationDispatchRepository dispatches;
     private final IrrigationRepository irrigations;
@@ -105,14 +106,15 @@ public class PendingIrrigationCommands {
         return switch (result) {
             case STARTED, REFUSED -> status == DispatchStatus.DELIVERED;
             case FINISHED -> (status == DispatchStatus.DELIVERED || status == DispatchStatus.STARTED)
-                    && ranSeconds != null && ranSeconds >= 0;
+                    && ranSeconds != null && ranSeconds >= 0 && ranSeconds <= MAX_RAN_SECONDS;
             default -> false;
         };
     }
 
     private void expire(IrrigationDispatch dispatch, String why) {
-        dispatch.setStatus(DispatchStatus.EXPIRED);
-        irrigationOf(dispatch).ifPresent(irrigation -> recordNothingRan(irrigation, why));
+        if (dispatches.expire(dispatch.getIdDispatch()) == 1) {
+            irrigationOf(dispatch).ifPresent(irrigation -> recordNothingRan(irrigation, why));
+        }
     }
 
     private Optional<Irrigation> irrigationOf(IrrigationDispatch dispatch) {
