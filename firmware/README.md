@@ -1,4 +1,9 @@
-# Firmware AgroSense (ESP32)
+# Firmware AgroSense por HTTP (ESP32), alternativa no usada
+
+> **El dispositivo real no corre este firmware.** El ESP32 instalado corre `esp32-tcp/` (servidor TCP en su propia red
+> `PLANTICAS`), y el backend lo lee por TCP: ver `esp32-tcp/README.md` y la decisión 40 de `docs/ARQUITECTURA.md`. Este
+> firmware, cliente HTTP con relé y con los patrones de diseño del dispositivo, se conserva como alternativa: no está
+> cargado en la placa ni probado en ella.
 
 Es el dispositivo de campo: una placa **ESP32 Dev Module** con el core `esp32` de Espressif (2.x o 3.x). Lee el suelo y
 el aire cada 30 s, envía cada lectura al manejador de eventos (`POST /events` con `X-Device-Key`) y acciona el relé de la

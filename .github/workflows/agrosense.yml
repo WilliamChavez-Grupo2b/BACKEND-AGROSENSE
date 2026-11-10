@@ -143,7 +143,7 @@ jobs:
         run: |
           arduino-cli core update-index
           arduino-cli core install esp32:esp32
-          arduino-cli lib install "DHT sensor library" "Adafruit Unified Sensor" "Adafruit SHT31 Library"
+          arduino-cli lib install "DHT sensor library" "Adafruit Unified Sensor" "Adafruit SHT31 Library" "MAX6675 library"
           sh firmware/test/compile.sh
 
   end-to-end:
