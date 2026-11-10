@@ -2,6 +2,8 @@ package com.agrosense.backend.config;
 
 import com.agrosense.backend.pattern.creational.singleton.AiConfigManager;
 import com.agrosense.backend.pattern.structural.bridge.ActuatorDriver;
+import com.agrosense.backend.pattern.structural.adapter.esp32.Esp32ReadOnlyActuatorDriver;
+import com.agrosense.backend.repository.DeviceRepository;
 import com.agrosense.backend.pattern.structural.bridge.PendingIrrigationCommands;
 import com.agrosense.backend.pattern.structural.bridge.RelayActuatorDriver;
 import com.agrosense.backend.pattern.structural.bridge.SimulatedActuatorDriver;
@@ -29,9 +31,13 @@ public class AppConfig {
 
     @Bean
     public ActuatorDriver actuatorDriver(@Value("${irrigation.actuator:simulated}") String actuator,
-            @Value("${irrigation.max-run-minutes:5}") int maxRunMinutes, PendingIrrigationCommands pending) {
-        return "relay".equalsIgnoreCase(actuator.trim()) ? new RelayActuatorDriver(pending, maxRunMinutes)
+            @Value("${irrigation.max-run-minutes:5}") int maxRunMinutes, PendingIrrigationCommands pending,
+            @Value("${esp32.tcp.enabled:false}") boolean esp32OverTcp, @Value("${esp32.device-id:RPI-DEMO-01}") String esp32,
+            DeviceRepository devices) {
+        ActuatorDriver driver = "relay".equalsIgnoreCase(actuator.trim()) ? new RelayActuatorDriver(pending, maxRunMinutes)
                 : new SimulatedActuatorDriver();
+        // The ESP32 read over TCP takes no orders: its crop's irrigations are only recorded.
+        return esp32OverTcp ? new Esp32ReadOnlyActuatorDriver(driver, devices, esp32) : driver;
     }
 
     @Bean(ASYNC_EXECUTOR)

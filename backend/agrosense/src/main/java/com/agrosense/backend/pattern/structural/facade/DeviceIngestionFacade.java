@@ -88,9 +88,9 @@ public class DeviceIngestionFacade {
         Map<String, Object> answer = events.receiveFromConfiguredDevice(request.getDeviceId(), request.getType(),
                 request.getTs(), request.getData());
         predictIfDue(answer);
-        // TODO(esp32-tcp): irrigation orders are not sent over TCP until the protocol towards the ESP32 is defined.
-        // Taking them here would mark them delivered and lose them, so they stay in irrigation_dispatches and expire.
-        // The pump's safety lives in the ESP32 either way.
+        // TODO(esp32-tcp): no irrigation order is taken here: the ESP32 read over TCP accepts none and has no pump, and
+        // nothing is ever written to its socket. Esp32ReadOnlyActuatorDriver records its crop's irrigations without
+        // offering them, so none waits for it. Send them once the ESP32 has an order protocol.
         return answer;
     }
 

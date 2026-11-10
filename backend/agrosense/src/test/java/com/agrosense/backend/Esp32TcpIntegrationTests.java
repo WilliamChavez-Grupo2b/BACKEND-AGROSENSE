@@ -2,6 +2,7 @@ package com.agrosense.backend;
 
 import com.agrosense.backend.domain.enums.AlertType;
 import com.agrosense.backend.models.Device;
+import com.agrosense.backend.pattern.structural.adapter.esp32.Esp32ReceiverStatus;
 import com.agrosense.backend.pattern.structural.adapter.esp32.Esp32TcpIngestionService;
 import com.agrosense.backend.repository.AlertRepository;
 import com.agrosense.backend.repository.DeviceRepository;
@@ -27,9 +28,9 @@ import java.util.function.BooleanSupplier;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * A fake ESP32: a ServerSocket on a random port that the backend connects to by itself once it is ready. It sends
- * three lines, closes the connection and the server, opens the server again on the same port, and the backend must
- * come back to it.
+ * A fake ESP32: a ServerSocket on a random port that sends the real block every 100 ms. The backend connects by itself
+ * once it is ready and stores one averaged reading per second (ESP32_AGGREGATE_SECONDS=1 here). The server then closes
+ * and opens again on the same port, and the backend has to come back to it.
  */
 @SpringBootTest(properties = {
         "spring.datasource.url=jdbc:h2:mem:agrosense-esp32;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;DEFAULT_NULL_ORDERING=HIGH;DB_CLOSE_DELAY=-1",
@@ -43,7 +44,9 @@ import static org.assertj.core.api.Assertions.assertThat;
         "alerts.frost-watch=false",
         "esp32.tcp.enabled=true",
         "esp32.tcp.host=127.0.0.1",
+        "esp32.tcp.allow-loopback=true",
         "esp32.device-id=RPI-DEMO-01",
+        "esp32.aggregate-seconds=1",
         "esp32.tcp.first-retry-ms=100",
         "esp32.tcp.longest-retry-ms=400"
 })
@@ -79,8 +82,16 @@ class Esp32TcpIntegrationTests {
         }
     }
 
+    private static String block(String temperature, String humidity, String soil) {
+        return "===== PLANTICAS =====\r\n"
+                + "Temperatura exterior: " + temperature + " C\r\n"
+                + "Humedad relativa: " + humidity + " %\r\n"
+                + "Humedad del suelo: " + soil + " %\r\n"
+                + "\r\n";
+    }
+
     @Test
-    void theLinesAreStoredRaiseAnAlertAndTheClientComesBackAfterTheServerCloses() throws Exception {
+    void averagedReadingsAreStoredRaiseAnAlertAndTheClientComesBackAfterTheServerCloses() throws Exception {
         Device device = deviceRepository.findByDeviceCode("RPI-DEMO-01").orElseThrow();
         Integer cropId = device.getCrop().getIdCrop();
         // The seed leaves a low moisture alert open on this crop, and an open alert is not repeated: answer it first.
@@ -90,39 +101,53 @@ class Esp32TcpIntegrationTests {
                     alert.setAcknowledged(true);
                     alertRepository.save(alert);
                 });
-        long before = countReadings();
+        long readingsBefore = readingRepository.count();
         long lowMoistureBefore = lowMoistureAlerts(cropId);
 
+        int sent = 0;
         try (Socket esp = server.accept()) {
             OutputStream out = esp.getOutputStream();
-            out.write(("{\"temp\": 23.4, \"hum\": 58, \"suelo\": 44}\n"
-                    + "basura sin datos\n"
-                    + "temperatura=23.6,humedad_aire=57,humedad_suelo=12.5\n"
-                    + "temp:23.8;hum:57;suelo:45\n").getBytes(StandardCharsets.UTF_8));
-            out.flush();
-            waitFor(() -> countReadings() >= before + 9, "the three good lines stored as nine readings");
+            Instant until = Instant.now().plusMillis(3500);
+            while (Instant.now().isBefore(until)) {
+                // 12.50 % is below the coffee crop's soil range; nan leaves the air humidity out of one block.
+                out.write(block("23.40", sent % 5 == 0 ? "nan" : "58.00", "12.50").getBytes(StandardCharsets.UTF_8));
+                out.flush();
+                sent++;
+                Thread.sleep(100);
+            }
+            waitFor(() -> esp32.status().storedReadings() >= 2, "two averaged readings");
         }
-        assertThat(countReadings()).isEqualTo(before + 9);  // the line without data stored nothing
-        assertThat(lowMoistureAlerts(cropId)).isGreaterThan(lowMoistureBefore);  // 12.5 % is below the crop's range
+        waitFor(() -> !esp32.connected(), "the client notices the closed connection");
+
+        Esp32ReceiverStatus status = esp32.status();
+        long stored = readingRepository.count() - readingsBefore;
+        // About one reading per field and second, and far fewer than one per block.
+        assertThat(stored).isGreaterThanOrEqualTo(6).isLessThan(sent);
+        assertThat(status.storedReadings()).isBetween(2L, 6L);
+        assertThat(status.lastStoredAt()).isNotNull();
+        assertThat(status.lastStoredAt().getOffset().getTotalSeconds()).isEqualTo(-5 * 3600);
+        assertThat(status.discardedBlocks()).isZero();
+        assertThat(lowMoistureAlerts(cropId)).isGreaterThan(lowMoistureBefore);
         assertThat(deviceRepository.findByDeviceCode("RPI-DEMO-01").orElseThrow().getLastEventAt()).isNotNull();
 
         // The ESP32 restarts: the server goes away and comes back on the same port.
         server.close();
-        waitFor(() -> !esp32.connected(), "the client notices the closed connection");
         int connectionsBefore = esp32.connections();
         server = new ServerSocket();
         server.setReuseAddress(true);
         server.bind(new InetSocketAddress("127.0.0.1", port));
         server.setSoTimeout((int) PATIENCE.toMillis());
+        long storedBefore = esp32.status().storedReadings();
         try (Socket again = server.accept()) {
-            again.getOutputStream().write("suelo=50\n".getBytes(StandardCharsets.UTF_8));
-            waitFor(() -> countReadings() >= before + 10, "a reading after reconnecting");
+            OutputStream out = again.getOutputStream();
+            for (int i = 0; i < 15; i++) {
+                out.write(block("24.00", "60.00", "45.00").getBytes(StandardCharsets.UTF_8));
+                out.flush();
+                Thread.sleep(100);
+            }
+            waitFor(() -> esp32.status().storedReadings() > storedBefore, "a reading after reconnecting");
         }
         assertThat(esp32.connections()).isGreaterThan(connectionsBefore);
-    }
-
-    private long countReadings() {
-        return readingRepository.count();
     }
 
     private long lowMoistureAlerts(Integer cropId) {
