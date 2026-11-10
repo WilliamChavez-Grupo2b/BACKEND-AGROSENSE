@@ -50,6 +50,7 @@ public class Esp32TcpIngestionService {
     private final Esp32ReadingAggregator aggregator;
     private final Esp32TcpClient client;
     private final JsonMapper json = JsonMapper.builder().build();
+    private final AtomicLong receivedBlocks = new AtomicLong();
     private final AtomicLong storedReadings = new AtomicLong();
     private final AtomicLong refusedReadings = new AtomicLong();
     private volatile Instant lastBlockAt;
@@ -105,7 +106,8 @@ public class Esp32TcpIngestionService {
     /** What GET /api/devices/esp32/status shows: no address, no key, nothing sensitive. */
     public Esp32ReceiverStatus status() {
         return new Esp32ReceiverStatus(enabled, client.connected(), deviceId, aggregateSeconds, inField(lastBlockAt),
-                inField(lastStoredAt), storedReadings.get(), refusedReadings.get(), parser.discardedBlocks(),
+                inField(lastStoredAt), receivedBlocks.get(), storedReadings.get(), refusedReadings.get(),
+                parser.discardedBlocks(),
                 client.skippedLines(), client.connections());
     }
 
@@ -129,6 +131,7 @@ public class Esp32TcpIngestionService {
 
     private void collect(Esp32Reading reading) {
         lastBlockAt = clock.instant();
+        receivedBlocks.incrementAndGet();
         aggregator.add(reading).ifPresent(this::store);
     }
 

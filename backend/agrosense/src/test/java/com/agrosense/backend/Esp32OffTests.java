@@ -80,6 +80,7 @@ class Esp32OffTests {
         assertThat(status.connected()).isFalse();
         assertThat(status.lastStoredAt()).isNull();
         assertThat(status.connections()).isZero();
+        assertThat(status.receivedBlocks()).isZero();
 
         HttpResponse<String> anonymous = http.send(HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + port
                 + "/api/devices/esp32/status")).build(), HttpResponse.BodyHandlers.ofString());

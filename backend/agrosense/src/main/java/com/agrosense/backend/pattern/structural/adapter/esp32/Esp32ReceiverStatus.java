@@ -13,6 +13,7 @@ public record Esp32ReceiverStatus(
         int aggregateSeconds,
         OffsetDateTime lastBlockAt,
         OffsetDateTime lastStoredAt,
+        long receivedBlocks,
         long storedReadings,
         long refusedReadings,
         long discardedBlocks,

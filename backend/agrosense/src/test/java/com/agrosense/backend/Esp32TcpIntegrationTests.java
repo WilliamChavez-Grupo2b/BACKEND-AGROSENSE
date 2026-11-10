@@ -133,6 +133,7 @@ class Esp32TcpIntegrationTests {
         assertThat(status.lastStoredAt()).isNotNull();
         assertThat(status.lastStoredAt().getOffset().getTotalSeconds()).isEqualTo(-5 * 3600);
         assertThat(status.discardedBlocks()).isZero();
+        assertThat(status.receivedBlocks()).isEqualTo(sent);  // every block the fake sent, before averaging
         assertThat(lowMoistureAlerts(cropId)).isGreaterThan(lowMoistureBefore);
         // The ESP32 sent 23.40 °C and 58.00 % raw: stored once corrected (-8.5, -6), not twice (6.40, 46.00).
         assertThat(latest("AS-002")).isEqualTo(14.90);
