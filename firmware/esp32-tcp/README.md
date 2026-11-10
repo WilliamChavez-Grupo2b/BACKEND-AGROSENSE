@@ -50,8 +50,9 @@ Todo a 3,3 V y con GND común.
 
 ## Puesta en marcha
 
-1. Copia `planticas_proyecto/arduino_secrets.example.h` como `planticas_proyecto/arduino_secrets.h` y pon la clave de la
-   red (de 8 a 63 caracteres). Git ignora ese archivo.
+1. Copia `planticas_proyecto/arduino_secrets.example.h` como `planticas_proyecto/arduino_secrets.h` y cambia el marcador
+   `CAMBIA_ESTA_CLAVE` por la clave de la red: **mínimo 12 caracteres** (máximo 63) y **distinta del nombre de la red**.
+   Git ignora ese archivo. El sketch no compila con el marcador, con una clave más corta o igual al nombre.
 2. Abre `planticas_proyecto/planticas_proyecto.ino` en el IDE, elige **ESP32 Dev Module** y súbelo.
 3. En el monitor serie (115200) aparece `Red WiFi iniciada`, la IP `192.168.4.1` y `Servidor TCP iniciado en puerto: 8080`.
 
@@ -111,8 +112,9 @@ minuto.
    crudo, y las aplica el backend con `SENSOR_CALIBRATION=AIR_TEMPERATURE=-8.5:1,RELATIVE_HUMIDITY=-6:1` (`.env.example`,
    `compose.yaml`). Se aplican una sola vez. **Están por verificar con un termómetro y un higrómetro de referencia**: si la
    medida da otra cosa, se cambia la variable sin volver a programar la placa.
-3. **La clave del Wi-Fi era igual al nombre de la red y estaba en el código.** Ya salió a `arduino_secrets.h`; falta
-   elegir una clave propia y fuerte.
+3. **Resuelto:** la clave del Wi-Fi era igual al nombre de la red y estaba en el código. Está en `arduino_secrets.h`, fuera
+   del repositorio; el ejemplo trae un marcador y el sketch exige al compilar 12 caracteres o más y una clave distinta
+   del nombre. La clave la pone el equipo.
 4. **El servidor TCP no tiene autenticación.** Mitigaciones simples, sin implementar:
    - una clave Wi-Fi fuerte (12 o más caracteres) y `WiFi.softAP(nombre, clave, canal, ocultar, 1)` para admitir una sola
      estación;

@@ -16,6 +16,15 @@ SemaphoreHandle_t mutexSensores;
 const char* nombreRed = SECRET_AP_SSID;
 const char* claveRed = SECRET_AP_PASS;
 
+// La clave se comprueba al compilar: así no se carga la placa con el marcador del ejemplo ni con una clave débil.
+constexpr bool mismoTexto(const char* a, const char* b) {
+  return *a != *b ? false : (*a == '\0' ? true : mismoTexto(a + 1, b + 1));
+}
+static_assert(sizeof(SECRET_AP_PASS) - 1 >= 12, "SECRET_AP_PASS: minimo 12 caracteres (arduino_secrets.h)");
+static_assert(sizeof(SECRET_AP_PASS) - 1 <= 63, "SECRET_AP_PASS: maximo 63 caracteres (WPA2)");
+static_assert(!mismoTexto(SECRET_AP_PASS, SECRET_AP_SSID), "SECRET_AP_PASS debe ser distinta del nombre de la red");
+static_assert(!mismoTexto(SECRET_AP_PASS, "CAMBIA_ESTA_CLAVE"), "Pon tu clave en SECRET_AP_PASS (arduino_secrets.h)");
+
 const int puertoTCP = 8080;
 
 WiFiServer servidor(puertoTCP);

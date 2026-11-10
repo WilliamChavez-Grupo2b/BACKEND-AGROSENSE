@@ -17,5 +17,5 @@ $cli compile --fqbn "$board" --build-property "compiler.cpp.extra_flags=-DAGRO_S
 $cli compile --fqbn "$board" calibrate_soil
 # The real device: firmware/esp32-tcp, with its example secrets.
 cp -r esp32-tcp/planticas_proyecto "$work/planticas_proyecto"
-cp esp32-tcp/planticas_proyecto/arduino_secrets.example.h "$work/planticas_proyecto/arduino_secrets.h"
+sed 's/"CAMBIA_ESTA_CLAVE"/"clave-de-compilacion-ci"/' esp32-tcp/planticas_proyecto/arduino_secrets.example.h   > "$work/planticas_proyecto/arduino_secrets.h"
 $cli compile --fqbn "$board" "$work/planticas_proyecto"

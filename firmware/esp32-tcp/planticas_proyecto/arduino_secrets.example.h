@@ -3,5 +3,7 @@
 
 // La red Wi-Fi que crea el ESP32 (modo AP). El backend y los docs esperan el nombre PLANTICAS.
 #define SECRET_AP_SSID "PLANTICAS"
-// WPA2: de 8 a 63 caracteres. Usa una clave propia, distinta del nombre de la red.
-#define SECRET_AP_PASS "cambia-esta-clave"
+
+// La clave de la red: MÍNIMO 12 CARACTERES (WPA2 admite hasta 63) y DISTINTA DEL NOMBRE DE LA RED.
+// Reemplaza el marcador: el sketch no compila mientras siga así, ni con una clave corta o igual al nombre.
+#define SECRET_AP_PASS "CAMBIA_ESTA_CLAVE"
