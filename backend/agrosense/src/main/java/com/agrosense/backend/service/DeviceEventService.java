@@ -64,7 +64,16 @@ public class DeviceEventService {
 
     @Transactional
     public Map<String, Object> receive(String deviceCode, String deviceKey, String type, JsonNode ts, JsonNode data) {
-        Device device = deviceService.require(deviceCode, deviceKey);
+        return store(deviceService.require(deviceCode, deviceKey), type, ts, data);
+    }
+
+    /** The same event from a device trusted by configuration, without a key: the ESP32 read over TCP. */
+    @Transactional
+    public Map<String, Object> receiveFromConfiguredDevice(String deviceCode, String type, JsonNode ts, JsonNode data) {
+        return store(deviceService.requireConfigured(deviceCode), type, ts, data);
+    }
+
+    private Map<String, Object> store(Device device, String type, JsonNode ts, JsonNode data) {
         Crop crop = device.getCrop();
         LocalDateTime when = timeOf(ts);
         if (data == null || !data.isObject()) {

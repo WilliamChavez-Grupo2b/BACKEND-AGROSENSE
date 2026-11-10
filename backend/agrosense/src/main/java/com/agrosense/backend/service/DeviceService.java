@@ -61,6 +61,22 @@ public class DeviceService {
         return device;
     }
 
+    /**
+     * A device trusted by configuration rather than by its key: the ESP32 on its own local network, read over TCP
+     * (ESP32_DEVICE_ID). 404 when the code is unknown, 409 when the device is inactive.
+     */
+    @Transactional(readOnly = true)
+    public Device requireConfigured(String deviceCode) {
+        Device device = (deviceCode == null || deviceCode.isBlank() ? Optional.<Device>empty()
+                : deviceRepository.findByDeviceCode(normalize(deviceCode)))
+                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND,
+                        "No existe el dispositivo configurado '" + deviceCode + "'."));
+        if (!Boolean.TRUE.equals(device.getActive())) {
+            throw new ApiException(HttpStatus.CONFLICT, "El dispositivo está inactivo.");
+        }
+        return device;
+    }
+
     @Transactional
     public boolean setKey(String deviceCode, String key) {
         return deviceRepository.findByDeviceCode(normalize(deviceCode))

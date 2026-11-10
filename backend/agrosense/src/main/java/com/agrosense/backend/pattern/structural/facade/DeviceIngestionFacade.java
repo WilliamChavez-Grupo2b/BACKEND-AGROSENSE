@@ -68,11 +68,7 @@ public class DeviceIngestionFacade {
 
     public Map<String, Object> ingest(String deviceKey, DeviceEventRequest request) {
         Map<String, Object> answer = received(deviceKey, request);
-        try {
-            requestPredictionIfDue(answer);
-        } catch (RuntimeException failure) {
-            log.warn("The event was stored but its prediction could not be requested: {}", failure.getMessage());
-        }
+        predictIfDue(answer);
         Integer cropId = (Integer) ((Map<?, ?>) answer.get("event")).get("cropId");
         try {
             confirm(cropId, request.getAck());
@@ -81,6 +77,29 @@ public class DeviceIngestionFacade {
             log.warn("The event was stored but its irrigation order could not be handled: {}", failure.getMessage());
         }
         return answer;
+    }
+
+    /**
+     * The same road for the ESP32 read over TCP (Esp32TcpIngestionService), which sends no key: the configured
+     * device code is the trust. Storing, calibration, alerts, live publication and the prediction are the webhook's.
+     */
+    public Map<String, Object> ingestFromConfiguredDevice(DeviceEventRequest request) {
+        rateLimiter.count(request.getDeviceId());
+        Map<String, Object> answer = events.receiveFromConfiguredDevice(request.getDeviceId(), request.getType(),
+                request.getTs(), request.getData());
+        predictIfDue(answer);
+        // TODO(esp32-tcp): irrigation orders are not sent over TCP until the protocol towards the ESP32 is defined.
+        // Taking them here would mark them delivered and lose them, so they stay in irrigation_dispatches and expire.
+        // The pump's safety lives in the ESP32 either way.
+        return answer;
+    }
+
+    private void predictIfDue(Map<String, Object> answer) {
+        try {
+            requestPredictionIfDue(answer);
+        } catch (RuntimeException failure) {
+            log.warn("The event was stored but its prediction could not be requested: {}", failure.getMessage());
+        }
     }
 
     private Map<String, Object> received(String deviceKey, DeviceEventRequest request) {
