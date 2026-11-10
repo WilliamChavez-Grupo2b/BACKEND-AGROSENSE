@@ -41,7 +41,7 @@ El workspace es un **monorepo local** con un solo `.git`. Cada carpeta se public
 | `frontend/` | Aplicación web renderizada en servidor | Java 21, Spring Boot 4.1.1, Thymeleaf, Spring Security (sesión), JPA; scripts en **TypeScript estricto** compilados con `tsc` | `./mvnw test`, `npm run build && npm test` |
 | `IA/` | Reglas de riego (`/predict/irrigation`) y asistente (`/chat`, `/voice`) | Python, FastAPI. **Reglas fijas, no un modelo entrenado** | `pytest`; `python -m unittest tests.test_patterns tests.test_rules` |
 | `event-service/` | Webhook de dispositivos (`POST /events`) y canal en vivo SSE (`GET /stream`) | Python, FastAPI | `pytest` |
-| `firmware/esp32-tcp/` | **El dispositivo real**: sketch del equipo para ESP32 Dev Module (modo AP `PLANTICAS`, servidor TCP 8080, un bloque por segundo, un solo cliente, sin órdenes). MAX6675 en GPIO5/17/16, DHT11 en GPIO4, suelo en GPIO34 | C++ / Arduino | `sh firmware/test/compile.sh` (en la CI) |
+| `firmware/esp32-tcp/` | **El dispositivo real**: sketch del equipo para ESP32 Dev Module (modo AP `PLANTICAS` con una sola estación, servidor TCP 8080, un bloque por segundo, un solo cliente, sin órdenes). MAX6675 en GPIO5/17/16 (leído cada 250 ms, promedio de 4), DHT11 en GPIO4, suelo en GPIO34 (`ADC_SECO`/`ADC_HUMEDO` pendientes de calibrar; modo `CALIBRAR_SUELO`). Envía valores **crudos**: las compensaciones las aplica el backend | C++ / Arduino | `sh firmware/test/compile.sh` (en la CI) |
 | `firmware/agrosense/` | **Alternativa no usada**: firmware cliente HTTP con relé y patrones (no está cargado en la placa) | C++ (pruebas en PC con g++) | `sh firmware/test/run-tests.sh` |
 | `database/` | Esquema (`schema.sql`, única fuente de verdad), `seed_demo.sql`, `reset.sql`, `migrations/001..003`, `datasource.properties` | PostgreSQL (Neon en producción; H2 modo PostgreSQL en pruebas) | — |
 | `api/` | Contrato OpenAPI del backend (`openapi.json`), peticiones de ejemplo, verificador de contrato | Python | `python api/tools/validate_spec.py` |
@@ -181,7 +181,8 @@ Todas están en `.env.example`. Ninguna llave tiene valor por defecto ni se escr
 | Frontend | `BACKEND_URL`, `BACKEND_JWT_SECRET` (= `JWT_SECRET`), `EVENTS_PUBLIC_URL`, `IRRIGATION_ACTUATOR`, `NEON_*` / `DATABASE_*` |
 | Backend, ESP32 por TCP | `ESP32_TCP_ENABLED` (`false`; en Render siempre apagado), `ESP32_TCP_HOST` (`192.168.4.1`, solo IPv4 privada), `ESP32_TCP_PORT` (`8080`), `ESP32_DEVICE_ID` (`RPI-DEMO-01`, debe existir en `devices`), `ESP32_AGGREGATE_SECONDS` (`60`). La clave de la red Wi-Fi no va en el repositorio |
 | Recorrido sin hardware | `BACKEND_URL`, `EVENTS_URL`, `API_EMAIL`, `API_PASSWORD`, `DEVICE_ID`, `DEVICE_KEY`, `CROP_ID`, `EXPECT_MODEL` |
-| ESP32 real (`firmware/esp32-tcp/`) | `arduino_secrets.h`, fuera del repositorio: `SECRET_AP_SSID` (`PLANTICAS`) y `SECRET_AP_PASS` |
+| ESP32 real (`firmware/esp32-tcp/`) | `arduino_secrets.h`, fuera del repositorio: `SECRET_AP_SSID` (`PLANTICAS`) y `SECRET_AP_PASS` (12 caracteres o más, distinta del nombre; el sketch no compila si no) |
+| Backend, compensación del ESP32 | `SENSOR_CALIBRATION=AIR_TEMPERATURE=-8.5:1,RELATIVE_HUMIDITY=-6:1` en `.env.example` y `compose.yaml` (Decorator `CalibrationDecorator`, se aplica una sola vez). **Por verificar con termómetro e higrómetro de referencia** |
 | Firmware alternativo (`firmware/agrosense/`) | `arduino_secrets.h`, fuera del repositorio: `SECRET_WIFI_SSID/PASS`, `SECRET_DEVICE_ID/KEY`, `SECRET_EVENTS_HOST/PORT/TLS`, `SECRET_EVENTS_CA_CERT`, `AGRO_SOIL_DRY_RAW`/`AGRO_SOIL_WET_RAW` |
 
 **Secretos que deben ser iguales en dos sitios:** `JWT_SECRET` (backend) = `BACKEND_JWT_SECRET` (frontend);
@@ -253,12 +254,12 @@ FastAPI no carga en este equipo, así que las pruebas Python con FastAPI corren 
 
 Prioridad aproximada para la entrega/sustentación:
 
-0. **ESP32 real** (`firmware/esp32-tcp/README.md`, «Hallazgos», pendientes de decidir con el equipo; no se cambió nada):
-   el `- 76` de `SENSORTIERRA.h` deja la humedad del suelo casi siempre en 24 % o menos (calibrar `ADC_SECO`/`ADC_HUMEDO`
-   y quitarlo); el origen de las compensaciones -8.5 °C y -6 % (y si se mueven a `SENSOR_CALIBRATION`); una clave Wi-Fi
-   propia; mitigaciones para el servidor TCP sin autenticación; GPIO5 es pin de arranque. Probar el recorrido con la
-   placa: conectar el PC a `PLANTICAS`, `ESP32_TCP_ENABLED=true` y abrir el cultivo (`docs/DEMO.md`). Un protocolo de
-   órdenes si el ESP32 llega a tener bomba (TODO en `DeviceIngestionFacade` y `Esp32ReadOnlyActuatorDriver`).
+0. **ESP32 real** (hallazgos ya decididos con el equipo, ver `firmware/esp32-tcp/README.md`): se quitó el `- 76` del
+   suelo, las compensaciones pasaron a `SENSOR_CALIBRATION`, la clave Wi-Fi es propia y la red admite una sola estación;
+   GPIO5 se queda. **Falta:** compilarlo en el Arduino IDE y las pruebas con la placa (`docs/PRUEBAS-ESP32.md`), calibrar
+   `ADC_SECO`/`ADC_HUMEDO` (modo `CALIBRAR_SUELO`), verificar -8.5 °C y -6 % con referencias, el token de la primera línea
+   (mejora futura, decisión 40) y un protocolo de órdenes si el ESP32 llega a tener bomba (TODO en
+   `DeviceIngestionFacade` y `Esp32ReadOnlyActuatorDriver`).
 
 1. **Desplegar** la rama `feature/arquitectura-servicios`: migraciones en Neon, frontend, backend, IA, manejador de eventos
    (necesita repositorio propio o la rama `feat/event-service` de `API-AGROSENSE`), `EVENTS_PUBLIC_URL` en el frontend.
@@ -326,6 +327,7 @@ migraciones 002 y 003) y en las pruebas `PostgresCompatibilityTests.java` y `Web
 | `docs/PATRONES.md` | Cada patrón con clases, diagramas, pruebas y justificación |
 | `docs/DESPLIEGUE.md` | Pasos de producción en Render y Vercel |
 | `docs/DEMO.md` | Plan de la demo y contingencias |
+| `docs/PRUEBAS-ESP32.md` | Pruebas del ESP32 real: automáticas, revisión sin placa, cómo compilar en el IDE, qué ver en el monitor serie y pruebas con la placa |
 | `docs/EVENT-SERVICE.md` | Mantener o quitar el manejador de eventos |
 | `docs/SINCRONIZACION.md` | Qué carpeta va a qué repositorio |
 | `database/README.md`, `api/README.md`, `IA/README.md`, `event-service/README.md`, `firmware/README.md`, `frontend/README.md`, `backend/README.md` | Detalle de cada componente |

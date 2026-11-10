@@ -56,6 +56,9 @@ Todo a 3,3 V y con GND común.
 2. Abre `planticas_proyecto/planticas_proyecto.ino` en el IDE, elige **ESP32 Dev Module** y súbelo.
 3. En el monitor serie (115200) aparece `Red WiFi iniciada`, la IP `192.168.4.1` y `Servidor TCP iniciado en puerto: 8080`.
 
+Qué instalar, los errores de compilación posibles, la salida completa del monitor serie y las pruebas con la placa
+están en `docs/PRUEBAS-ESP32.md`.
+
 ## Calibrar el sensor de suelo
 
 `ADC_SECO` (3000) y `ADC_HUMEDO` (1400) son valores de partida, **no medidos con este sensor** (`PENDIENTE: calibrar` en
@@ -106,6 +109,9 @@ minuto.
   equipo, saca antes al PC de la red.
 - **Sin autenticación en el TCP.** Quien esté unido a la red puede leer los datos u ocupar el único cupo de cliente.
 - **Sin hora.** Su red no tiene internet: el backend pone la hora de cada lectura.
+- **Valores crudos.** Temperatura y humedad del aire salen sin compensar; el backend aplica `SENSOR_CALIBRATION`
+  (`AIR_TEMPERATURE=-8.5:1,RELATIVE_HUMIDITY=-6:1`). **Esos dos valores están por verificar con un termómetro y un
+  higrómetro de referencia.**
 
 ## Hallazgos (pendientes de decidir con el equipo; no se cambió nada)
 
