@@ -5,7 +5,7 @@
 #include <Arduino.h>
 #include <DHT.h>
 
-// Configuración del DHT22
+// Configuración del DHT11 (humedad relativa)
 #define DHT_PIN 4
 #define DHT_TYPE DHT11
 

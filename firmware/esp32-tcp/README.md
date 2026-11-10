@@ -16,7 +16,7 @@ El sketch parte del que escribió el equipo. Desde el principio, el nombre y la 
 | Archivo | Qué hace |
 |---|---|
 | `planticas_proyecto/planticas_proyecto.ino` | Red AP, servidor TCP, tarea que envía el bloque cada segundo y `loop()` que lee los sensores |
-| `planticas_proyecto/TEMPERATURA.h` | Termocupla MAX6675, valor crudo (la compensación la aplica el backend) |
+| `planticas_proyecto/TEMPERATURA.h` | Termocupla MAX6675: una lectura como máximo cada 250 ms, promedio de las últimas 4, sin bloquear el `loop`; valor crudo (la compensación la aplica el backend) |
 | `planticas_proyecto/HUMEDAD.h` | DHT11: humedad relativa, valor crudo (la compensación la aplica el backend) |
 | `planticas_proyecto/SENSORTIERRA.h` | Sensor capacitivo de suelo: porcentaje entre `ADC_SECO` y `ADC_HUMEDO` (**pendiente de calibrar**), limitado a 0–100 %. Con `CALIBRAR_SUELO`, imprime el valor crudo del ADC |
 | `planticas_proyecto/arduino_secrets.example.h` | Plantilla de `arduino_secrets.h` |
@@ -28,7 +28,7 @@ El sketch parte del que escribió el equipo. Desde el principio, el nombre y la 
 | MAX6675 `SO` (datos) | `GPIO5` | **Pin de arranque** (strapping): ver advertencias |
 | MAX6675 `CS` | `GPIO17` | |
 | MAX6675 `SCK` | `GPIO16` | En módulos con PSRAM (WROVER) GPIO16 y 17 están ocupados; en un ESP32 Dev Module (WROOM) están libres |
-| DHT11 (datos) | `GPIO4` | El comentario de `HUMEDAD.h` dice DHT22, pero el código usa `DHT11` |
+| DHT11 (datos) | `GPIO4` | |
 | Sensor de suelo (analógico) | `GPIO34` | ADC1, solo entrada; sigue leyendo con el Wi-Fi activo |
 
 Todo a 3,3 V y con GND común.
@@ -123,6 +123,7 @@ minuto.
    cierra al cliente por tiempo. El token en la primera línea queda como mejora futura (`docs/ARQUITECTURA.md`, decisión
    40 y sección «Seguridad»).
 5. **GPIO5 es un pin de arranque** (ver advertencias).
-6. Otras observaciones menores: `leerTemperaturaPromedio()` hace 500 lecturas en 1 s, pero el MAX6675 solo convierte
-   cada unos 220 ms, así que repite el mismo valor; y `loop()` lee los sensores cada 1,5 s, mientras que se envía cada
-   1 s, así que algunos bloques repiten valores. Ninguna de las dos falsea el promedio del backend.
+6. **Resuelto:** el comentario de `HUMEDAD.h` decía DHT22 y ahora dice DHT11, como el código. `leerTemperaturaPromedio()`
+   hacía 500 lecturas en 1 s (el MAX6675 solo convierte cada ~220 ms, así que repetía el valor) y bloqueaba el `loop`;
+   ahora lee como máximo cada 250 ms y promedia las últimas 4. El `loop` da una vuelta cada ~0,5 s (su `delay(500)`) y el
+   TCP sigue enviando cada 1 s, así que algunos bloques repiten valores; no falsea el promedio del backend.
