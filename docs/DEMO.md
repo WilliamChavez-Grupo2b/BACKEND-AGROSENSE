@@ -21,7 +21,8 @@ internet por **cable o por el celular en USB** (el Wi-Fi `PLANTICAS` no tiene in
    ```
 
    Revisa siete cosas y dice qué hacer con cada una que falle: el archivo sin marcadores, que la base no sea
-   producción, el `JWT_SECRET`, Java, los puertos 9000 y 8080, la conexión a la base por el puerto 5432 y el ESP32 en
+   producción (compara el endpoint de Neon, la parte `ep-...`, con o sin `-pooler` y sin importar mayúsculas), el
+   `JWT_SECRET`, Java, los puertos 9000 y 8080, la conexión a la base por el puerto 5432 y el ESP32 en
    `192.168.4.1:8080`.
 3. Si la branch está vacía o viene de una base anterior, prepárala una vez:
 
@@ -54,15 +55,28 @@ Entra con `demo@agrosense.co` y tu `DEMO_PASSWORD`, y abre **Cultivos > Café**:
 - Para detener todo: `powershell -ExecutionPolicy Bypass -File tools\esp32\stop-demo.ps1`. Solo detiene lo que arrancó
   `run-demo.ps1` (guarda sus PID en `tools\esp32\.run\`), no otros programas Java.
 
-### Plan B sin ESP32
+### Plan B sin la placa: datos simulados
+
+```powershell
+powershell -ExecutionPolicy Bypass -File tools\esp32\run-demo.ps1 -Simulado
+```
+
+Arranca un **ESP32 falso** (`tools\esp32\esp32_simulado.py`, solo necesita Python 3) en `127.0.0.1:18080`, con el mismo
+formato de bloque, un solo cliente a la vez y valores crudos que cambian despacio. Cada 10 minutos la humedad del suelo
+baja del 40 % y aparece la alerta de humedad baja. El backend lo lee igual que a la placa: promedio de 60 s, calibración,
+alertas. No necesita la red `PLANTICAS` ni el manejador de eventos. El resumen final y el registro dicen **DATOS
+SIMULADOS**: dilo también en la sustentación. `ESP32_TCP_ALLOW_LOOPBACK` (el backend rechaza `127.0.0.1` sin ella) se
+activa solo en este modo y solo en el proceso del backend; en `.env.local` está prohibida. `stop-demo.ps1` también
+detiene el ESP32 falso.
+
+### Plan C: sin ningún ESP32
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File tools\esp32\run-demo.ps1 -SinEsp32
 ```
 
-Arranca igual pero con `ESP32_TCP_ENABLED=false` y sin comprobar el ESP32. Las lecturas se pueden enviar con
-`tools/e2e/run_e2e.py`, que necesita además el manejador de eventos (`event-service/`, ver «Correr todo en local» en
-`README.md`); si eso no está, muestra lo guardado y las capturas.
+Arranca con `ESP32_TCP_ENABLED=false`: se ven los datos ya guardados. `tools/e2e/run_e2e.py` también envía lecturas, pero
+necesita el manejador de eventos (`event-service/`), que este script no arranca.
 
 Lo que sigue explica el mismo recorrido a mano.
 

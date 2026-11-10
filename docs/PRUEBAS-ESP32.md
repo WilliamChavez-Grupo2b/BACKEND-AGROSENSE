@@ -17,6 +17,18 @@ ESP32 real» de `docs/DEMO.md`.
 | `Esp32TcpIntegrationTests` (1) | Un `ServerSocket` falso envía el bloque cada 100 ms: se guardan lecturas promediadas, se genera la alerta de humedad baja, **la compensación de `SENSOR_CALIBRATION` se aplica una sola vez** (23.40 °C crudos se guardan como 14.90, no como 6.40; 58 % como 52) y el cliente se reconecta tras cerrar el servidor |
 | `Esp32OffTests` (3) | El backend arranca y responde con el receptor encendido y el ESP32 ausente; rechaza una dirección pública o un nombre; una orden de riego para el cultivo del ESP32 solo se registra |
 
+## 1b. Pruebas del script de la demo (`tools/esp32/`)
+
+`tools\esp32\tests\verificar.tests.ps1` corre `run-demo.ps1 -Verificar` con archivos de prueba, sin arrancar nada ni
+usar internet. Pasa en Windows PowerShell 5.1 y en PowerShell 7 (8 casos): bloquea la base de producción con el mismo host,
+con `-pooler` en uno solo de los dos (en cualquiera de los dos sentidos), con otras mayúsculas y pegada como dirección con
+esquema y puerto; deja pasar otra branch; y rechaza `ESP32_TCP_ALLOW_LOOPBACK` en el archivo de variables.
+
+```powershell
+powershell -ExecutionPolicy Bypass -File tools\esp32\tests\verificar.tests.ps1
+pwsh -ExecutionPolicy Bypass -File tools\esp32\tests\verificar.tests.ps1
+```
+
 ## 2. Revisión del sketch sin placa
 
 En este equipo no hay `arduino-cli`. El sketch se revisó compilándolo en el PC con g++ y cabeceras falsas que imitan la
