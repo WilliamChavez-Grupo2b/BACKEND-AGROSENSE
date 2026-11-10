@@ -18,9 +18,9 @@ placa, `tools/e2e/run_e2e.py` recorre el sistema con el mismo contrato.
 
 | Parte | Comando | Resultado del 1 de noviembre de 2026 |
 |---|---|---|
-| Backend | `cd backend/agrosense && ./mvnw test` | 151 pruebas, 0 fallos, 3 omitidas (PostgreSQL) |
-| Frontend, Java | `cd frontend && ./mvnw test` | 115 pruebas, 0 fallos, 2 omitidas (PostgreSQL) |
-| Frontend, TypeScript | `cd frontend && npm run build && npm test` | 12 pruebas, 0 fallos |
+| Backend | `cd backend/agrosense && ./mvnw test` | 185 pruebas, 0 fallos, 3 omitidas (PostgreSQL); 10 de noviembre |
+| Frontend, Java | `cd frontend && ./mvnw test` | 117 pruebas, 0 fallos, 2 omitidas (PostgreSQL); 10 de noviembre |
+| Frontend, TypeScript | `cd frontend && npm run build && npm test` | 19 pruebas, 0 fallos; 10 de noviembre |
 | IA, patrones y reglas | `cd IA && python -m unittest tests.test_patterns tests.test_rules` | 31 pruebas, 0 fallos |
 | Firmware en el PC | `sh firmware/test/run-tests.sh` | 221 comprobaciones, 0 fallos (10 de noviembre, ESP32) |
 | Firmware con el compilador real | `sh firmware/test/compile.sh` | Compila; 33 % de flash y 46 % de RAM. No ejecutado en una placa |
@@ -276,6 +276,7 @@ evalúa por horario.
 | `Dht22AdapterT`, `Sht31AdapterT` (alias `Dht22Adapter`, `Sht31Adapter`) | C++ | `F/ClimateAdapters.h` | `adapters_give_two_libraries_the_same_face` |
 | `OpenMeteoAdapter` | Java | `B/pattern/structural/adapter/OpenMeteoAdapter.java` | `adapterTurnsOpenMeteoArraysIntoTheColdestDay` |
 | `MqttAdapter`, **ya existía** | Java | `B/pattern/structural/adapter/MqttAdapter.java` | `PatternTests.adapterTranslatesDeviceMessagesAndRejectsUnusableOnes` |
+| `Esp32ReadingAdapter`, con `Esp32TcpClient` y `Esp32TcpIngestionService` | Java | `B/pattern/structural/adapter/esp32/` | `Esp32ReadingAdapterTests`, `Esp32TcpIntegrationTests` |
 
 ```mermaid
 classDiagram
@@ -308,11 +309,34 @@ classDiagram
     }
     class OpenMeteoAdapter
     WeatherProvider <|.. OpenMeteoAdapter
+
+    class Esp32TcpClient {
+        +start()
+        +stop()
+    }
+    class Esp32ReadingAdapter {
+        +adapt(line, deviceId) Optional~DeviceEventRequest~
+    }
+    class Esp32TcpIngestionService
+    class DeviceIngestionFacade {
+        +ingestFromConfiguredDevice(event)
+    }
+    Esp32TcpClient --> Esp32TcpIngestionService : cada línea
+    Esp32TcpIngestionService --> Esp32ReadingAdapter
+    Esp32TcpIngestionService --> DeviceIngestionFacade
 ```
 
+**El adaptador del ESP32.** El ESP32 es un servidor TCP en su propia red Wi-Fi y envía una lectura por línea, en JSON plano
+(`{"temp": 24.5, "hum": 61, "suelo": 31.2}`) o en pares `clave=valor` / `clave:valor`. `Esp32ReadingAdapter` traduce cada
+línea al mismo `DeviceEventRequest` que recibe `POST /api/internal/events` (`temp`/`temperatura` → `air_temperature`,
+`hum`/`humedad`/`humedad_aire` → `relative_humidity`, `suelo`/`humedad_suelo` → `soil_moisture`), ignora los campos que no
+conoce y descarta con un aviso la línea sin ningún dato válido; nunca rellena un valor. `Esp32TcpIngestionService` entrega
+el resultado a `DeviceIngestionFacade`, así que calibración, guardado, alertas, publicación y predicción son las del
+webhook, sin duplicar nada. `Esp32TcpClient` es solo el transporte: un hilo propio, reconexión con espera de 2 a 30 s.
+
 **Justificación.** Cada adaptador esconde lo raro de su tercero: el DHT22 da NaN y exige 2 s de descanso, el SHT31 lee
-los dos valores en una sola transacción y Open-Meteo responde con listas paralelas. Cambiar de sensor o de servicio de
-clima no toca a quien los usa.
+los dos valores en una sola transacción, Open-Meteo responde con listas paralelas y el ESP32 escribe líneas de texto
+con sus propios nombres. Cambiar de sensor, de servicio de clima o de formato de línea no toca a quien los usa.
 
 ## 7. Bridge
 
@@ -551,6 +575,7 @@ Los repositorios siguen la sección 1 de `ARQUITECTURA.md`. `firmware/` todavía
 | Adapter | firmware | `Dht22Adapter`, `Sht31Adapter` | `firmware/agrosense/src/ClimateAdapters.h` |
 | Adapter | BACKEND-AGROSENSE | `OpenMeteoAdapter` | `B/pattern/structural/adapter/OpenMeteoAdapter.java` |
 | Adapter (existente) | BACKEND-AGROSENSE | `MqttAdapter` | `B/pattern/structural/adapter/MqttAdapter.java` |
+| Adapter | BACKEND-AGROSENSE | `Esp32ReadingAdapter` (con `Esp32TcpClient` y `Esp32TcpIngestionService`) | `B/pattern/structural/adapter/esp32/` |
 | Bridge | BACKEND-AGROSENSE | `IrrigationOrder` × `ActuatorDriver` | `B/pattern/structural/bridge/` |
 | Bridge | firmware | `IrrigationOrder` × `ActuatorDriver` | `firmware/agrosense/src/Irrigation.h` |
 | Decorator | firmware | `MedianFilter`, `Calibration`, `RangeCheck` | `firmware/agrosense/src/SensorChain.h` |

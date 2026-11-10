@@ -499,6 +499,30 @@ done
 35. **Lecturas en vivo por SSE, no por `/ws`.** La decisión 26 sigue vigente: el navegador recibe lecturas y alertas del
     manejador de eventos. El backend publica también por WebSocket, y una prueba lo comprueba, pero la interfaz no usa ese
     canal. Añadir un segundo cliente duplicaría lo que ya funciona.
+40. **El backend lee el ESP32 por TCP, confiando en la configuración** (10 de noviembre de 2026). El ESP32 crea su propia red
+    Wi-Fi (`PLANTICAS`) y es un servidor TCP en `192.168.4.1:8080` que envía una lectura por línea. Con
+    `ESP32_TCP_ENABLED=true`, el backend se conecta como cliente (`Esp32TcpClient`, hilo propio, 5 s para conectar, 120 s
+    sin datos antes de reconectar, espera de 2 a 30 s entre intentos), traduce cada línea (`Esp32ReadingAdapter`) y la
+    entrega a `DeviceIngestionFacade.ingestFromConfiguredDevice`: calibración, guardado, alertas, publicación y predicción
+    son las del webhook. El PC se une a la red desde el sistema operativo; ni la conexión Wi-Fi ni su contraseña pasan por
+    Java ni por el repositorio.
+    - **Confianza.** La conexión no trae `X-Device-Key`: las lecturas son del dispositivo `ESP32_DEVICE_ID` porque la
+      configuración lo dice. **Riesgo:** cualquiera que se una a esa red y ocupe `192.168.4.1:8080` (u otro ESP32 con la
+      misma red) puede escribir lecturas a nombre de ese cultivo, y con ellas generar alertas y predicciones. Por eso es
+      solo para la red local del ESP32, con una contraseña Wi-Fi propia, y queda apagado por defecto y en Render (que
+      además no llega a esa red). El límite `DEVICE_MAX_EVENTS_PER_MINUTE` sigue aplicando.
+    - **Hora.** El ESP32 no tiene internet en su red, así que su reloj no está sincronizado: la hora de una línea se ignora
+      y el backend pone la de llegada. Las lecturas por TCP no se descartan como repetidas.
+    - **Órdenes de riego.** No se envían por TCP hasta definir ese protocolo (TODO en `DeviceIngestionFacade`). Las órdenes
+      quedan en `irrigation_dispatches` y caducan. La seguridad de la bomba sigue en el ESP32.
+    - **En vivo.** Estas lecturas no pasan por el manejador de eventos, así que el SSE no las lleva. Se eligió lo más
+      pequeño: la vista del cultivo consulta `/api/ui/crops/{id}/latest` del frontend cada 30 s (`crop-live.ts`) y muestra
+      «ESP32 conectado» o «ESP32 sin datos desde hh:mm» según la última lectura guardada (2 minutos de margen). Un cliente
+      STOMP de `/ws` habría necesitado otra biblioteca en el navegador, abrir la CSP al backend y darle al navegador un
+      token del backend, que hoy nunca recibe; reenviar al manejador de eventos habría sumado una ruta nueva en otro
+      servicio que en esta red local quizás ni esté.
+    - **Sin esquema nuevo.** El dispositivo de ejemplo `RPI-DEMO-01` ya está en el cultivo Café con sensores de humedad del
+      suelo (AS-001), temperatura del aire (AS-002) y humedad del aire (AS-007).
 
 ## 4. Estructura del frontend
 

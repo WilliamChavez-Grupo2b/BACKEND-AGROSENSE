@@ -15,6 +15,22 @@ Los orígenes del navegador permitidos se indican en `CORS_ALLOWED_ORIGINS`, sep
 Los dispositivos ESP32 (`firmware/` del workspace) envían sus eventos al servicio de eventos (`event-service/` del workspace), que los reenvía
 aquí. MQTT queda apagado por defecto (`MQTT_ENABLED=false`) y su código se conserva.
 
+**ESP32 por TCP.** Con `ESP32_TCP_ENABLED=true` el backend se conecta como cliente al ESP32 (`ESP32_TCP_HOST`, por defecto
+`192.168.4.1`, y `ESP32_TCP_PORT`, `8080`) y lee una lectura por línea, en JSON plano o `clave=valor`. Las clases están en
+`pattern/structural/adapter/esp32/`: `Esp32TcpClient` (hilo propio que arranca con `ApplicationReadyEvent` y se detiene
+en `@PreDestroy`; 5 s para conectar, 120 s de lectura, reconexión de 2 a 30 s), `Esp32ReadingAdapter` (patrón Adapter:
+traduce la línea al evento de `POST /api/internal/events`) y `Esp32TcpIngestionService`, que llama a
+`DeviceIngestionFacade.ingestFromConfiguredDevice`. Las lecturas son del dispositivo `ESP32_DEVICE_ID` sin comprobar
+llave: úsalo solo en la red local del ESP32 (decisión 40 de `docs/ARQUITECTURA.md`). No envía órdenes de riego al ESP32.
+Un ESP32 ausente no retrasa ni detiene el arranque.
+
+| Variable | Por defecto |
+|---|---|
+| `ESP32_TCP_ENABLED` | `false` (apagado también en Render) |
+| `ESP32_TCP_HOST` | `192.168.4.1` |
+| `ESP32_TCP_PORT` | `8080` |
+| `ESP32_DEVICE_ID` | `RPI-DEMO-01` |
+
 | Método y ruta | Quién la llama | Respuesta |
 |---|---|---|
 | `POST /api/devices` `{cropId, deviceCode}` | Un usuario `ADMIN` o `FARMER`, sobre un cultivo suyo | 201 con el dispositivo y `deviceKey`, la única vez que se muestra · 404 cultivo ajeno · 409 código repetido |
