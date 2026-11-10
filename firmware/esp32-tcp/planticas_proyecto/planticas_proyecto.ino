@@ -1,3 +1,6 @@
+// Descomenta para calibrar el sensor de suelo: el monitor serie muestra el valor crudo del ADC cada segundo.
+// #define CALIBRAR_SUELO
+
 #include <WiFi.h>
 #include "arduino_secrets.h"  // nombre y clave de la red: fuera del repositorio
 #include "TEMPERATURA.h"
@@ -77,6 +80,10 @@ void loop() {
   sensorTemperatura();
   sensorHumRelativa();
   sensorTierra();
+
+#ifdef CALIBRAR_SUELO
+  imprimirCrudoSuelo();
+#endif
 
   double temp;
   float humedad;

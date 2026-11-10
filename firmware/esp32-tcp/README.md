@@ -7,9 +7,9 @@ con `ESP32_TCP_ENABLED=true` (`backend/agrosense`, paquete `pattern/structural/a
 `firmware/agrosense/` es otra cosa: un firmware alternativo que envía por HTTP al manejador de eventos y maneja un relé.
 **No está cargado en la placa ni se usa hoy.**
 
-El sketch está tal como lo escribió el equipo. El único cambio es que el nombre y la clave de la red salen de
-`arduino_secrets.h`, que no va al repositorio. Las compensaciones (-8.5 °C, -6 % de humedad, -76 % de suelo) y
-`ADC_SECO`/`ADC_HUMEDO` están intactas; ver «Hallazgos».
+El sketch parte del que escribió el equipo. Desde el principio, el nombre y la clave de la red salen de
+`arduino_secrets.h`, que no va al repositorio. Los cambios posteriores, acordados con el equipo, están en
+«Hallazgos».
 
 ## Archivos
 
@@ -18,7 +18,7 @@ El sketch está tal como lo escribió el equipo. El único cambio es que el nomb
 | `planticas_proyecto/planticas_proyecto.ino` | Red AP, servidor TCP, tarea que envía el bloque cada segundo y `loop()` que lee los sensores |
 | `planticas_proyecto/TEMPERATURA.h` | Termocupla MAX6675: promedio de 500 lecturas, menos 8.5 °C |
 | `planticas_proyecto/HUMEDAD.h` | DHT11: humedad relativa menos 6 % |
-| `planticas_proyecto/SENSORTIERRA.h` | Sensor capacitivo de suelo: porcentaje entre `ADC_SECO` (3000) y `ADC_HUMEDO` (1400), menos 76 |
+| `planticas_proyecto/SENSORTIERRA.h` | Sensor capacitivo de suelo: porcentaje entre `ADC_SECO` y `ADC_HUMEDO` (**pendiente de calibrar**), limitado a 0–100 %. Con `CALIBRAR_SUELO`, imprime el valor crudo del ADC |
 | `planticas_proyecto/arduino_secrets.example.h` | Plantilla de `arduino_secrets.h` |
 
 ## Pines
@@ -55,6 +55,25 @@ Todo a 3,3 V y con GND común.
 2. Abre `planticas_proyecto/planticas_proyecto.ino` en el IDE, elige **ESP32 Dev Module** y súbelo.
 3. En el monitor serie (115200) aparece `Red WiFi iniciada`, la IP `192.168.4.1` y `Servidor TCP iniciado en puerto: 8080`.
 
+## Calibrar el sensor de suelo
+
+`ADC_SECO` (3000) y `ADC_HUMEDO` (1400) son valores de partida, **no medidos con este sensor** (`PENDIENTE: calibrar` en
+`SENSORTIERRA.h`). Hasta medirlos, el porcentaje de humedad del suelo no es fiable.
+
+1. En `planticas_proyecto.ino`, descomenta `#define CALIBRAR_SUELO` (primera línea de código) y sube el sketch.
+2. Abre el monitor serie a 115200. Cada segundo aparece, entre las lecturas normales, una línea como
+   `CALIBRAR_SUELO adc=2875`. Es el valor crudo del ADC, de 0 a 4095.
+3. **`ADC_SECO`:** deja el sensor **al aire**, seco y limpio. Espera a que el número se estabilice (unos 30 s) y anota el
+   valor típico.
+4. **`ADC_HUMEDO`:** mete el sensor **en un vaso con agua** hasta la línea que marca su profundidad, sin mojar la
+   electrónica de arriba. Espera a que se estabilice y anota el valor. En un sensor capacitivo suele ser menor que el seco.
+5. Repite las dos medidas dos o tres veces y usa el promedio. Si ves `0` o `4095`, revisa el cable o la alimentación.
+6. Escribe los dos números en `ADC_SECO` y `ADC_HUMEDO`, borra el comentario `PENDIENTE: calibrar`, vuelve a comentar
+   `#define CALIBRAR_SUELO` y sube el sketch otra vez.
+
+Con el sensor al aire el porcentaje debe dar 0 % y en el agua 100 %; en tierra, algo intermedio. El TCP sigue
+funcionando durante la calibración; las líneas `CALIBRAR_SUELO` solo salen por el monitor serie.
+
 ## Formato de salida exacto
 
 Cada segundo, a cada cliente conectado, con `\r\n` al final de cada línea (`println`) y los números con dos decimales y
@@ -86,11 +105,8 @@ minuto.
 
 ## Hallazgos (pendientes de decidir con el equipo; no se cambió nada)
 
-1. **`SENSORTIERRA.h` resta 76 después de calcular el porcentaje.** Con el sensor entre `ADC_SECO` y `ADC_HUMEDO`, el
-   resultado queda entre 0 y 24 %; solo pasa de 24 % si el ADC baja de 1400 (más mojado que la calibración). En la
-   práctica la humedad del suelo casi nunca supera 24 %, y con el rango del cultivo de ejemplo (40 a 80 %) se dispararían
-   alertas de humedad baja todo el tiempo. **Propuesta:** quitar el `- 76.0` y calibrar `ADC_SECO` (sensor al aire o en
-   tierra seca) y `ADC_HUMEDO` (sensor en agua) con este sensor, leyendo `analogRead(34)`.
+1. **Resuelto:** `SENSORTIERRA.h` restaba 76 después de calcular el porcentaje, lo que dejaba la humedad del suelo casi
+   siempre en 24 % o menos. Se quitó; falta calibrar `ADC_SECO` y `ADC_HUMEDO` (sección «Calibrar el sensor de suelo»).
 2. **Compensaciones fijas** de -8.5 °C (termocupla) y -6 % (DHT11). Falta saber de dónde salen (¿una medida contra un
    termómetro e higrómetro de referencia?). **Propuesta:** si salen de una medida, moverlas al backend con
    `SENSOR_CALIBRATION=AIR_TEMPERATURE=-8.5:1,RELATIVE_HUMIDITY=-6:1` y dejar que el ESP32 envíe el valor crudo. Así se
