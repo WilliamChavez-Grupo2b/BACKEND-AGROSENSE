@@ -5,3 +5,8 @@ agrosense-export/
 temp_agrosense/
 # The examples hold no secret and document every variable.
 !.env.example
+
+# The demo runner for the real ESP32: its secrets and its logs and PIDs stay on this PC.
+tools/esp32/.env.local
+tools/esp32/.run/
+!tools/esp32/.env.local.example
