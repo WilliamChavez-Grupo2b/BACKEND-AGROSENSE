@@ -11,6 +11,11 @@
 .PARAMETER SinEsp32
     Plan B: arranca con ESP32_TCP_ENABLED=false y no comprueba el ESP32.
 
+.PARAMETER Simulado
+    Plan B sin placa: arranca un ESP32 falso en Python (esp32_simulado.py, el mismo formato de bloque) en 127.0.0.1 y lee
+    de él. Solo en este modo, y solo en el proceso del backend, se activa ESP32_TCP_ALLOW_LOOPBACK. El resumen dice
+    DATOS SIMULADOS. No necesita la red PLANTICAS ni el manejador de eventos.
+
 .PARAMETER PrepararBase
     Aplica schema.sql, las migraciones 001 a 003 y seed_demo.sql en la base (y la contraseña de la cuenta demo). Pide
     escribir SI. Nunca contra producción.
@@ -27,6 +32,7 @@
 [CmdletBinding()]
 param(
     [switch]$SinEsp32,
+    [switch]$Simulado,
     [switch]$PrepararBase,
     [switch]$NoAbrir,
     [switch]$Verificar,
@@ -44,10 +50,13 @@ if (-not $EnvFile) { $EnvFile = Join-Path $Tools '.env.local' }
 $DemoEmail = 'demo@agrosense.co'
 $Required = @('DB_HOST', 'DB_NAME', 'DB_USER', 'DB_PASSWORD', 'PROD_DB_HOST', 'JWT_SECRET', 'DEMO_PASSWORD',
     'ESP32_TCP_HOST', 'ESP32_TCP_PORT', 'ESP32_DEVICE_ID', 'BACKEND_PORT', 'FRONTEND_PORT')
-# Variables of the file passed to the backend as they are, besides the ones built below. ESP32_TCP_ALLOW_LOOPBACK is only
-# for testing this script against a fake ESP32 on 127.0.0.1; never set it for the real one.
+# Variables of the file passed to the backend as they are, besides the ones built below.
 $BackendPassThrough = @('ESP32_TCP_HOST', 'ESP32_TCP_PORT', 'ESP32_DEVICE_ID', 'ESP32_AGGREGATE_SECONDS', 'IRRIGATION_ACTUATOR',
-    'SENSOR_CALIBRATION', 'AI_SERVICE_URL', 'AI_SERVICE_KEY', 'ESP32_TCP_ALLOW_LOOPBACK')
+    'SENSOR_CALIBRATION', 'AI_SERVICE_URL', 'AI_SERVICE_KEY')
+# Never read from the variables file: only -Simulado sets it, and only for the backend's process.
+$LoopbackSwitch = 'ESP32_TCP_ALLOW_LOOPBACK'
+$SimulatedHost = '127.0.0.1'
+$SimulatedPortDefault = 18080
 
 # ---------------------------------------------------------------- output
 
@@ -88,6 +97,27 @@ function Get-Value([hashtable]$values, [string]$key, [string]$default = '') {
 }
 
 function Test-Marker([string]$value) { return $value -match '^<.*>$' }
+
+# The Neon endpoint a host belongs to: its first label, lowercase and without "-pooler". So
+# ep-cool-darkness-123456-pooler.us-east-2.aws.neon.tech and EP-COOL-DARKNESS-123456.us-east-2.aws.neon.tech are the same
+# database. A scheme, credentials, a port or a path pasted around the host are dropped first.
+function Get-NeonEndpoint([string]$hostName) {
+    $text = $hostName.Trim().ToLowerInvariant()
+    $text = $text -replace '^[a-z][a-z0-9+.-]*://', ''
+    if ($text.Contains('@')) { $text = $text.Substring($text.LastIndexOf('@') + 1) }
+    $text = ($text -split '[/:?]')[0]
+    $label = ($text -split '\.')[0]
+    return ($label -replace '-pooler$', '')
+}
+
+function Get-PythonExe {
+    # The python.exe in WindowsApps is only a shortcut to the Store: it does not run scripts.
+    foreach ($name in @('python', 'py')) {
+        $found = Get-Command $name -ErrorAction SilentlyContinue | Where-Object { $_.Source -notlike '*\WindowsApps\*' } | Select-Object -First 1
+        if ($found) { return $found.Source }
+    }
+    return $null
+}
 
 # ---------------------------------------------------------------- checks
 
@@ -133,7 +163,7 @@ function Get-PomJava([string]$pom) {
     return 0
 }
 
-function Invoke-Checks([hashtable]$values, [bool]$useEsp32, [bool]$isH2) {
+function Invoke-Checks([hashtable]$values, [bool]$useEsp32, [bool]$isH2, [bool]$simulated) {
     $failed = 0
 
     Write-Step '1. Archivo de variables'
@@ -149,6 +179,10 @@ function Invoke-Checks([hashtable]$values, [bool]$useEsp32, [bool]$isH2) {
     } else {
         Write-Ok "Variables completas ($EnvFile)"
     }
+    if ($values.ContainsKey($LoopbackSwitch)) {
+        Write-Bad "$LoopbackSwitch no se admite en el archivo de variables" "Bórrala de $EnvFile. Para probar sin la placa usa run-demo.ps1 -Simulado, que la activa solo para su ESP32 falso."
+        $failed++
+    }
 
     Write-Step '2. La base no es producción'
     if ($isH2) {
@@ -159,11 +193,12 @@ function Invoke-Checks([hashtable]$values, [bool]$useEsp32, [bool]$isH2) {
         if (-not $dbHost -or -not $prodHost -or (Test-Marker $dbHost) -or (Test-Marker $prodHost)) {
             Write-Bad 'No se puede comparar: falta DB_HOST o PROD_DB_HOST' 'Llena los dos en el archivo de variables.'
             $failed++
-        } elseif ($dbHost -eq $prodHost) {
-            Write-Bad "DB_HOST es el host de PRODUCCIÓN ($dbHost)" 'Usa el host de una branch de desarrollo de Neon, nunca el de producción.'
+        } elseif ((Get-NeonEndpoint $dbHost) -eq (Get-NeonEndpoint $prodHost)) {
+            # The endpoint, not the host: with and without -pooler, and in any case, it is the same database.
+            Write-Bad "DB_HOST es la base de PRODUCCIÓN (endpoint $(Get-NeonEndpoint $dbHost))" 'Usa el host de una branch de desarrollo de Neon, nunca el de producción, con o sin -pooler.'
             $failed++
         } else {
-            Write-Ok "DB_HOST ($dbHost) no es el de producción"
+            Write-Ok "DB_HOST (endpoint $(Get-NeonEndpoint $dbHost)) no es la de producción (endpoint $(Get-NeonEndpoint $prodHost))"
             if ($dbHost -like '*-pooler*') {
                 Write-Host '       Aviso: es un host con pooler; usa el host directo (sin -pooler) si el frontend falla con la sesión.' -ForegroundColor Yellow
             }
@@ -232,7 +267,19 @@ function Invoke-Checks([hashtable]$values, [bool]$useEsp32, [bool]$isH2) {
     }
 
     Write-Step '7. ESP32'
-    if (-not $useEsp32) {
+    if ($simulated) {
+        $simPort = [int](Get-Value $values 'ESP32_SIM_PORT' "$SimulatedPortDefault")
+        $python = Get-PythonExe
+        if (-not $python) {
+            Write-Bad 'Modo simulado: no se encontró Python' 'Instala Python 3 (python.org) y abre una consola nueva; el ESP32 falso solo usa la biblioteca estándar.'
+            $failed++
+        } elseif (-not (Test-PortFree $simPort)) {
+            Write-Bad "Modo simulado: el puerto $simPort del ESP32 falso está en uso" 'Corre stop-demo.ps1 o pon otro ESP32_SIM_PORT en el archivo de variables.'
+            $failed++
+        } else {
+            Write-Ok "Modo simulado: ESP32 falso con $python en $($SimulatedHost):$simPort (no se comprueba la placa)"
+        }
+    } elseif (-not $useEsp32) {
         Write-Ok 'Sin ESP32 (-SinEsp32 o ESP32_TCP_ENABLED=false)'
     } else {
         $espHost = Get-Value $values 'ESP32_TCP_HOST' '192.168.4.1'
@@ -263,14 +310,13 @@ function Get-Running {
     return $alive
 }
 
-function Start-App([string]$name, [string]$dir, [hashtable]$vars, [string[]]$mavenArgs) {
+function Start-Logged([string]$name, [string]$dir, [string]$command, [hashtable]$vars) {
     $log = Join-Path $RunDir "$name.log"
     if (Test-Path $log) { Remove-Item $log -Force }
-    $mvnw = Join-Path $dir 'mvnw.cmd'
     $info = New-Object System.Diagnostics.ProcessStartInfo
     $info.FileName = $env:ComSpec
     # cmd drops the outer quotes and keeps the inner ones: the paths have spaces.
-    $info.Arguments = "/d /c `"`"$mvnw`" $($mavenArgs -join ' ') > `"$log`" 2>&1`""
+    $info.Arguments = "/d /c `"$command > `"$log`" 2>&1`""
     $info.WorkingDirectory = $dir
     $info.UseShellExecute = $false
     $info.CreateNoWindow = $true
@@ -283,6 +329,11 @@ function Start-App([string]$name, [string]$dir, [hashtable]$vars, [string[]]$mav
     Add-Content -LiteralPath $PidFile -Value "$name|$($process.Id)|$($process.StartTime.ToString('o'))"
     Write-Host "  $name arrancando (PID $($process.Id)); registro: tools\esp32\.run\$name.log"
     return $process
+}
+
+function Start-App([string]$name, [string]$dir, [hashtable]$vars, [string[]]$mavenArgs) {
+    $mvnw = Join-Path $dir 'mvnw.cmd'
+    return Start-Logged $name $dir "`"$mvnw`" $($mavenArgs -join ' ')" $vars
 }
 
 function Get-Hint([string]$log) {
@@ -338,14 +389,17 @@ if ($override -and -not $override.StartsWith('jdbc:h2:')) {
     Stop-Demo 'DATABASE_URL en el archivo de variables solo se admite para una base H2 de prueba. Para Neon usa DB_HOST, DB_NAME, DB_USER y DB_PASSWORD.'
 }
 $isH2 = [bool]$override
-$useEsp32 = (-not $SinEsp32) -and ((Get-Value $values 'ESP32_TCP_ENABLED' 'true') -eq 'true')
+if ($Simulado -and $SinEsp32) { Stop-Demo 'Usa -Simulado o -SinEsp32, no los dos.' }
+$useEsp32 = $Simulado -or ((-not $SinEsp32) -and ((Get-Value $values 'ESP32_TCP_ENABLED' 'true') -eq 'true'))
+$simPort = [int](Get-Value $values 'ESP32_SIM_PORT' "$SimulatedPortDefault")
+if ($Simulado) { Write-Host 'Modo -Simulado: un ESP32 falso en este PC; los datos NO son de la placa.' -ForegroundColor Magenta }
 
 $alive = @(Get-Running)
 if ($alive.Count -gt 0 -and -not $Verificar) {
     Stop-Demo "Ya hay una demo en marcha ($($alive -join ', ')). Detenla con tools\esp32\stop-demo.ps1."
 }
 
-$failed = Invoke-Checks $values $useEsp32 $isH2
+$failed = Invoke-Checks $values $useEsp32 $isH2 ([bool]$Simulado)
 Write-Host ''
 if ($failed -gt 0) {
     Write-Host "$failed comprobación(es) fallaron. Corrígelas y vuelve a intentarlo." -ForegroundColor Red
@@ -383,6 +437,13 @@ $backendVars = @{
 }
 foreach ($key in $BackendPassThrough) { $value = Get-Value $values $key; if ($value) { $backendVars[$key] = $value } }
 foreach ($entry in $common.GetEnumerator()) { $backendVars[$entry.Key] = $entry.Value }
+if ($Simulado) {
+    # The fake ESP32 listens on loopback, which the backend refuses unless told: only here, only for its process.
+    $backendVars['ESP32_TCP_ENABLED'] = 'true'
+    $backendVars['ESP32_TCP_HOST'] = $SimulatedHost
+    $backendVars['ESP32_TCP_PORT'] = "$simPort"
+    $backendVars[$LoopbackSwitch] = 'true'
+}
 
 if ($PrepararBase) {
     Write-Step 'Preparar la base'
@@ -415,6 +476,19 @@ if (Test-Path $PidFile) { Remove-Item $PidFile -Force }
 $backendArgs = @('-q', '-B', 'spring-boot:run')
 if ($isH2) { $backendArgs += '-Dspring-boot.run.useTestClasspath=true' }
 
+if ($Simulado) {
+    Write-Step 'ESP32 simulado'
+    $python = Get-PythonExe
+    $fake = Join-Path $Tools 'esp32_simulado.py'
+    $simulator = Start-Logged 'esp32-simulado' $Tools "`"$python`" -u `"$fake`" --port $simPort" @{}
+    $deadline = (Get-Date).AddSeconds(15)
+    while (-not (Test-TcpPort $SimulatedHost $simPort 1000)) {
+        if ($simulator.HasExited -or (Get-Date) -gt $deadline) { Show-Failure 'esp32-simulado' 'el ESP32 falso no abrió su puerto' }
+        Start-Sleep -Milliseconds 500
+    }
+    Write-Ok "ESP32 falso escuchando en $($SimulatedHost):$simPort"
+}
+
 Write-Step 'Backend'
 $backend = Start-App 'backend' (Join-Path $Workspace 'backend\agrosense') $backendVars $backendArgs
 Wait-Http 'backend' $backend "http://localhost:$backendPort/api/health" 180
@@ -435,11 +509,15 @@ if ($useEsp32) {
     if ($line) {
         Write-Ok ($line.Line -replace '^.*(ESP32: connected to)', '$1')
     } else {
-        Write-Bad 'El backend no se conectó al ESP32 en 30 s' 'Sigue reintentando solo. Revisa que el PC siga en PLANTICAS y que no haya otro cliente (PuTTY) conectado.'
+        if ($Simulado) {
+            Write-Bad 'El backend no se conectó al ESP32 falso en 30 s' 'Revisa tools\esp32\.run\esp32-simulado.log y backend.log.'
+        } else {
+            Write-Bad 'El backend no se conectó al ESP32 en 30 s' 'Sigue reintentando solo. Revisa que el PC siga en PLANTICAS y que no haya otro cliente (PuTTY) conectado.'
+        }
     }
 }
 
-Write-Step 'Estado del receptor del ESP32'
+Write-Step $(if ($Simulado) { 'Estado del receptor del ESP32 (DATOS SIMULADOS)' } else { 'Estado del receptor del ESP32' })
 try {
     $login = Invoke-RestMethod -Uri "http://localhost:$backendPort/api/auth/login" -Method Post -ContentType 'application/json' `
         -Body (@{ email = $DemoEmail; password = (Get-Value $values 'DEMO_PASSWORD') } | ConvertTo-Json) -TimeoutSec 20
@@ -472,6 +550,9 @@ if ($leaks.Count -gt 0) {
 
 $url = "http://localhost:$frontendPort"
 Write-Host ''
+if ($Simulado) {
+    Write-Host '*** DATOS SIMULADOS: las lecturas vienen de esp32_simulado.py, no de la placa ***' -ForegroundColor Magenta
+}
 Write-Host "Frontend: $url" -ForegroundColor Green
 Write-Host "Cuenta demo: $DemoEmail (la contraseña es DEMO_PASSWORD de tu .env.local)"
 Write-Host 'Abre Cultivos > Café; la primera lectura aparece al minuto.' -ForegroundColor Green
