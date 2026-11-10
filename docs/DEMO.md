@@ -1,5 +1,71 @@
 # Plan de la demo
 
+## Correr con el ESP32 real
+
+Un solo comando arranca el backend y el frontend en este PC Windows, sin Docker, contra una **branch de desarrollo de
+Neon** (nunca producción), con el ESP32 leído por TCP. Funciona en Windows PowerShell 5.1 y en PowerShell 7.
+
+**Requisitos:** Java 21 o más nuevo (el frontend pide 21, el backend 17), el PC unido al Wi-Fi `PLANTICAS` y con
+internet por **cable o por el celular en USB** (el Wi-Fi `PLANTICAS` no tiene internet; Neon y Maven sí lo necesitan).
+
+### La primera vez
+
+1. Copia `tools\esp32\.env.local.example` como `tools\esp32\.env.local` (git lo ignora) y llena cada valor `<...>`:
+   host directo de la branch de desarrollo (sin `-pooler`), base, usuario y clave, `PROD_DB_HOST` (el host de
+   producción, solo para bloquearlo), `JWT_SECRET` (64 bytes o más; el archivo trae el comando para generarlo) y
+   `DEMO_PASSWORD`.
+2. Comprueba todo sin arrancar nada:
+
+   ```powershell
+   powershell -ExecutionPolicy Bypass -File tools\esp32\run-demo.ps1 -Verificar
+   ```
+
+   Revisa siete cosas y dice qué hacer con cada una que falle: el archivo sin marcadores, que la base no sea
+   producción, el `JWT_SECRET`, Java, los puertos 9000 y 8080, la conexión a la base por el puerto 5432 y el ESP32 en
+   `192.168.4.1:8080`.
+3. Si la branch está vacía o viene de una base anterior, prepárala una vez:
+
+   ```powershell
+   powershell -ExecutionPolicy Bypass -File tools\esp32\run-demo.ps1 -PrepararBase
+   ```
+
+   Pide escribir `SI` y aplica `schema.sql`, `migrations/001` a `003` y `seed_demo.sql` (la cuenta demo, el cultivo Café,
+   el dispositivo `RPI-DEMO-01` y sus sensores AS-001, AS-002 y AS-007), y le pone `DEMO_PASSWORD` a la cuenta demo. Todo
+   es idempotente y no borra datos. No hace falta `psql`: lo aplica el propio backend (perfil `seed`). Después sigue
+   arrancando como en el día de la demo.
+
+### El día de la demo
+
+```powershell
+powershell -ExecutionPolicy Bypass -File tools\esp32\run-demo.ps1
+```
+
+Hace las comprobaciones, arranca el backend y espera a que `/api/health` responda (hasta 3 minutos), arranca el frontend
+apuntando al backend, espera hasta 30 s el mensaje `ESP32: connected to 192.168.4.1:8080` y muestra el estado del
+receptor (conectado, bloques recibidos y descartados, última lectura). Abre el navegador en `http://localhost:8080`.
+Entra con `demo@agrosense.co` y tu `DEMO_PASSWORD`, y abre **Cultivos > Café**: la primera lectura aparece al minuto.
+
+- **No dejes PuTTY conectado al ESP32**: atiende un solo cliente.
+- Los registros quedan en `tools\esp32\.run\backend.log` y `frontend.log` (git los ignora). Ningún secreto se escribe en
+  la consola; el script avisa si alguno aparece en un registro.
+- Si una aplicación no arranca, el script muestra las últimas 30 líneas de su registro y una pista (base, puerto,
+  secreto, Java o esquema sin preparar).
+- `-NoAbrir` no abre el navegador.
+- Para detener todo: `powershell -ExecutionPolicy Bypass -File tools\esp32\stop-demo.ps1`. Solo detiene lo que arrancó
+  `run-demo.ps1` (guarda sus PID en `tools\esp32\.run\`), no otros programas Java.
+
+### Plan B sin ESP32
+
+```powershell
+powershell -ExecutionPolicy Bypass -File tools\esp32\run-demo.ps1 -SinEsp32
+```
+
+Arranca igual pero con `ESP32_TCP_ENABLED=false` y sin comprobar el ESP32. Las lecturas se pueden enviar con
+`tools/e2e/run_e2e.py`, que necesita además el manejador de eventos (`event-service/`, ver «Correr todo en local» en
+`README.md`); si eso no está, muestra lo guardado y las capturas.
+
+Lo que sigue explica el mismo recorrido a mano.
+
 ## ESP32 por TCP (red local PLANTICAS)
 
 El ESP32 (`firmware/esp32-tcp/`) crea la red Wi-Fi `PLANTICAS` y espera en `192.168.4.1:8080`. El backend corre en el PC

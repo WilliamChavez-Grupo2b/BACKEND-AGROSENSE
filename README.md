@@ -65,6 +65,9 @@ el cableado, las advertencias de pines y la calibración del dispositivo están 
 
 ### ESP32 por TCP (el dispositivo real)
 
+**Para correrlo en este PC con un solo comando:** `tools\esp32\run-demo.ps1` (sección «Correr con el ESP32 real» de
+`docs/DEMO.md`).
+
 El dispositivo de campo corre `firmware/esp32-tcp/`: crea su propia red Wi-Fi (`PLANTICAS`), es un servidor TCP en
 `192.168.4.1:8080` y escribe un bloque de texto con sus tres lecturas cada segundo. Con `ESP32_TCP_ENABLED=true` el
 backend se conecta a él, promedia 60 s y guarda una lectura por minuto por el mismo camino que el webhook (alertas y

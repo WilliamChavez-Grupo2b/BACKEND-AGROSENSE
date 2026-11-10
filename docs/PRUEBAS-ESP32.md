@@ -3,6 +3,9 @@
 Estado al 10 de noviembre de 2026. Qué está probado automáticamente, qué se revisó sin placa y qué falta probar con el
 ESP32. La decisión de arquitectura está en `docs/ARQUITECTURA.md` (decisión 40) y los pasos de la demo en `docs/DEMO.md`.
 
+Para arrancar el sistema completo con el ESP32 real en un PC Windows: `tools\esp32\run-demo.ps1`, sección «Correr con el
+ESP32 real» de `docs/DEMO.md`.
+
 ## 1. Pruebas automáticas del backend
 
 `cd backend/agrosense && ./mvnw test`. Las del ESP32 no necesitan placa: usan un servidor TCP falso.
