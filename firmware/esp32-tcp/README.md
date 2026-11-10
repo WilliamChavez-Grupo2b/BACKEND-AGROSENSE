@@ -18,7 +18,7 @@ El sketch parte del que escribió el equipo. Desde el principio, el nombre y la 
 | `planticas_proyecto/planticas_proyecto.ino` | Red AP, servidor TCP, tarea que envía el bloque cada segundo y `loop()` que lee los sensores |
 | `planticas_proyecto/TEMPERATURA.h` | Termocupla MAX6675: una lectura como máximo cada 250 ms, promedio de las últimas 4, sin bloquear el `loop`; valor crudo (la compensación la aplica el backend) |
 | `planticas_proyecto/HUMEDAD.h` | DHT11: humedad relativa, valor crudo (la compensación la aplica el backend) |
-| `planticas_proyecto/SENSORTIERRA.h` | Sensor capacitivo de suelo: porcentaje entre `ADC_SECO` y `ADC_HUMEDO` (**pendiente de calibrar**), limitado a 0–100 %. Con `CALIBRAR_SUELO`, imprime el valor crudo del ADC |
+| `planticas_proyecto/SENSORTIERRA.h` | Sensor capacitivo de suelo: porcentaje entre `ADC_SECO` y `ADC_HUMEDO` (calibrados el 10/11/2026: 2900 y 1300), limitado a 0–100 %. Con `CALIBRAR_SUELO`, imprime el valor crudo del ADC |
 | `planticas_proyecto/arduino_secrets.example.h` | Plantilla de `arduino_secrets.h` |
 
 ## Pines
@@ -61,8 +61,10 @@ están en `docs/PRUEBAS-ESP32.md`.
 
 ## Calibrar el sensor de suelo
 
-`ADC_SECO` (3000) y `ADC_HUMEDO` (1400) son valores de partida, **no medidos con este sensor** (`PENDIENTE: calibrar` en
-`SENSORTIERRA.h`). Hasta medirlos, el porcentaje de humedad del suelo no es fiable.
+**Calibración vigente: 10/11/2026**, medida por el equipo con este sensor: `ADC_SECO=2900` (al aire) y
+`ADC_HUMEDO=1300` (en un vaso con agua). Con ellos, el porcentaje es `(2900 − ADC) / 1600 × 100`, limitado a 0–100 %.
+Antes se usaban 3000 y 1400, que no estaban medidos. Repite el procedimiento si cambias el sensor, su cable o su
+alimentación.
 
 1. En `planticas_proyecto.ino`, descomenta `#define CALIBRAR_SUELO` (primera línea de código) y sube el sketch.
 2. Abre el monitor serie a 115200. Cada segundo aparece, entre las lecturas normales, una línea como
@@ -72,7 +74,7 @@ están en `docs/PRUEBAS-ESP32.md`.
 4. **`ADC_HUMEDO`:** mete el sensor **en un vaso con agua** hasta la línea que marca su profundidad, sin mojar la
    electrónica de arriba. Espera a que se estabilice y anota el valor. En un sensor capacitivo suele ser menor que el seco.
 5. Repite las dos medidas dos o tres veces y usa el promedio. Si ves `0` o `4095`, revisa el cable o la alimentación.
-6. Escribe los dos números en `ADC_SECO` y `ADC_HUMEDO`, borra el comentario `PENDIENTE: calibrar`, vuelve a comentar
+6. Escribe los dos números en `ADC_SECO` y `ADC_HUMEDO`, actualiza la fecha del comentario que los acompaña, vuelve a comentar
    `#define CALIBRAR_SUELO` y sube el sketch otra vez.
 
 Con el sensor al aire el porcentaje debe dar 0 % y en el agua 100 %; en tierra, algo intermedio. El TCP sigue
@@ -116,7 +118,7 @@ minuto.
 ## Hallazgos (pendientes de decidir con el equipo; no se cambió nada)
 
 1. **Resuelto:** `SENSORTIERRA.h` restaba 76 después de calcular el porcentaje, lo que dejaba la humedad del suelo casi
-   siempre en 24 % o menos. Se quitó; falta calibrar `ADC_SECO` y `ADC_HUMEDO` (sección «Calibrar el sensor de suelo»).
+   siempre en 24 % o menos. Se quitó, y `ADC_SECO`/`ADC_HUMEDO` se calibraron el 10/11/2026 (2900 y 1300).
 2. **Resuelto:** las compensaciones de -8.5 °C (termocupla) y -6 % (DHT11) salieron del sketch, que ahora envía el valor
    crudo, y las aplica el backend con `SENSOR_CALIBRATION=AIR_TEMPERATURE=-8.5:1,RELATIVE_HUMIDITY=-6:1` (`.env.example`,
    `compose.yaml`). Se aplican una sola vez. **Están por verificar con un termómetro y un higrómetro de referencia**: si la

@@ -41,7 +41,7 @@ El workspace es un **monorepo local** con un solo `.git`. Cada carpeta se public
 | `frontend/` | Aplicación web renderizada en servidor | Java 21, Spring Boot 4.1.1, Thymeleaf, Spring Security (sesión), JPA; scripts en **TypeScript estricto** compilados con `tsc` | `./mvnw test`, `npm run build && npm test` |
 | `IA/` | Reglas de riego (`/predict/irrigation`) y asistente (`/chat`, `/voice`) | Python, FastAPI. **Reglas fijas, no un modelo entrenado** | `pytest`; `python -m unittest tests.test_patterns tests.test_rules` |
 | `event-service/` | Webhook de dispositivos (`POST /events`) y canal en vivo SSE (`GET /stream`) | Python, FastAPI | `pytest` |
-| `firmware/esp32-tcp/` | **El dispositivo real**: sketch del equipo para ESP32 Dev Module (modo AP `PLANTICAS` con una sola estación, servidor TCP 8080, un bloque por segundo, un solo cliente, sin órdenes). MAX6675 en GPIO5/17/16 (leído cada 250 ms, promedio de 4), DHT11 en GPIO4, suelo en GPIO34 (`ADC_SECO`/`ADC_HUMEDO` pendientes de calibrar; modo `CALIBRAR_SUELO`). Envía valores **crudos**: las compensaciones las aplica el backend | C++ / Arduino | `sh firmware/test/compile.sh` (en la CI) |
+| `firmware/esp32-tcp/` | **El dispositivo real**: sketch del equipo para ESP32 Dev Module (modo AP `PLANTICAS` con una sola estación, servidor TCP 8080, un bloque por segundo, un solo cliente, sin órdenes). MAX6675 en GPIO5/17/16 (leído cada 250 ms, promedio de 4), DHT11 en GPIO4, suelo en GPIO34 (`ADC_SECO=2900`/`ADC_HUMEDO=1300`, calibrados el 10/11/2026; modo `CALIBRAR_SUELO`). Envía valores **crudos**: las compensaciones las aplica el backend | C++ / Arduino | `sh firmware/test/compile.sh` (en la CI) |
 | `firmware/agrosense/` | **Alternativa no usada**: firmware cliente HTTP con relé y patrones (no está cargado en la placa) | C++ (pruebas en PC con g++) | `sh firmware/test/run-tests.sh` |
 | `database/` | Esquema (`schema.sql`, única fuente de verdad), `seed_demo.sql`, `reset.sql`, `migrations/001..003`, `datasource.properties` | PostgreSQL (Neon en producción; H2 modo PostgreSQL en pruebas) | — |
 | `api/` | Contrato OpenAPI del backend (`openapi.json`), peticiones de ejemplo, verificador de contrato | Python | `python api/tools/validate_spec.py` |
@@ -256,8 +256,8 @@ Prioridad aproximada para la entrega/sustentación:
 
 0. **ESP32 real** (hallazgos ya decididos con el equipo, ver `firmware/esp32-tcp/README.md`): se quitó el `- 76` del
    suelo, las compensaciones pasaron a `SENSOR_CALIBRATION`, la clave Wi-Fi es propia y la red admite una sola estación;
-   GPIO5 se queda. **Falta:** compilarlo en el Arduino IDE y las pruebas con la placa (`docs/PRUEBAS-ESP32.md`), calibrar
-   `ADC_SECO`/`ADC_HUMEDO` (modo `CALIBRAR_SUELO`), verificar -8.5 °C y -6 % con referencias, el token de la primera línea
+   GPIO5 se queda; el suelo se calibró el 10/11/2026 (`ADC_SECO=2900`, `ADC_HUMEDO=1300`). **Falta:** compilarlo en el
+   Arduino IDE y las pruebas con la placa (`docs/PRUEBAS-ESP32.md`), verificar -8.5 °C y -6 % con referencias, el token de la primera línea
    (mejora futura, decisión 40) y un protocolo de órdenes si el ESP32 llega a tener bomba (TODO en
    `DeviceIngestionFacade` y `Esp32ReadOnlyActuatorDriver`).
 

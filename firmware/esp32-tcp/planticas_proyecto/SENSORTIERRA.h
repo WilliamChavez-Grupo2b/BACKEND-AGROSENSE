@@ -6,10 +6,10 @@
 
 #define PIN_SOIL_V2 34
 
-// PENDIENTE: calibrar. Valores de partida, no medidos con este sensor. Mídelos con el modo CALIBRAR_SUELO
-// (firmware/esp32-tcp/README.md): ADC_SECO con el sensor al aire y ADC_HUMEDO con el sensor en un vaso con agua.
-#define ADC_SECO 3000
-#define ADC_HUMEDO 1400
+// Calibrado el 10/11/2026 con este sensor y el modo CALIBRAR_SUELO (firmware/esp32-tcp/README.md): ADC_SECO con el
+// sensor al aire y ADC_HUMEDO con el sensor en un vaso con agua. Si se cambia el sensor o su cable, hay que medirlos otra vez.
+#define ADC_SECO 2900
+#define ADC_HUMEDO 1300
 
 inline void iniciarSensorTierra() {
   pinMode(PIN_SOIL_V2, INPUT);

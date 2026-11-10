@@ -69,7 +69,8 @@ Humedad de la tierra: 41.00
 
 - Los valores son **crudos**: la temperatura sale unos 8.5 °C más alta y la humedad del aire unos 6 % más alta que antes,
   porque las compensaciones ahora las aplica el backend (`SENSOR_CALIBRATION`).
-- La humedad de la tierra ya no queda limitada a 24 %; hasta calibrar `ADC_SECO`/`ADC_HUMEDO` no es fiable.
+- La humedad de la tierra ya no queda limitada a 24 %. Con la calibración del 10/11/2026 (`ADC_SECO=2900`,
+  `ADC_HUMEDO=1300`), al aire debe dar 0 % y en agua 100 %.
 - `nan` en temperatura: termocupla o MAX6675 desconectados. `nan` en humedad: DHT11 desconectado.
 - `ERROR al iniciar WiFi`: la red no arrancó (por ejemplo, una clave de menos de 8 caracteres, que no debería pasar porque
   el sketch exige 12).
@@ -90,7 +91,7 @@ CALIBRAR_SUELO adc=2875
 | 3 | Bloque por TCP | PuTTY (Raw, 192.168.4.1, 8080) unos segundos y cerrarlo | Un bloque `===== PLANTICAS =====` por segundo, con línea vacía al final |
 | 4 | Backend | `ESP32_TCP_ENABLED=true`, sin PuTTY | `ESP32: connected to 192.168.4.1:8080`; al minuto, una lectura por sensor en Café y «ESP32 conectado» |
 | 5 | Compensación una sola vez | Comparar el monitor serie con lo guardado | Temperatura guardada = la del monitor − 8.5; humedad = la del monitor − 6 |
-| 6 | Calibración del suelo | `CALIBRAR_SUELO`, al aire y en un vaso con agua | Dos valores de ADC estables; con ellos, 0 % al aire y 100 % en el agua |
+| 6 | Calibración del suelo | `CALIBRAR_SUELO`, al aire y en un vaso con agua | **Hecha el 10/11/2026:** `ADC_SECO=2900`, `ADC_HUMEDO=1300`, ya en `SENSORTIERRA.h`. Falta comprobar con el sketch normal que da 0 % al aire y 100 % en el agua |
 | 7 | Sensor desconectado | Quitar el DHT11 | `nan` en el monitor; en AgroSense deja de llegar la humedad del aire; las otras dos siguen |
 | 8 | Reconexión | Reiniciar el ESP32 (`EN`) con el backend en marcha | El backend reconecta solo en menos de 30 s |
 | 9 | Cliente ocupado | Dejar PuTTY conectado y arrancar el backend | El backend registra `nothing from … in 30 s` y vuelve cuando se cierra PuTTY |
