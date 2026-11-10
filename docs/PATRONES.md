@@ -10,8 +10,9 @@ Rutas abreviadas:
 - `F/` = `firmware/agrosense/src/`
 - `TS/` = `frontend/src/main/ts/api/`
 
-**El dispositivo final es un Arduino UNO R4 WiFi** (`firmware/`). El programa de `raspberry/` se conserva como
-simulador de dispositivo para pruebas.
+**El dispositivo de campo es un ESP32 Dev Module** (`firmware/`, core `esp32` de Espressif). Solo
+`F/ArduinoPorts.h` y los sketches tocan la placa; el resto del firmware compila igual en el PC para las pruebas. Sin
+placa, `tools/e2e/run_e2e.py` recorre el sistema con el mismo contrato.
 
 ## Cómo correr las pruebas
 
@@ -21,7 +22,7 @@ simulador de dispositivo para pruebas.
 | Frontend, Java | `cd frontend && ./mvnw test` | 115 pruebas, 0 fallos, 2 omitidas (PostgreSQL) |
 | Frontend, TypeScript | `cd frontend && npm run build && npm test` | 12 pruebas, 0 fallos |
 | IA, patrones y reglas | `cd IA && python -m unittest tests.test_patterns tests.test_rules` | 31 pruebas, 0 fallos |
-| Firmware en el PC | `sh firmware/test/run-tests.sh` | 225 comprobaciones, 0 fallos |
+| Firmware en el PC | `sh firmware/test/run-tests.sh` | 221 comprobaciones, 0 fallos (10 de noviembre, ESP32) |
 | Firmware con el compilador real | `sh firmware/test/compile.sh` | Compila; 33 % de flash y 46 % de RAM. No ejecutado en una placa |
 
 Las suites FastAPI de `IA/` y `event-service/` no pueden correr en este equipo: quedan para CI (`.github/workflows/agrosense.yml`).
@@ -360,7 +361,7 @@ Recorrido de una orden con `IRRIGATION_ACTUATOR=relay`:
 sequenceDiagram
     participant B as Backend
     participant E as Manejador de eventos
-    participant A as Arduino
+    participant A as ESP32
     B->>B: IrrigationOrder.execute() guarda el riego y deja la orden pendiente
     A->>E: POST /events (lectura cada 30 s)
     E->>B: POST /api/internal/events

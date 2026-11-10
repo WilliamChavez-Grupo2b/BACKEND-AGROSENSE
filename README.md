@@ -7,8 +7,8 @@ recomendaciones de riego, y una aplicación web lo muestra todo y permite ordena
 
 ```mermaid
 flowchart LR
-    A["Arduino UNO R4 WiFi<br/>firmware/ · C++"]
-    S["Simulador<br/>raspberry/ · Python"]
+    A["ESP32 Dev Module<br/>firmware/ · C++"]
+    S["Recorrido sin hardware<br/>tools/e2e/ · Python"]
     E["Manejador de eventos<br/>event-service/ · Python<br/>servicio aparte: también se duerme"]
     B["Backend<br/>Java · Spring Boot"]
     D[("PostgreSQL<br/>Neon")]
@@ -39,7 +39,6 @@ flowchart LR
 | `IA/` | Reglas de riego y asistente | `pytest` (necesita FastAPI); `python -m unittest tests.test_patterns tests.test_rules` |
 | `event-service/` | Webhook de dispositivos y canal en vivo | `pytest` (necesita FastAPI) |
 | `firmware/` | Dispositivo final | `sh firmware/test/run-tests.sh`, `sh firmware/test/compile.sh` |
-| `raspberry/` | Simulador de dispositivo | `pytest` |
 | `database/`, `api/` | Esquema y migraciones (`database/README.md`); contrato OpenAPI | `python api/tools/validate_spec.py` |
 | `tools/e2e/` | Recorrido completo sin hardware | `python tools/e2e/run_e2e.py` |
 
@@ -52,16 +51,15 @@ cp .env.example .env      # y completa los secretos
 docker compose up --build
 ```
 
-El frontend queda en `http://localhost:8080` y el webhook en `http://localhost:8100/events`. Para enviar lecturas falsas:
+El frontend queda en `http://localhost:8080` y el webhook en `http://localhost:8100/events`. Para recorrer todo sin placa
+(evento, alerta, predicción y orden de riego), con el backend en `IRRIGATION_ACTUATOR=relay`:
 
 ```bash
-cd raspberry
-cp simulator.example.env simulator.env   # EVENTS_URL, DEVICE_ID=RPI-DEMO-01 y DEVICE_KEY=SEED_DEVICE_KEY
-pip install -r requirements.txt
-python simulator.py --once               # sin --once, una lectura cada 30 s
+API_PASSWORD=<SEED_USER_PASSWORD> DEVICE_KEY=<SEED_DEVICE_KEY> python tools/e2e/run_e2e.py
 ```
 
-La lista de materiales, el cableado y la calibración del dispositivo real están en `firmware/README.md`.
+Solo usa la biblioteca estándar de Python y envía los eventos con el mismo contrato que el ESP32. La lista de materiales,
+el cableado, las advertencias de pines y la calibración del dispositivo están en `firmware/README.md`.
 
 ## Variables nuevas
 
@@ -94,7 +92,7 @@ SENSOR_CALIBRATION=PH=0.1:1.02,SOIL_MOISTURE=-1.5:1
 
 El valor guardado es `lectura × ganancia + desplazamiento`: con ese ejemplo, un pH de 6 se guarda como 6,22. Se aplica antes
 de validar el rango, y a todos los sensores de ese tipo. Una entrada mal escrita impide arrancar. Reinicia el backend para
-aplicar un cambio. Es distinto de `soilDryRaw` y `soilWetRaw`, que calibran el firmware.
+aplicar un cambio. Es distinto de `AGRO_SOIL_DRY_RAW` y `AGRO_SOIL_WET_RAW`, que calibran el sensor de suelo en el firmware.
 
 ## Orden de despliegue
 
@@ -104,7 +102,7 @@ aplicar un cambio. Es distinto de `soilDryRaw` y `soilWetRaw`, que calibran el f
 3. **Backend**, con las variables nuevas.
 4. **Servicio de IA.** Exige `INTERNAL_API_KEY` o `AI_SERVICE_TOKEN`.
 5. **Manejador de eventos.** `docs/EVENT-SERVICE.md` compara mantenerlo o quitarlo.
-6. **Dispositivo.**
+6. **Dispositivo:** el ESP32, con `arduino_secrets.h` apuntando al manejador de eventos (`firmware/README.md`).
 
 ## Avisos
 
@@ -112,5 +110,6 @@ aplicar un cambio. Es distinto de `soilDryRaw` y `soilWetRaw`, que calibran el f
 - El **pH** solo es fiable con una sonda calibrada. El firmware actual no lo mide.
 - El **modelo de IA son reglas fijas**, no un modelo entrenado. Cada recomendación nombra en `factors` las reglas que la
   produjeron.
-- Los valores de **`soilDryRaw` y `soilWetRaw`** deben medirse con tu sensor antes de confiar en cualquier porcentaje.
+- **`AGRO_SOIL_DRY_RAW` y `AGRO_SOIL_WET_RAW`** vienen en 0, sin calibrar: hasta medirlos con tu sensor el ESP32 no envía
+  la humedad del suelo.
 - La **bomba** no se ha probado con hardware real. Sigue `firmware/README.md` y prueba primero sin carga.

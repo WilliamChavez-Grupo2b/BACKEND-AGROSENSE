@@ -20,13 +20,13 @@ Son unas 400 líneas de Python con 500 líneas de pruebas. **Hoy no está desple
 |---|---|---|
 | **A favor** | Ya existe y tiene pruebas. Lecturas en vivo por SSE sin cambiar el frontend. Una ráfaga de dispositivos no toca el backend hasta validarse. Coincide con el diagrama del proyecto | Un servicio menos que desplegar, vigilar y despertar. Una sola espera de arranque en Render. Menos variables compartidas. Menos latencia |
 | **En contra** | Otro servicio del plan gratuito que se duerme: **pueden tener que despertar dos seguidos**. Un punto de fallo más. Hay que desplegarlo y mantener dos secretos iguales en dos sitios. Una sola instancia, porque los canales viven en memoria | Hay que reescribir lo que funciona: ver abajo. El backend queda expuesto directamente a los dispositivos |
-| **Trabajo** | Desplegarlo: 1 servicio y 5 variables | Ruta pública nueva en el backend, autenticada solo con `X-Device-Key`; validación y límite de cuerpo ahí; SSE en Java o un cliente STOMP en `live.ts`; cambiar `POST /events` en firmware y simulador; actualizar contrato, diagramas y pruebas; retirar el servicio |
+| **Trabajo** | Desplegarlo: 1 servicio y 5 variables | Ruta pública nueva en el backend, autenticada solo con `X-Device-Key`; validación y límite de cuerpo ahí; SSE en Java o un cliente STOMP en `live.ts`; cambiar `POST /events` en el firmware; actualizar contrato, diagramas y pruebas; retirar el servicio |
 | **Riesgo para la sustentación** | Bajo | Alto: reescritura tarde, sin probar con hardware |
 
 ## Por qué la opción A
 
 La razón de peso a favor de B es la doble espera de Render, y se mitiga despertando los servicios antes de la demo
-(`docs/DEMO.md`). La reescritura tocaría firmware, simulador, frontend y backend a la vez para quitar un servicio que ya
+(`docs/DEMO.md`). La reescritura tocaría firmware, frontend y backend a la vez para quitar un servicio que ya
 funciona y tiene pruebas. B tiene sentido después, si el proyecto continúa y un solo servicio resulta más barato de operar.
 
 ## Despliegue de la opción A
@@ -43,7 +43,7 @@ proceso), `event-service/render.yaml` y el servicio en `compose.yaml`.
 | `BACKEND_TIMEOUT_MS` | `60000` (en `render.yaml`), para esperar a un backend dormido |
 
 En Render: **New > Blueprint**, repositorio `API-AGROSENSE`, Blueprint Path `event-service/render.yaml`. Después pon
-`EVENTS_PUBLIC_URL` en el frontend y la dirección nueva en `arduino_secrets.h` y `raspberry/simulator.env`.
+`EVENTS_PUBLIC_URL` en el frontend y la dirección nueva en `arduino_secrets.h` del ESP32.
 
-La prueba real del tramo simulador → manejador de eventos → backend, sin relé provisional, es el trabajo `end-to-end` de
+La prueba real del tramo dispositivo → manejador de eventos → backend, sin relé provisional, es el trabajo `end-to-end` de
 `.github/workflows/agrosense.yml`. No se ha ejecutado: aquí FastAPI no carga y ese workflow aún no ha corrido.

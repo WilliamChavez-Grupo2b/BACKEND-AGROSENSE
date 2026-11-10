@@ -12,7 +12,7 @@ Los orígenes del navegador permitidos se indican en `CORS_ALLOWED_ORIGINS`, sep
 
 ## Dispositivos y eventos en vivo
 
-Las Raspberry Pi envían sus eventos al servicio de eventos (`event-service/` del workspace), que los reenvía
+Los dispositivos ESP32 (`firmware/` del workspace) envían sus eventos al servicio de eventos (`event-service/` del workspace), que los reenvía
 aquí. MQTT queda apagado por defecto (`MQTT_ENABLED=false`) y su código se conserva.
 
 | Método y ruta | Quién la llama | Respuesta |

@@ -41,18 +41,19 @@ done
 Ten listo también:
 
 - Capturas de la página de inicio, una alerta, la gráfica y una recomendación, por si falla la red.
-- El simulador configurado en un portátil (`raspberry/simulator.env`).
+- El recorrido sin hardware listo en un portátil: `tools/e2e/run_e2e.py` con `BACKEND_URL`, `EVENTS_URL`, `API_PASSWORD`
+  y `DEVICE_KEY` del dispositivo de ejemplo.
 - La cuenta de ejemplo y un punto de acceso del teléfono.
 
 ## Si algo falla
 
 | Falla | Cómo se nota | Qué hacer |
 |---|---|---|
-| **Wi-Fi del lugar** | El Arduino no envía; `en cola` sube en el monitor serie | Usa el punto de acceso del teléfono, configurado de antemano en `arduino_secrets.h`. El Arduino guarda 16 eventos y los envía al volver |
+| **Wi-Fi del lugar** | El ESP32 no envía; `en cola` sube en el monitor serie | Usa el punto de acceso del teléfono **en 2,4 GHz**, configurado de antemano en `arduino_secrets.h`. El ESP32 guarda 16 eventos y los envía al volver |
 | **Render dormido** | La interfaz muestra «Despertando el servidor» | Espera 1 a 3 minutos y explica el diseño: el dispositivo reintenta cada 15 s y no pierde lecturas mientras tanto |
 | **Manejador de eventos dormido o caído** | El dispositivo no recibe respuesta | Lo mismo. Si no vuelve, la interfaz sigue mostrando lo guardado, sin datos en vivo |
 | **IA caída** | Recomendaciones con la etiqueta «Respaldo local»; asistente con la nota de que no respondió el modelo | Es un caso a favor: enseña que el sistema sigue dando una recomendación y dice de dónde sale |
-| **Hardware** (sensor, relé, placa) | Lecturas ausentes, alerta `SENSOR_FAULT` | Corre `python simulator.py` en el portátil: habla el mismo contrato. Para la bomba, sube el sketch con `AGRO_SIMULATED_HARDWARE` |
+| **Hardware** (sensor, relé, placa) | Lecturas ausentes, alerta `SENSOR_FAULT` | Plan B: corre `python tools/e2e/run_e2e.py` en el portátil. Envía eventos con el mismo contrato y recorre lectura, alerta, predicción y orden de riego (con `IRRIGATION_ACTUATOR=relay`). Para la bomba, sube el sketch con `AGRO_SIMULATED_HARDWARE` |
 | **Base de datos** | Errores al iniciar sesión | Corre el frontend en local con el perfil `demo`, que usa datos de ejemplo en memoria |
 | **Todo lo anterior** | | Usa las capturas y `docs/PATRONES.md` |
 

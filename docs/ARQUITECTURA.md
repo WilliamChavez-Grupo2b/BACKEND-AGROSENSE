@@ -1,6 +1,6 @@
 # Arquitectura de AgroSense
 
-Estado al 16 de octubre de 2026. Este documento recoge la inspección del repositorio, la arquitectura de
+Estado al 16 de octubre de 2026, con el cambio de dispositivo al ESP32 del 10 de noviembre (decisión 28). Este documento recoge la inspección del repositorio, la arquitectura de
 servicios (sección 2), las decisiones tomadas, qué partes de la interfaz usan datos reales, parciales o no
 disponibles, y dónde está desplegado cada componente.
 
@@ -13,10 +13,9 @@ disponibles, y dónde está desplegado cada componente.
 | `database/` | Todo lo de base de datos: `schema.sql`, `seed_demo.sql`, `reset.sql`, `datasource.properties`, `.env.example` y `README.md`. |
 | `api/`      | Contrato de la API del backend: `openapi.json`, peticiones de ejemplo y `tools/check_contract.py`, que comprueba un backend en marcha contra el contrato. |
 | `IA/`       | Servicio de IA (Python, FastAPI) que el backend llama en `AI_SERVICE_URL`: predicción de riego y asistente (`/chat`, `/voice`). |
-| `event-service/` | Manejador de eventos (Python, FastAPI): webhook de las Raspberry y canal en vivo (SSE) de cada usuario. |
-| `firmware/` | Firmware del dispositivo final, un Arduino UNO R4 WiFi (decisión 28). Pruebas en PC con g++. |
+| `event-service/` | Manejador de eventos (Python, FastAPI): webhook de los dispositivos de campo y canal en vivo (SSE) de cada usuario. |
+| `firmware/` | Firmware del dispositivo de campo, un ESP32 Dev Module (decisión 28). Pruebas en PC con g++. |
 | `tools/e2e/` | Recorrido completo sin hardware: evento, backend, alerta, predicción y orden de riego. |
-| `raspberry/` | Simulador de dispositivo para pruebas (decisión 28): envía cada 30 s al webhook, con reintentos y cola en SQLite. También lee un DHT22 y un sensor de suelo por MCP3008 si corre en una Raspberry Pi. |
 | `compose.yaml`, `.env.example` | Todos los servicios en una máquina (`docker compose up`) y todas sus variables. |
 
 ### Repositorios
@@ -32,7 +31,7 @@ tiene su propio historial y no comparte commits con el workspace:
 | `api/`                | `ssantivr/API-AGROSENSE`                 | los archivos de la carpeta                |
 | `IA/`                 | `ssantivr/IA-AGROSENSE`                  | los archivos de la carpeta                |
 | `event-service/`      | `ssantivr/API-AGROSENSE`, rama `feat/event-service` (desde el 20 de octubre de 2026) | `event-service/`, junto al contrato; sus pruebas son el job `event-service` de `.github/workflows/tests.yml` (la carpeta `.github` del workspace no se publica) |
-| `firmware/`, `raspberry/`, `compose.yaml` | ninguno todavía; solo existen en el workspace |                  |
+| `firmware/`, `compose.yaml` | ninguno todavía; solo existen en el workspace |                  |
 | `docs/`               | ninguno; solo existe en el workspace     |                                           |
 
 Una rama del workspace no se puede subir tal cual a ninguno de ellos. Para publicar, los commits de
@@ -111,7 +110,7 @@ punteada es la desviación pendiente que se describe más abajo.
 
 ```mermaid
 flowchart LR
-    RPI["Arduino UNO R4 WiFi<br/>o simulador (raspberry/)"]
+    RPI["ESP32 Dev Module<br/>firmware/ · o tools/e2e sin placa"]
     EV["Manejador de eventos<br/>event-service · Python<br/>servicio aparte, también se duerme"]
     FE["Frontend<br/>Java/Thymeleaf con scripts TypeScript"]
     BE["Backend<br/>Java · Spring Boot"]
@@ -136,7 +135,7 @@ flowchart LR
 
 | Conexión | Dónde está | Cómo se asegura |
 |---|---|---|
-| Raspberry → manejador de eventos | `raspberry/simulator.py` → `event-service/agrosense_events/app.py` (`POST /events`) | `X-Device-Key`: la llave del dispositivo, que el backend compara con su SHA-256 en tiempo constante. HTTPS en Render |
+| ESP32 → manejador de eventos | `firmware/agrosense/src/ArduinoPorts.h` (`HttpBackend`, detrás de `BackendProxy`) → `event-service/agrosense_events/app.py` (`POST /events`) | `X-Device-Key`: la llave del dispositivo, que el backend compara con su SHA-256 en tiempo constante. HTTPS en Render |
 | Manejador de eventos → backend | `app.py` (`receive`) → `InternalEventController`, `DeviceEventService` | `X-Internal-Key` (`EVENTS_INTERNAL_KEY`), comprobada por `InternalKeyFilter` antes de leer el cuerpo; la ruta está fuera del JWT de usuarios |
 | Backend → BD | repositorios Spring Data del backend | Credenciales por variables; `ddl-auto=validate` |
 | Manejador de eventos → frontend (navegador) | `app.py` (`stream`) → `frontend/src/main/ts/events/live.ts` | Token HS256 de 5 minutos firmado por el backend con `EVENTS_STREAM_SECRET` (`EventStreamTokens`), pedido con la sesión a `/api/ui/events/token`; cada evento solo llega a las conexiones de su dueño; CORS solo para el frontend |
@@ -145,7 +144,7 @@ flowchart LR
 | IA → modelos | `IA/agrosense_ia/providers.py` | Llave del proveedor en una cabecera, nunca en la dirección ni en el registro |
 
 **La BD solo la tocan el backend y, por ahora, el frontend.** El servicio de IA, el manejador de eventos y
-la Raspberry no tienen credenciales ni código de base de datos: el contexto de la finca llega a la IA ya
+el dispositivo no tienen credenciales ni código de base de datos: el contexto de la finca llega a la IA ya
 armado por el backend (`farm_context`), y el manejador de eventos recibe del backend el dueño del evento.
 
 ### Desviación pendiente: el frontend accede a la BD
@@ -190,13 +189,14 @@ Errores como `{"message"}`: 401 sin llave, 422 negativa del modelo, 429 sin cuot
 503 sin proveedor, 504 tiempo agotado. Ante 429, 502, 503, 504 o una caída del servicio, el backend
 responde la pregunta escrita con los datos de la finca (`source: "local"`).
 
-**Raspberry → manejador de eventos → backend:**
+**Dispositivo → manejador de eventos → backend:**
 
 ```
 POST /events  (X-Device-Key)
-  {"device_id": "RPI-DEMO-01", "type": "reading", "ts": "2026-10-16T08:00:00-05:00",
-   "data": {"soil_moisture": 31.5, "air_temperature": 24.1, "ph": 6.4}}
+  {"device_id": "ESP32-01", "type": "reading", "ts": "2026-10-16T08:00:00-05:00",
+   "data": {"soil_moisture": 31.5, "air_temperature": 24.1, "relative_humidity": 61.0}}
   → 200 {"status": "stored", "readings": 3, "alerts": 1, "delivered": 2}
+  # El ESP32 no mide pH; el contrato acepta "ph" de otros dispositivos.
   → 4xx {"message"} el evento o la llave están mal (no reintentar) · 502 backend caído (reintentar)
 
 POST /api/internal/events  (X-Internal-Key, X-Device-Key)   mismo cuerpo
@@ -240,7 +240,8 @@ repositorio.
 | IA | `INTERNAL_API_KEY`, `AI_SERVICE_TOKEN` (migración), `AI_CHAT_API_KEY`, `AI_CHAT_BASE_URL`, `AI_CHAT_MODEL`, `AI_TRANSCRIPTION_MODEL`, `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL`, `ANTHROPIC_EFFORT`, `GEMINI_API_KEY`, `GEMINI_MODEL`, `AI_TIMEOUT_MS` (20000), `AI_MAX_OUTPUT_TOKENS` (2048), `PORT` |
 | Manejador de eventos | `BACKEND_URL`, `EVENTS_INTERNAL_KEY`, `EVENTS_STREAM_SECRET`, `EVENTS_ALLOWED_ORIGINS`, `BACKEND_TIMEOUT_MS` (30000), `BACKEND_RETRIES` (3), `BACKEND_RETRY_FIRST_MS` (500), `EVENTS_HEARTBEAT_S`, `EVENTS_MAX_STREAMS_PER_USER`, `EVENTS_MAX_STREAMS`, `PORT` |
 | Frontend | `EVENTS_PUBLIC_URL` |
-| Raspberry | `EVENTS_URL`, `DEVICE_ID`, `DEVICE_KEY`, `INTERVAL_S` (30), `SENSORS` (`auto`), `READINGS`, `DHT_GPIO` (4), `DHT_ATTEMPTS`, `ADC_SPI_BUS`, `ADC_SPI_DEVICE`, `ADC_CHANNEL` (0, 0, 0), `SOIL_DRY_RAW`, `SOIL_WET_RAW`, `QUEUE_FILE` (`queue.sqlite3`), `MAX_QUEUE`, `TIMEOUT_S` (45), `ATTEMPTS`, `FIRST_BACKOFF_S`, `MAX_BACKOFF_S` |
+| ESP32 (`arduino_secrets.h`, no son variables de entorno) | `SECRET_WIFI_SSID`, `SECRET_WIFI_PASS`, `SECRET_DEVICE_ID`, `SECRET_DEVICE_KEY`, `SECRET_EVENTS_HOST`, `SECRET_EVENTS_PORT`, `SECRET_EVENTS_TLS`, `SECRET_EVENTS_CA_CERT`, `AGRO_SOIL_DRY_RAW`, `AGRO_SOIL_WET_RAW` |
+| Recorrido sin hardware (`tools/e2e/run_e2e.py`) | `BACKEND_URL`, `EVENTS_URL`, `API_EMAIL`, `API_PASSWORD`, `DEVICE_ID` (`RPI-DEMO-01`), `DEVICE_KEY`, `CROP_ID`, `EXPECT_MODEL`, `E2E_WAIT_S` |
 
 ### Ejecutar todo junto
 
@@ -252,7 +253,7 @@ docker compose up --build
 `compose.yaml` arranca `postgres` (volumen `pgdata`, comprobación con `pg_isready`), `ia-service`, `backend`
 (perfil `seed`: aplica `schema.sql` y `seed_demo.sql`), `event-service` y `frontend`, cada uno cuando los
 que necesita ya responden a su comprobación de salud. El frontend queda en `http://localhost:8080` y el
-webhook en `http://localhost:8100/events`, al que se apunta el simulador (`raspberry/`). Cada Dockerfile
+webhook en `http://localhost:8100/events`, al que se apuntan el ESP32 o `tools/e2e/run_e2e.py`. Cada Dockerfile
 corre con un usuario sin privilegios, lee el puerto de `PORT` y se comprueba en `/health` (`/api/health`
 en el backend; en el frontend, `/health` es público y no abre sesión ni consulta la base de datos).
 
@@ -280,7 +281,7 @@ que no conoce.
 
 **Plan gratuito:** Render duerme cada servicio tras unos 15 minutos sin uso y tarda entre 1 y 3 minutos en
 arrancarlo. Por eso los tiempos de espera son configurables y generosos (`AI_SERVICE_TIMEOUT_MS`,
-`BACKEND_TIMEOUT_MS`, `AI_TIMEOUT_MS`), la Raspberry reintenta y guarda en su cola, el chat responde en modo
+`BACKEND_TIMEOUT_MS`, `AI_TIMEOUT_MS`), el ESP32 reintenta y guarda hasta 16 eventos en su búfer, el chat responde en modo
 local si la IA no llega a tiempo y el frontend sigue mostrando lo que cargó. **Antes de una demo**,
 despierta los servicios unos minutos antes:
 
@@ -444,7 +445,7 @@ done
     `seed_demo.sql` no tiene llave usable hasta que el backend le pone `SEED_DEVICE_KEY` (como la contraseña
     del usuario de ejemplo, decisión 18). Si un evento trae una medida con varios sensores posibles en el
     cultivo, se exige `sensor_code` y se responde 400 explicándolo, en vez de adivinar.
-26. **Eventos por webhook y SSE en lugar de MQTT.** Las Raspberry envían por HTTP al manejador de eventos,
+26. **Eventos por webhook y SSE en lugar de MQTT.** Los dispositivos envían por HTTP al manejador de eventos,
     que reenvía al backend (las lecturas siguen el camino de siempre, `SensorFacade`) y empuja el resultado al
     navegador del dueño por Server-Sent Events. MQTT y el STOMP del backend se conservan, apagados o sin
     cliente. El token del canal va en la dirección porque `EventSource` no admite cabeceras: dura 5 minutos
@@ -453,9 +454,12 @@ done
     tienen acceso a la BD; el frontend lo conserva en las 9 clases de la sección 2 hasta migrarlo, servicio
     por servicio, en una rama aparte.
 
-28. **El dispositivo final es un Arduino UNO R4 WiFi** (1 de noviembre de 2026). El firmware está en `firmware/` y
-    habla el mismo contrato que el programa de `raspberry/` (`POST /events`, `X-Device-Key`), que se conserva como
-    simulador para probar sin placa. El dispositivo de ejemplo `RPI-DEMO-01` sigue siendo el del simulador.
+28. **El dispositivo de campo es un ESP32 Dev Module** (10 de noviembre de 2026). El firmware está en `firmware/`, con el
+    core `esp32` de Espressif (2.x o 3.x), y habla el contrato de siempre (`POST /events`, `X-Device-Key`). Suelo en
+    `GPIO34` (ADC1), DHT22 en `GPIO4`, relé activo en bajo en `GPIO26`. La petición HTTPS va en una tarea propia, así que
+    `loop()` no espera a la red. Para probar sin placa está `tools/e2e/run_e2e.py`, que envía los eventos con su propio
+    cliente HTTP; el simulador en Python se retiró. El dispositivo de ejemplo de `seed_demo.sql` conserva su código
+    `RPI-DEMO-01`, que es solo un identificador.
 29. **Órdenes de riego por la respuesta del dispositivo.** No hay conexión hacia el campo: con
     `IRRIGATION_ACTUATOR=relay` la orden se guarda en `irrigation_dispatches` y sale en la respuesta al siguiente
     evento del dispositivo, una sola vez. Caduca a los 5 minutos, porque no regar es más seguro que regar tarde, y el
@@ -472,7 +476,7 @@ done
     no revelar qué códigos existen), 409 si está inactivo, 400 con datos inválidos y 429 por encima de
     `DEVICE_MAX_EVENTS_PER_MINUTE`. La llave se muestra una vez y se guarda solo su SHA-256.
 32. **Reintentos sin duplicados.** Un evento con `ts` que ya está guardado para ese sensor no se guarda otra vez. Un
-    evento sin `ts`, como los que envía el Arduino antes de conocer la hora, sí podría duplicarse al reintentar.
+    evento sin `ts`, como los que envía el ESP32 antes de que NTP responda, sí podría duplicarse al reintentar.
 33. **`LOGIN_MAX_ATTEMPTS_PER_ADDRESS=0`.** Todas las peticiones de inicio de sesión llegan al backend desde la dirección
     del frontend, así que un límite por dirección bloquearía a todos a la vez. Se apaga y queda el límite por cuenta
     (`LOGIN_MAX_ATTEMPTS`, 5). La compensación es que un atacante puede probar pocas contraseñas en muchas cuentas sin
@@ -487,8 +491,10 @@ done
     `finished`) y el riego se corrige, con agua proporcional; uno rechazado o caducado queda sin agua y sin duración.
 37. **Calibración neutra por defecto.** `CalibrationRegistry` tiene una entrada por tipo de sensor, sin corrección hasta que
     `SENSOR_CALIBRATION` aporte una medida. Inventar valores falsearía las lecturas.
-38. **Perro guardián alimentado por la interrupción.** Su máximo, 5,6 s, es menor que un comando AT de `WiFiS3`, así que
-    `loop()` no puede alimentarlo; lo hace el temporizador mientras `loop()` haya dado señal en los últimos 60 s.
+38. **Perro guardián sobre `loop()`.** `esp_task_wdt` con 10 s vigila la tarea de `loop()`, que la alimenta en cada vuelta;
+    funciona con el core 2.x y el 3.x. Como la red va en otra tarea, `loop()` nunca espera más que eso. Un `esp_timer`
+    aparte hace cumplir la hora de apagado de la bomba 10 veces por segundo, y una petición atascada más de 120 s apaga la
+    bomba y reinicia la placa. Perder el Wi-Fi con la bomba funcionando también la apaga.
 39. **Manejador de eventos: decisión abierta.** `docs/EVENT-SERVICE.md` compara mantenerlo o enviar directo al backend.
 35. **Lecturas en vivo por SSE, no por `/ws`.** La decisión 26 sigue vigente: el navegador recibe lecturas y alertas del
     manejador de eventos. El backend publica también por WebSocket, y una prueba lo comprueba, pero la interfaz no usa ese
@@ -705,19 +711,18 @@ Render»).
   servicio de IA en producción (`AI_CHAT_VIA_SERVICE=true`), en el orden de la sección 2.
 - Retirar el Bearer `AI_SERVICE_TOKEN` cuando el backend desplegado envíe `X-Internal-Key`, y después la IA
   interna del backend.
-- Raspberry con sensores reales (DHT22 y MCP3008, `raspberry/hardware.py`, 20 de octubre de 2026): escrita
-  y probada con dispositivos falsos en un PC; falta probarla en una Raspberry Pi con los sensores cableados.
-  MQTT queda apagado y sin broker.
+- ESP32 con los sensores y el relé reales: compila y su lógica pasa las pruebas en el PC, pero falta probarlo en la
+  placa (lista en `firmware/README.md`, «Pendiente con la placa real»). MQTT queda apagado y sin broker.
 - La humedad del aire (`RELATIVE_HUMIDITY`) no tiene rango propio en el cultivo, así que no genera alertas
   ni se marca fuera de rango (antes se comparaba con el rango de humedad del suelo). Si se quiere alertar por
   ella, hace falta un rango propio en `crops`.
 - Dispositivos: listado, desactivación y cambio de llave (hoy solo el alta).
 - **Lecturas duplicadas: `eventId` único por evento** (propuesta del 20 de octubre de 2026). La decisión 32 ya
   resuelve el caso común por `ts`; esto sigue siendo la mejora para eventos sin hora. Sin `ts`, un evento puede guardarse dos veces si el backend lo guarda pero
-  la respuesta no llega a la Raspberry (tiempo agotado, corte de wifi): la Raspberry lo deja en su cola y
+  la respuesta no llega al ESP32 (tiempo agotado, corte de wifi): el ESP32 lo deja en su búfer y
   lo reenvía. Cambios que implicaría:
-  - *Raspberry:* generar un UUID por evento al medirlo, guardarlo con el evento en la cola SQLite y
-    enviarlo igual en cada reintento (`"eventId"` en el cuerpo).
+  - *Firmware:* generar un identificador por evento al medirlo (por ejemplo `esp_random()`), guardarlo con el evento en
+    el búfer de `BackendProxy` y enviarlo igual en cada reintento (`"eventId"` en el cuerpo).
   - *Manejador de eventos:* validar el formato (UUID) en `check_event` y en la forma `deviceId`/`datos`, y
     reenviarlo tal cual. Con eso también podría reintentar los tiempos agotados, que hoy no reintenta.
   - *Base de datos:* migración `004_device_events.sql` con una tabla `device_events (id_device, event_id,
@@ -728,11 +733,11 @@ Render»).
   - *Backend:* entidad y repositorio de `device_events`; en `DeviceEventService.receive`, dentro de la
     misma transacción, insertar `(dispositivo, eventId)` antes de guardar las lecturas. Si ya existe,
     responder **200** con lo que se guardó la primera vez (o con `"duplicate": true` y sin lecturas), no un
-    error, para que la Raspberry lo saque de su cola. La clave primaria resuelve también dos reintentos
+    error, para que el ESP32 lo saque de su búfer. La clave primaria resuelve también dos reintentos
     simultáneos: el segundo choca con la restricción y se trata igual. `eventId` opcional durante la
     migración, para no romper dispositivos antiguos.
   - *Frontend:* nada; un duplicado no se empuja por SSE (`delivered: 0`).
-  - *Contrato y pruebas:* documentar `eventId` en los README del manejador y de la Raspberry; pruebas del
+  - *Contrato y pruebas:* documentar `eventId` en los README del manejador y del firmware; pruebas del
     reenvío del mismo evento dos veces (una sola lectura guardada) y de dos envíos simultáneos.
 - El servicio de predicción de riego también duerme en el plan gratuito. El backend lo espera 60
   segundos y lo intenta dos veces (`AI_SERVICE_TIMEOUT_MS`, `AI_SERVICE_MAX_ATTEMPTS`); si aun así no

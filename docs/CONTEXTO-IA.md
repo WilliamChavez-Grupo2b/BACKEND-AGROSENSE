@@ -1,0 +1,316 @@
+# AgroSense: contexto completo para una IA
+
+> Documento para entregar a un asistente de IA que va a trabajar en este proyecto. Resume qué es, cómo está
+> armado, cómo se conecta cada parte, qué está hecho, qué falta y qué reglas seguir. Estado al 10 de noviembre de
+> 2026 (dispositivo de campo: ESP32). Los documentos detallados son la fuente de verdad y se citan en cada sección; si algo aquí contradice el
+> código, manda el código.
+
+---
+
+## 1. De qué se trata el trabajo
+
+**AgroSense** es un proyecto universitario de la materia **Patrones de Software**. Es un sistema de monitoreo de
+cultivos:
+
+1. Un **dispositivo en el campo** (ESP32 Dev Module) mide la humedad del suelo, la temperatura y la humedad del aire.
+2. Envía cada lectura a un **manejador de eventos**, que la reenvía al **backend**.
+3. El backend guarda las lecturas en **PostgreSQL**, genera **alertas** cuando un valor sale del rango del cultivo y pide
+   al **servicio de IA** una **recomendación de riego**.
+4. Una **aplicación web** muestra fincas, cultivos, sensores, gráficas, alertas en vivo, un asistente conversacional (texto y
+   voz) y permite **ordenar riegos**, que pueden llegar a una bomba a través de un relé del dispositivo.
+
+El objetivo académico es **aplicar patrones de diseño creacionales y estructurales** en código real y conectado al flujo
+del sistema, y sustentarlo. Hay 10 patrones implementados en 4 lenguajes (Java, Python, C++, TypeScript); ver la sección 7
+y `docs/PATRONES.md`.
+
+> Aviso: este repositorio no contiene el enunciado ni la rúbrica oficial de la materia. Si la tarea depende de ellos,
+> pídelos al usuario en vez de suponerlos.
+
+---
+
+## 2. Componentes y carpetas
+
+El workspace es un **monorepo local** con un solo `.git`. Cada carpeta se publica después en su propio repositorio.
+
+| Carpeta | Qué es | Tecnología | Pruebas |
+|---|---|---|---|
+| `backend/agrosense/` | API REST, alertas, predicciones, órdenes de riego, dispositivos | Java 17, Spring Boot 4.1.1, Maven, JWT HS512 | `./mvnw test` |
+| `frontend/` | Aplicación web renderizada en servidor | Java 21, Spring Boot 4.1.1, Thymeleaf, Spring Security (sesión), JPA; scripts en **TypeScript estricto** compilados con `tsc` | `./mvnw test`, `npm run build && npm test` |
+| `IA/` | Reglas de riego (`/predict/irrigation`) y asistente (`/chat`, `/voice`) | Python, FastAPI. **Reglas fijas, no un modelo entrenado** | `pytest`; `python -m unittest tests.test_patterns tests.test_rules` |
+| `event-service/` | Webhook de dispositivos (`POST /events`) y canal en vivo SSE (`GET /stream`) | Python, FastAPI | `pytest` |
+| `firmware/` | Dispositivo de campo: ESP32 Dev Module (core `esp32` de Espressif 2.x/3.x). Suelo en GPIO34, DHT22 en GPIO4, relé en GPIO26 | C++ (pruebas en PC con g++; compilación con `arduino-cli` para `esp32:esp32:esp32`) | `sh firmware/test/run-tests.sh`, `sh firmware/test/compile.sh` |
+| `database/` | Esquema (`schema.sql`, única fuente de verdad), `seed_demo.sql`, `reset.sql`, `migrations/001..003`, `datasource.properties` | PostgreSQL (Neon en producción; H2 modo PostgreSQL en pruebas) | — |
+| `api/` | Contrato OpenAPI del backend (`openapi.json`), peticiones de ejemplo, verificador de contrato | Python | `python api/tools/validate_spec.py` |
+| `tools/e2e/` | Recorrido completo sin hardware (plan B sin placa): envía eventos con su propio cliente HTTP, con el mismo contrato que el ESP32 → backend → alerta → predicción → orden de riego | Python, solo biblioteca estándar | `python tools/e2e/run_e2e.py` |
+| `.github/workflows/agrosense.yml` | CI: todas las pruebas, esquema y migraciones sobre PostgreSQL real | GitHub Actions | — |
+| `compose.yaml`, `.env.example` | Todo el sistema en una máquina y todas sus variables | Docker Compose | — |
+| `agrosense-entrega/`, `agrosense-export/`, `temp_agrosense/` | Copias de los repositorios de entrega y restos de trabajo. **No se editan como fuente**; ver sección 10 | — | — |
+
+---
+
+## 3. Arquitectura y conexiones
+
+```mermaid
+flowchart LR
+    A["ESP32 Dev Module<br/>firmware/ · C++"]
+    S["Recorrido sin hardware<br/>tools/e2e/ · Python"]
+    E["Manejador de eventos<br/>event-service/ · Python"]
+    B["Backend<br/>Java · Spring Boot"]
+    D[("PostgreSQL<br/>Neon")]
+    I["Servicio de IA<br/>IA/ · Python (reglas)"]
+    L[["Proveedores de lenguaje<br/>OpenAI-compatible (Groq) · Claude · Gemini"]]
+    O[["Open-Meteo"]]
+    F["Frontend<br/>Thymeleaf + TypeScript"]
+
+    A -- "POST /events · X-Device-Key" --> E
+    S -- "el mismo contrato" --> E
+    E -- "POST /api/internal/events<br/>X-Internal-Key + X-Device-Key" --> B
+    B -- "dueño, lo guardado + orden de riego" --> E
+    E -- "respuesta con command" --> A
+    B <--> D
+    B <-- "/predict/irrigation · /chat · /voice<br/>X-Internal-Key" --> I
+    I --> L
+    B -- "pronóstico de heladas" --> O
+    E -- "SSE /stream: lecturas y alertas en vivo" --> F
+    B -. "WebSocket STOMP /ws: publicado, sin cliente" .-> F
+    F -- "/api/… con token HS512 de 2 min" --> B
+    F -. "JPA directo: desviación pendiente" .-> D
+```
+
+### Cada conexión, en detalle
+
+| Conexión | Código | Seguridad / contrato |
+|---|---|---|
+| Dispositivo → manejador de eventos | `firmware/agrosense/src/BackendProxy.h` y `ArduinoPorts.h` (`HttpBackend`: `HTTPClient` + `WiFiClientSecure` en una tarea propia), `tools/e2e/run_e2e.py` → `event-service/agrosense_events/app.py` (`POST /events`, alias `POST /webhook/eventos`) | `X-Device-Key` (alias `X-API-KEY`): llave propia del dispositivo; el backend compara su SHA-256 en tiempo constante |
+| Manejador de eventos → backend | `app.py` (`receive`) → `InternalEventController`, `DeviceEventService`, `DeviceIngestionFacade` | `X-Internal-Key` = `EVENTS_INTERNAL_KEY`, verificada por `InternalKeyFilter`; ruta fuera del JWT de usuarios. Reintenta 3 veces (0,5/1/2 s) si el backend no guardó; responde 502 después |
+| Backend → manejador → dispositivo (orden de riego) | `irrigation_dispatches`, patrón Bridge (`IrrigationOrder` × `ActuatorDriver`) | Solo con `IRRIGATION_ACTUATOR=relay`. La orden viaja **en la respuesta** al siguiente evento, una sola vez; caduca en 5 min; el dispositivo confirma con `ack` en el evento siguiente |
+| Backend ↔ BD | Repositorios Spring Data | Credenciales por variables; `ddl-auto=validate` (nunca crea tablas) |
+| Backend → IA | `AiClientService` (predicción), `AiServiceClient` (chat/voz), `AiServiceProxy` | `X-Internal-Key` = `AI_SERVICE_KEY` = `INTERNAL_API_KEY` de la IA; durante la migración también el Bearer `AI_SERVICE_TOKEN` |
+| IA → proveedores | `IA/agrosense_ia/providers.py`, `ai_factory.py` | Llave en cabecera. Orden: OpenAI-compatible → Claude → Gemini. Producción usa Groq (`qwen/qwen3.8-27b`, `whisper-large-v3-turbo`) |
+| Backend → Open-Meteo | `OpenMeteoAdapter`, `FieldWatchService` | Sin llave. Cada hora por finca con coordenadas → `FROST_RISK` |
+| Navegador → frontend | Páginas Thymeleaf, `frontend/src/main/ts/**` | Sesión de servidor (guardada en BD con Spring Session JDBC), CSRF, CSP estricta, sin `innerHTML` |
+| Frontend (servidor) → backend | `BackendClient` | Token HS512 de 2 min a nombre del usuario, firmado con `BACKEND_JWT_SECRET` (= `JWT_SECRET` del backend). Si el backend no responde a `/api/health`, cae a la BD |
+| Manejador de eventos → navegador | `app.py` (`stream`) → `frontend/src/main/ts/events/live.ts` (`EventSource`) | Token HS256 de 5 min firmado con `EVENTS_STREAM_SECRET`, pedido a `/api/ui/events/token`. Cada evento solo llega a su dueño |
+| Frontend → BD (directo) | 9 clases: `EstateService`, `CatalogService`, `SensorService`, `AlertService`, `IrrigationService`, `ReportService`, `AccountService`, `DatabaseUserDetailsService`, `DemoAccountInitializer` | **Desviación aceptada** del diagrama (decisión 27): la API del backend aún no cubre edición/baja ni los listados completos. Migrar servicio por servicio en una rama aparte |
+
+**Solo el backend (y, por ahora, el frontend) tocan la BD.** La IA, el manejador de eventos y los dispositivos no tienen
+credenciales de base de datos: la IA recibe el contexto de la finca ya armado (`farm_context`).
+
+### Contratos principales
+
+```
+# Dispositivo → manejador de eventos
+POST /events   (X-Device-Key)
+  {"device_id": "ESP32-01", "type": "reading", "ts": "2026-10-16T08:00:00-05:00",
+   "data": {"soil_moisture": 31.5, "air_temperature": 24.1, "relative_humidity": 61.0}}
+  # El ESP32 escribe ts en ISO-8601 con -05:00 (NTP) y no envía "ph": no lo mide
+  → 200 {"status": "stored", "readings": 3, "alerts": 1, "delivered": 2, "command": {...}?}
+  → 401 sin llave · 403 llave mala o dispositivo desconocido · 409 inactivo · 400 datos inválidos
+  → 429 sobre DEVICE_MAX_EVENTS_PER_MINUTE · 502 backend caído (reintentar)
+  # Con varios sensores del mismo tipo: {"soil_moisture": {"value": 31.5, "sensor_code": "AS-001"}}
+  # type "alert": data {"alert_type", "message", "severity"?, "value"?}
+  # También acepta {"deviceId", "timestamp", "datos": {"temperatura", "humedad_aire", "humedad_suelo"}}
+
+# Manejador → backend
+POST /api/internal/events  (X-Internal-Key, X-Device-Key)  mismo cuerpo
+  → 200 {"ownerEmail", "event": {"type", "deviceId", "cropId", "cropName", "readings": [...], "alerts": [...]}}
+
+# Backend → IA
+POST /predict/irrigation {"id_crop", "soil_moisture", "air_temperature", "ph", "humidity_min", ...}
+  → {"irrigate", "duration_minutes", "recommendation", "confidence", "model_used", "factors"}
+POST /chat  {"message", "history": [{"role", "text"}], "farm_context"} → {"reply", "source": "model"}
+POST /voice multipart audio|transcript, farm_context → {"reply", "transcript", "source"}
+GET  /health → {"status": "UP"}
+  # Errores {"message"}: 401, 422, 429, 502, 503, 504. Ante 429/502/503/504 el backend responde
+  # con sus datos locales (source: "local", LocalAdvisor).
+
+# Canal en vivo
+GET /api/ui/events/token (sesión del frontend) → {"enabled", "token", "streamUrl", "expiresInSeconds": 300}
+GET /api/events/token (JWT, backend)           → {"token", "expiresInSeconds": 300}
+GET /stream?token=…                            → text/event-stream: ready, reading, alert, expired, ": ping"
+```
+
+### API REST del backend (bajo `/api`, JSON, JWT en `Authorization`)
+
+`GET /`, `GET /api/health`, `POST /api/auth/login`, `POST /api/auth/register`, `GET /api/auth/check-user` (públicas);
+`GET/POST /api/fincas`, `/api/cultivos`; `GET /api/crops/{id}/sensors`, `POST /api/sensors`; `POST /api/readings`,
+`GET /api/sensors/{id}/readings`; `GET /api/alerts`, `GET /api/crops/{id}/alerts`, `PATCH /api/alerts/{id}/acknowledge`;
+`GET /api/riego/cultivo/{id}`, `POST /api/riego`; `GET /api/dashboard`, `GET /api/dashboard/{id}`;
+`GET/POST /api/crops/{id}/predictions`; `POST /api/ai/chat`, `POST /api/ai/voice`; `POST /api/devices`;
+`GET /api/crop-templates`; `POST /api/internal/events` (solo el manejador de eventos). Contrato completo en `api/openapi.json`.
+
+Roles: `ADMIN`, `FARMER`, `TECHNICIAN`. Crear fincas, cultivos, riegos, predicciones, dispositivos y atender alertas exige
+`ADMIN` o `FARMER`. Cada consulta se filtra por el dueño; un recurso ajeno da 404.
+
+---
+
+## 4. Modelo de datos
+
+Entidades (duplicadas en backend y frontend, mismo esquema): `User`, `Estate` (finca), `Crop` (cultivo), `Sensor`,
+`SensorReading`, `Alert`, `Irrigation`, `AiPrediction`, `Device`. Tablas extra: `irrigation_dispatches`,
+`sensor_readings_hourly`, `spring_session`, `spring_session_attributes`.
+
+Tipos de alerta incluyen los de rango (humedad baja/alta, temperatura baja/alta, pH) y `FROST_RISK`, `SENSOR_OFFLINE`,
+`SENSOR_FAULT`.
+
+- `database/schema.sql` es la **única fuente de verdad**; idempotente. Backend y frontend usan `ddl-auto=validate`.
+- Migraciones para la base existente, en orden: `001_devices.sql`, `002_alert_types.sql`, `003_reliability.sql`.
+  Sin la 001 y la 003 el backend nuevo no arranca; sin la 002 la base rechaza las alertas nuevas.
+- `seed_demo.sql`: usuario de ejemplo con hash inutilizable (cada app le pone su contraseña con `SEED_USER_PASSWORD` /
+  `DEMO_PASSWORD`) y dispositivo `RPI-DEMO-01` (llave con `SEED_DEVICE_KEY`). **Nunca correr `seed_demo.sql` ni
+  `reset.sql` en producción.**
+
+---
+
+## 5. Variables de entorno clave
+
+Todas están en `.env.example`. Ninguna llave tiene valor por defecto ni se escribe en el repositorio.
+
+| Servicio | Variables |
+|---|---|
+| Backend | `DATABASE_URL/USERNAME/PASSWORD`, `JWT_SECRET` (≥ 64 bytes), `CORS_ALLOWED_ORIGINS`, `LOGIN_MAX_ATTEMPTS_PER_ADDRESS=0`, `AI_SERVICE_URL`, `AI_SERVICE_KEY`, `AI_SERVICE_TOKEN`, `AI_SERVICE_TIMEOUT_MS`, `AI_CHAT_VIA_SERVICE`, `EVENTS_INTERNAL_KEY`, `EVENTS_STREAM_SECRET` (≥ 32 bytes), `SEED_DEVICE_KEY`, `IRRIGATION_ACTUATOR` (`simulated`/`relay`), `IRRIGATION_AI_ORDERS`, `IRRIGATION_MAX_RUN_MINUTES` (5, = `MAX_PUMP_ON_MS` del firmware), `AI_INGESTION_PREDICTION_MINUTES`, `ALERTS_DEVICE_SILENT_MINUTES`, `ALERTS_FROST_WATCH`, `ALERTS_STUCK_READINGS`, `DEVICE_MAX_EVENTS_PER_MINUTE`, `READINGS_RETENTION_DAYS` (0 = no borra), `SENSOR_CALIBRATION` (`TIPO=desplazamiento:ganancia`) |
+| IA | `INTERNAL_API_KEY`, `AI_SERVICE_TOKEN`, `AI_ALLOW_OPEN`, `AI_CHAT_API_KEY`, `AI_CHAT_BASE_URL`, `AI_CHAT_MODEL`, `AI_TRANSCRIPTION_MODEL`, `ANTHROPIC_*`, `GEMINI_*`, `AI_TIMEOUT_MS`, `AI_MAX_OUTPUT_TOKENS`, `AI_PROVIDER_REQUESTS_PER_MINUTE`, `AI_REPLY_CACHE_SECONDS` |
+| Manejador de eventos | `BACKEND_URL`, `EVENTS_INTERNAL_KEY`, `EVENTS_STREAM_SECRET`, `EVENTS_ALLOWED_ORIGINS`, `BACKEND_TIMEOUT_MS`, `BACKEND_RETRIES`, `EVENTS_HEARTBEAT_S`, `EVENTS_MAX_STREAMS*` |
+| Frontend | `BACKEND_URL`, `BACKEND_JWT_SECRET` (= `JWT_SECRET`), `EVENTS_PUBLIC_URL`, `IRRIGATION_ACTUATOR`, `NEON_*` / `DATABASE_*` |
+| Recorrido sin hardware | `BACKEND_URL`, `EVENTS_URL`, `API_EMAIL`, `API_PASSWORD`, `DEVICE_ID`, `DEVICE_KEY`, `CROP_ID`, `EXPECT_MODEL` |
+| Firmware (ESP32) | `arduino_secrets.h`, fuera del repositorio: `SECRET_WIFI_SSID/PASS` (2,4 GHz), `SECRET_DEVICE_ID/KEY`, `SECRET_EVENTS_HOST/PORT/TLS`, `SECRET_EVENTS_CA_CERT` (opcional), `AGRO_SOIL_DRY_RAW`/`AGRO_SOIL_WET_RAW` (en 0 = sin calibrar, no envía la humedad del suelo) |
+
+**Secretos que deben ser iguales en dos sitios:** `JWT_SECRET` (backend) = `BACKEND_JWT_SECRET` (frontend);
+`INTERNAL_API_KEY` (IA) = `AI_SERVICE_KEY` (backend); `EVENTS_INTERNAL_KEY` y `EVENTS_STREAM_SECRET` (backend = manejador).
+
+---
+
+## 6. Despliegue actual
+
+| Componente | Dónde | Dirección |
+|---|---|---|
+| Base de datos | Neon (PostgreSQL 18) | Variables del proyecto |
+| Frontend | Vercel, `agrosense-frontend` (contenedor `Dockerfile.vercel`, `vercel deploy --prod` desde la raíz) | `https://agrosense-frontend-iota.vercel.app` (protegido con Vercel Authentication) |
+| Backend | Render, `BACKEND-AGROSENSE`, Docker, plan gratuito | `https://backend-agrosense-u5mz.onrender.com` |
+| IA | Render, `ia-agrosense` | `https://ia-agrosense.onrender.com` |
+| Manejador de eventos | **No desplegado** (`event-service/render.yaml` listo) | — |
+
+- Render gratuito **duerme** cada servicio tras ~15 min y tarda 1–3 min en despertar. Por eso hay tiempos de espera largos,
+  reintentos, cola en el dispositivo y respuestas locales de respaldo.
+- Los servicios de la rama `feature/arquitectura-servicios` (dispositivos, eventos en vivo, chat por la IA) **aún no están
+  en producción**. Orden de despliegue: migraciones 001→002→003, **frontend antes que backend** (un frontend viejo falla al
+  leer tipos de alerta nuevos), backend, IA, manejador de eventos, dispositivo. Pasos completos en `docs/DESPLIEGUE.md`.
+- Local: `cp .env.example .env && docker compose up --build` → frontend en `http://localhost:8080`, webhook en
+  `http://localhost:8100/events`. El frontend también corre solo con el perfil `demo` (H2 en memoria).
+
+---
+
+## 7. Patrones de diseño implementados (núcleo académico)
+
+Rutas: `B/` = `backend/agrosense/src/main/java/com/agrosense/backend/`, `F/` = `firmware/agrosense/src/`,
+`TS/` = `frontend/src/main/ts/api/`. Detalle, diagramas y pruebas de cada uno en `docs/PATRONES.md`.
+
+| Patrón | Dónde | Para qué |
+|---|---|---|
+| **Singleton** | `F/DeviceConfig.h`, `F/WifiManager.h`, `B/pattern/creational/singleton/CalibrationRegistry.java`, `AiConfigManager.java` | Una sola radio/configuración en la placa; una sola tabla de calibración |
+| **Prototype** | `B/pattern/creational/prototype/CropTemplate.java`, `CropTemplateCatalog.java`, `SensorReadingPrototype.java` | Cada cultivo parte de una copia profunda de su plantilla |
+| **Builder** | `B/.../builder/PredictionRequest.java`, `AlertBuilder.java`, `F/ReadingJsonBuilder.h` | Objetos con muchos opcionales; `build()` valida |
+| **Abstract Factory** | `IA/agrosense_ia/ai_factory.py`, `F/HardwareFactory.h`, `F/ArduinoPorts.h` (`RealHardwareFactory`, la del ESP32) | Familias: chat + transcripción por proveedor; sensores + actuador del ESP32 o simulados |
+| **Factory Method** | `B/.../factory/alert/AlertCreator.java` + 8 subclases, `SensorFactory.java` | Cada regla crea su alerta; una alerta nueva = una clase nueva |
+| **Adapter** | `IA/agrosense_ia/providers.py`, `F/ClimateAdapters.h`, `B/.../adapter/OpenMeteoAdapter.java`, `MqttAdapter.java` | Traducen APIs/bibliotecas distintas a una interfaz común |
+| **Bridge** | `B/pattern/structural/bridge/` (`IrrigationOrder` × `ActuatorDriver`), `F/Irrigation.h` | Quién ordena el riego y cómo se acciona varían por separado |
+| **Decorator** | `F/SensorChain.h`, `F/Irrigation.h` (`PumpGuard`), `IA/agrosense_ia/ai_decorators.py`, `B/.../decorator/` | Filtrar/calibrar/validar; registrar/limitar/cachear, en capas |
+| **Facade** | `B/.../facade/DeviceIngestionFacade.java`, `SensorFacade.java`, `F/AgroSenseDevice.h`, `TS/facade.ts` | Una llamada oculta autenticar, guardar, alertar, predecir y publicar |
+| **Proxy** | `B/.../proxy/AiServiceProxy.java`, `F/BackendProxy.h`, `TS/cache-proxy.ts` | Reintentos, búfer, caché y respaldo detrás de la misma interfaz |
+
+Las marcadas en `docs/PATRONES.md` como «ya existía» venían del backend original; el resto se añadió después.
+
+---
+
+## 8. Estado de las pruebas (1 de noviembre de 2026)
+
+| Parte | Resultado |
+|---|---|
+| Backend | 151 pruebas, 0 fallos, 3 omitidas (PostgreSQL) |
+| Frontend Java | 115 pruebas, 0 fallos, 2 omitidas (PostgreSQL) |
+| Frontend TypeScript | 12 pruebas, 0 fallos |
+| IA (patrones y reglas) | 31 pruebas, 0 fallos |
+| Firmware en PC | 221 comprobaciones, 0 fallos (10 de noviembre, tras pasar al ESP32) |
+| Firmware con compilador real | Compila (33 % flash, 46 % RAM). **No probado en una placa** |
+
+Las pruebas de PostgreSQL solo corren con `POSTGRES_TEST_URL/USERNAME/PASSWORD`. En este equipo Windows el PostgreSQL
+local está bloqueado por la directiva de Control de aplicaciones (decisión 17): se usa H2 en modo PostgreSQL, Neon o la CI.
+FastAPI no carga en este equipo, así que las pruebas Python con FastAPI corren en la CI.
+
+---
+
+## 9. Qué falta (trabajo pendiente)
+
+Prioridad aproximada para la entrega/sustentación:
+
+1. **Desplegar** la rama `feature/arquitectura-servicios`: migraciones en Neon, frontend, backend, IA, manejador de eventos
+   (necesita repositorio propio o la rama `feat/event-service` de `API-AGROSENSE`), `EVENTS_PUBLIC_URL` en el frontend.
+   Guía: `docs/DESPLIEGUE.md`.
+2. **Decisión abierta:** mantener el manejador de eventos (recomendado, `docs/EVENT-SERVICE.md`) o enviar directo al backend.
+3. **Probar con el ESP32 real**: relé (que abra con GPIO26 en alto y no pulse al arrancar) y bomba **primero sin carga**,
+   calibrar `AGRO_SOIL_DRY_RAW`/`AGRO_SOIL_WET_RAW`, HTTPS contra el manejador desplegado. Lista en `firmware/README.md`.
+4. **Desviación del diagrama**: migrar las 9 clases del frontend que usan JPA directo a la API del backend (requiere en el
+   backend edición/baja de fincas, cultivos y sensores, listados completos, alertas paginadas con finca, reportes, perfil y
+   baja de cuenta).
+5. Retirar el Bearer `AI_SERVICE_TOKEN` y la IA interna del backend cuando el chat pase por el servicio de IA
+   (`AI_CHAT_VIA_SERVICE=true`).
+6. `eventId` único por evento para evitar duplicados sin `ts` (diseño completo en `docs/ARQUITECTURA.md`, sección 9).
+7. Dispositivos: listado, desactivación y rotación de llave (hoy solo alta).
+8. Menores: edición de sensores y perfil, cambio de contraseña, verificación de correo, `CHECK` en `users.role`,
+   `sensor_readings.quality` y `ai_predictions.prediction_type`, rango propio para humedad del aire, exportar reportes a PDF,
+   health check `/api/health` en Render, quitar Vercel Authentication y cambiar la contraseña de la cuenta demo antes de abrir.
+9. Más pendientes del frontend en `frontend/docs/PENDIENTES.md`.
+
+Trabajo en curso en la rama actual (`feature/rediseno-frontend`): cambios sin confirmar en `database/README.md` (documenta las
+migraciones 002 y 003) y en las pruebas `PostgresCompatibilityTests.java` y `WebFlowTests.java` del frontend.
+
+---
+
+## 10. Reglas para trabajar en este repositorio
+
+- **El workspace es la fuente de verdad.** No edites `agrosense-entrega/`, `agrosense-export/` ni `temp_agrosense/` como si
+  fueran el código principal.
+- **Publicar a los repositorios de entrega** es un procedimiento aparte (`docs/SINCRONIZACION.md`; el detalle local está en
+  `SYNC-ENTREGA.md`): los commits de una carpeta se repiten con `git format-patch --relative=<carpeta>` y `git am --3way`
+  sobre la rama correspondiente. No se tocan ramas `main`, no se fuerza ningún push y no se borra ni renombra nada en la
+  entrega. Hazlo solo cuando el usuario diga «sincroniza».
+- Correspondencia: `frontend/`→`FRONTEND-AGROSENSE`, `backend/agrosense/`→`BACKEND-AGROSENSE`, `IA/`→`IA-AGROSENSE`,
+  `database/`→`BASE-DE-DATOS-AGROSENSE`, `api/`→`API-AGROSENSE`, `event-service/`→`API-AGROSENSE`
+  (rama `feat/event-service`). `firmware/`, `tools/`, `.github/`, `docs/` no tienen repositorio todavía.
+- **Esquema:** cualquier cambio de tablas va en `database/schema.sql` **y** en una migración nueva idempotente
+  (`database/migrations/00N_*.sql`), y en `reset.sql` si aplica. Las entidades están duplicadas en backend y frontend:
+  cámbialas en los dos.
+- **Frontend:** los `.ts` se editan en `frontend/src/main/ts/`; `static/js/` es salida de `tsc` y se versiona (corre
+  `npm run build`). Sin estilos ni scripts en línea (CSP), sin `innerHTML`, colores solo en `tokens.css`.
+- **Secretos:** nunca en archivos del repositorio, ni en logs ni en URLs.
+- Commits en inglés con prefijo convencional (`feat(backend): …`, `fix(firmware): …`, `docs: …`); documentación en español.
+- Antes de dar algo por terminado, corre las pruebas de la parte tocada (sección 2) y di qué no se pudo correr.
+- **Seguridad física:** la bomba no se ha probado con hardware real. La seguridad de la bomba vive en el firmware
+  (`PumpGuard`, máximo absoluto, perro guardián) y no debe depender de la red.
+
+---
+
+## 11. Avisos honestos para la sustentación
+
+- La «IA» de riego son **reglas fijas** (`agrosense-riego-reglas-1.0`); cada recomendación nombra sus reglas en `factors`.
+  El asistente conversacional sí usa un modelo de lenguaje externo.
+- Las plantillas de cultivo traen rangos de partida **no validados agronómicamente**.
+- El pH solo es fiable con sonda calibrada; **el firmware actual no lo mide**.
+- La calibración por defecto es neutra: inventar valores falsearía las lecturas.
+- Plan de demo y qué hacer si algo falla: `docs/DEMO.md`.
+
+---
+
+## 12. Mapa de documentos
+
+| Documento | Contenido |
+|---|---|
+| `README.md` | Resumen, arquitectura, variables nuevas, orden de despliegue |
+| `docs/ARQUITECTURA.md` | Inspección completa, conexiones, contratos, 39 decisiones, cobertura página↔servicio, seguridad, verificación, pendientes |
+| `docs/PATRONES.md` | Cada patrón con clases, diagramas, pruebas y justificación |
+| `docs/DESPLIEGUE.md` | Pasos de producción en Render y Vercel |
+| `docs/DEMO.md` | Plan de la demo y contingencias |
+| `docs/EVENT-SERVICE.md` | Mantener o quitar el manejador de eventos |
+| `docs/SINCRONIZACION.md` | Qué carpeta va a qué repositorio |
+| `database/README.md`, `api/README.md`, `IA/README.md`, `event-service/README.md`, `firmware/README.md`, `frontend/README.md`, `backend/README.md` | Detalle de cada componente |
+| `frontend/docs/PENDIENTES.md`, `backend/docs/PRUEBAS-IA.md` | Pendientes del frontend y pruebas de la IA |
