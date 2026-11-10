@@ -4,7 +4,7 @@
 #   browser ──▶ frontend :8080 ──▶ backend :9000 ──▶ postgres
 #      │                              ├──▶ ia-service :8000 (predictions and, with AI_CHAT_VIA_SERVICE=true, the chat)
 #      │                              ▲
-#      └── live events ◀── event-service :8100 ◀── Raspberry (raspberry/simulator.py, EVENTS_URL=http://localhost:8100/events)
+#      └── live events ◀── event-service :8100 ◀── ESP32 (firmware/) or tools/e2e/run_e2e.py, at http://localhost:8100/events
 #
 # The frontend still reads the database itself for the pages the backend API does not cover yet; see
 # docs/ARQUITECTURA.md, "Desviación pendiente". The AI and event services have no database access.

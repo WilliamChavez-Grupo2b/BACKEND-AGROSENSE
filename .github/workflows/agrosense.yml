@@ -105,7 +105,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        service: [IA, event-service, raspberry]
+        service: [IA, event-service]
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-python@v6
@@ -204,18 +204,6 @@ jobs:
           EXPECT_MODEL: rules
           E2E_WAIT_S: '180'
         run: python tools/e2e/run_e2e.py
-      - name: The simulator against the real event service
-        working-directory: raspberry
-        env:
-          EVENTS_URL: http://127.0.0.1:8100/events
-          DEVICE_ID: RPI-DEMO-01
-          DEVICE_KEY: e2e-device-key
-          SENSORS: simulated
-          QUEUE_FILE: /tmp/queue.sqlite3
-        run: |
-          pip install -r requirements.txt
-          python simulator.py --once 2>&1 | tee /tmp/simulator.log
-          grep -q "Sent:" /tmp/simulator.log
       - name: Logs
         if: failure()
         run: tail -n 60 /tmp/ia.log /tmp/events.log /tmp/backend.log

@@ -1,8 +1,0 @@
-requests==2.34.2
-# The sensors' libraries, only on a Raspberry Pi (Linux on ARM); a PC skips them and simulates.
-adafruit-blinka==9.2.0; sys_platform == "linux" and (platform_machine == "aarch64" or platform_machine == "armv7l")
-adafruit-circuitpython-dht==4.0.12; sys_platform == "linux" and (platform_machine == "aarch64" or platform_machine == "armv7l")
-spidev==3.8; sys_platform == "linux" and (platform_machine == "aarch64" or platform_machine == "armv7l")
-# The RPi.GPIO module Blinka imports, on lgpio (Pi 4 and Pi 5). lgpio itself comes from the system package
-# python3-lgpio, seen through a venv created with --system-site-packages (README.md).
-rpi-lgpio==0.6; sys_platform == "linux" and (platform_machine == "aarch64" or platform_machine == "armv7l")
