@@ -38,7 +38,7 @@ users ─┬─< estates ─< crops ─┬─< sensors ─< sensor_readings
        │                     ├─< alerts        (id_sensor opcional)
        │                     ├─< irrigations   (activated_by → users, opcional)
        │                     ├─< ai_predictions
-       │                     └─< devices       (Raspberry Pi; llave guardada como SHA-256)
+       │                     └─< devices       (ESP32; llave guardada como SHA-256)
        └───────────────────────── irrigations.activated_by
 ```
 
@@ -52,7 +52,7 @@ users ─┬─< estates ─< crops ─┬─< sensors ─< sensor_readings
 | `alerts`          | Alertas de un cultivo, con severidad y estado de atención.             |
 | `irrigations`     | Riegos automáticos y manuales.                                         |
 | `ai_predictions`  | Predicciones del servicio de IA (solo las usa el backend).             |
-| `devices`         | Dispositivos de campo (Raspberry Pi) de un cultivo. `device_code` único; de la llave solo se guarda su SHA-256 (`key_hash`). Solo los usa el backend. |
+| `devices`         | Dispositivos de campo (ESP32) de un cultivo. `device_code` único; de la llave solo se guarda su SHA-256 (`key_hash`). Solo los usa el backend. |
 | `spring_session`, `spring_session_attributes` | Sesiones de inicio de sesión del frontend (solo las usa el frontend). |
 
 Las dos tablas de sesiones las lee y escribe la biblioteca Spring Session, no una entidad: sus columnas

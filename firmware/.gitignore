@@ -1,4 +1,4 @@
-# The Wi-Fi password and the device key live here; arduino_secrets.example.h documents every value.
+# The Wi-Fi password, the device key and the soil calibration live here; arduino_secrets.example.h documents each.
 arduino_secrets.h
 build/
 test/*.exe

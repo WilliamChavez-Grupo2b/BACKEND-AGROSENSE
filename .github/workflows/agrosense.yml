@@ -137,11 +137,13 @@ jobs:
       - name: Logic on a PC
         run: sh firmware/test/run-tests.sh
       - uses: arduino/setup-arduino-cli@v2
-      - name: Real toolchain
+      - name: Real toolchain, ESP32 Dev Module
+        env:
+          ARDUINO_BOARD_MANAGER_ADDITIONAL_URLS: https://espressif.github.io/arduino-esp32/package_esp32_index.json
         run: |
           arduino-cli core update-index
-          arduino-cli core install arduino:renesas_uno
-          arduino-cli lib install "DHT sensor library" "Adafruit SHT31 Library" "Adafruit Unified Sensor" ArduinoHttpClient ArduinoJson
+          arduino-cli core install esp32:esp32
+          arduino-cli lib install "DHT sensor library" "Adafruit Unified Sensor" "Adafruit SHT31 Library"
           sh firmware/test/compile.sh
 
   end-to-end:

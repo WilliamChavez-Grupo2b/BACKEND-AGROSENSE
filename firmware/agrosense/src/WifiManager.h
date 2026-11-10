@@ -1,5 +1,5 @@
-// Singleton: the radio is one piece of hardware, so a second owner could only fight the first. Asking it to
-// reconnect blocks and upsets the module, hence the growing wait between attempts.
+// Singleton: the radio is one piece of hardware, so a second owner could only fight the first. Every attempt drops
+// the association being negotiated, so attempts are spaced with a growing wait; the core's own reconnection is off.
 #pragma once
 #include "Core.h"
 

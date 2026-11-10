@@ -1,5 +1,9 @@
 // Facade: the sketch only calls begin() and tick(). Reading the chain, building the event, the proxy, Wi-Fi, the
 // button and the pump's safety all stay behind these two calls.
+//
+// Losing the network stops a running pump: an order from far away must not keep running when nobody can stop it from
+// there. A run started with the button while already offline is the person in front of the pump, and keeps going until
+// its deadline.
 #pragma once
 #include <stdlib.h>
 #include <string.h>
@@ -68,7 +72,10 @@ class AgroSenseDevice {
       nextReadingAt_ = now + DeviceConfig::instance().get().intervalMs;
       measure();
     }
-    if (WifiManager::instance().ensureConnected(now) || backend_.busy()) {
+    bool online = WifiManager::instance().ensureConnected(now);
+    if (online_ && !online && actuator.running()) actuator.stop();
+    online_ = online;
+    if (online || backend_.busy()) {
       BackendResponse response{0, nullptr};
       bool answered = backend_.poll(response) == SendState::Done;
       if (answered && response.status >= 200 && response.status < 300) obey(parseCommand(response.body));
@@ -87,8 +94,8 @@ class AgroSenseDevice {
   static constexpr uint8_t MAX_ACKS = 4;  // one travels per event, and two orders can be decided between two events
   static constexpr uint32_t EARLIEST_EPOCH = 1735689600UL;  // 2025-01-01
 
-  // Before its first network time the module counts from its own boot. Such a time would be stored as 1970; with no
-  // time at all the backend stamps the arrival.
+  // Before NTP answers, the clock counts from the boot. Such a time would be stored as 1970; with no time at all the
+  // backend stamps the arrival.
   static uint32_t usableTime(uint32_t epochSeconds) { return epochSeconds < EARLIEST_EPOCH ? 0 : epochSeconds; }
 
   void toggleByHand() {
@@ -106,7 +113,7 @@ class AgroSenseDevice {
     char event[BackendProxy::EVENT_BYTES];
     ReadingJsonBuilder builder(event, sizeof event);
     builder.device(DeviceConfig::instance().get().deviceId)
-        .timestamp(usableTime(clock_.epochSeconds()))
+        .timestamp(usableTime(clock_.epochSeconds()), DeviceConfig::instance().get().utcOffsetMinutes)
         .soilMoisture(soil_)
         .airTemperature(climate.temperature)
         .relativeHumidity(climate.humidity);
@@ -160,6 +167,7 @@ class AgroSenseDevice {
   uint32_t nextReadingAt_ = 0;
   uint32_t lastOrder_ = 0;
   uint32_t runningOrder_ = 0;
+  bool online_ = false;
   Ack acks_[MAX_ACKS];
   uint8_t ackCount_ = 0;
 };

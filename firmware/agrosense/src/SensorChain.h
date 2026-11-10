@@ -7,7 +7,7 @@ namespace agro {
 
 class CapacitiveSoilSensor : public ISensor {
  public:
-  static constexpr int ADC_MAX = 16383;  // the UNO R4 reads 14 bits
+  static constexpr int ADC_MAX = 4095;  // the ESP32 reads 12 bits (analogReadResolution(12))
 
   CapacitiveSoilSensor(AnalogPort& port, uint8_t pin) : port_(port), pin_(pin) {}
 

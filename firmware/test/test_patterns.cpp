@@ -6,8 +6,6 @@
 #include <vector>
 
 #include "AgroSenseDevice.h"
-#include "HttpResponseReader.h"
-#include "LoopSupervisor.h"
 
 using namespace agro;
 
@@ -43,7 +41,7 @@ class Scripted : public ISensor {
 
 class FakeAnalog : public AnalogPort {
  public:
-  int value = 9000;
+  int value = 2250;
   int read(uint8_t) override { return value; }
 };
 
@@ -134,9 +132,13 @@ static void singletons_are_one_instance_and_refuse_incomplete_settings() {
   CHECK(!DeviceConfig::instance().valid());
   DeviceSettings settings;
   settings.wifiSsid = "red";
-  settings.deviceId = "UNO-1";
+  settings.deviceId = "ESP32-1";
   settings.deviceKey = "k";
   settings.host = "h";
+  DeviceConfig::instance().load(settings);
+  CHECK(!DeviceConfig::instance().valid());  // the soil is not calibrated by default
+  settings.soilDryRaw = 3000;
+  settings.soilWetRaw = 1500;
   DeviceConfig::instance().load(settings);
   CHECK(DeviceConfig::instance().valid());
   settings.soilWetRaw = settings.soilDryRaw;
@@ -178,12 +180,12 @@ static void the_median_ignores_a_spike_and_needs_a_majority() {
 }
 
 static void calibration_maps_either_way_the_sensor_counts() {
-  Scripted raw({Reading::ok(9000)});
-  CHECK(Calibration(raw, 12000, 6000).read().value == 50.0f);
+  Scripted raw({Reading::ok(2250)});
+  CHECK(Calibration(raw, 3000, 1500).read().value == 50.0f);
   Scripted rising({Reading::ok(300)});
   CHECK(Calibration(rising, 200, 400).read().value == 50.0f);
   Scripted broken({Reading::bad()});
-  CHECK(!Calibration(broken, 12000, 6000).read().valid);
+  CHECK(!Calibration(broken, 3000, 1500).read().valid);
 }
 
 static void range_check_clamps_near_the_limit_and_refuses_far_from_it() {
@@ -198,13 +200,13 @@ static void range_check_clamps_near_the_limit_and_refuses_far_from_it() {
 static void the_whole_chain_turns_raw_counts_into_a_percentage() {
   FakeAnalog analog;
   CapacitiveSoilSensor sensor(analog, 0);
-  SoilChain chain(sensor, 12000, 6000);
+  SoilChain chain(sensor, 3000, 1500);
   CHECK(chain.end().read().value == 50.0f);
   analog.value = 0;
   CHECK(!chain.end().read().valid);
   analog.value = CapacitiveSoilSensor::ADC_MAX;
   CHECK(!chain.end().read().valid);
-  analog.value = 16000;  // loose but not at the rail: -66 %, far outside
+  analog.value = 4000;  // loose but not at the rail: -66 %, far outside
   CHECK(!chain.end().read().valid);
 }
 
@@ -236,10 +238,10 @@ static void adapters_give_two_libraries_the_same_face() {
 
 static void the_factories_give_interchangeable_families() {
   FakeClock clock;
-  SimulatedHardwareFactory simulated(clock, 12000, 6000);
+  SimulatedHardwareFactory simulated(clock, 3000, 1500);
   HardwareFactory& hardware = simulated;
   CHECK(hardware.soilSensor().read().value == 50.0f);
-  simulated.rawSoil().set(6000);
+  simulated.rawSoil().set(1500);
   CHECK(hardware.soilSensor().read().value == 100.0f);
   CHECK(hardware.climateSensor().begin());
   CHECK(hardware.climateSensor().read().humidity.valid);
@@ -253,15 +255,15 @@ static void the_factories_give_interchangeable_families() {
 static void the_builder_writes_the_event_of_the_contract() {
   char buffer[200];
   bool built = ReadingJsonBuilder(buffer, sizeof buffer)
-                   .device("UNO-R4-01")
-                   .timestamp(1793500000)
+                   .device("ESP32-01")
+                   .timestamp(1793500000, -300)
                    .soilMoisture(Reading::ok(31.47f))
                    .airTemperature(Reading::ok(-2.5f))
                    .relativeHumidity(Reading::bad())
                    .build();
   CHECK(built);
   CHECK(std::string(buffer) ==
-        "{\"device_id\":\"UNO-R4-01\",\"type\":\"reading\",\"ts\":1793500000,"
+        "{\"device_id\":\"ESP32-01\",\"type\":\"reading\",\"ts\":\"2026-10-31T21:26:40-05:00\","
         "\"data\":{\"soil_moisture\":31.5,\"air_temperature\":-2.5}}");
 
   ReadingJsonBuilder(buffer, sizeof buffer).device("U").soilMoisture(Reading::ok(5)).build();
@@ -270,12 +272,12 @@ static void the_builder_writes_the_event_of_the_contract() {
 
 static void the_builder_refuses_what_would_not_be_a_valid_event() {
   char buffer[200];
-  CHECK(!ReadingJsonBuilder(buffer, sizeof buffer).device("UNO").build());
+  CHECK(!ReadingJsonBuilder(buffer, sizeof buffer).device("ESP32").build());
   CHECK(buffer[0] == '\0');
   CHECK(!ReadingJsonBuilder(buffer, sizeof buffer).soilMoisture(Reading::ok(5)).build());
   CHECK(!ReadingJsonBuilder(buffer, sizeof buffer).device("a\"b").soilMoisture(Reading::ok(5)).build());
   char tiny[20];
-  CHECK(!ReadingJsonBuilder(tiny, sizeof tiny).device("UNO").soilMoisture(Reading::ok(5)).build());
+  CHECK(!ReadingJsonBuilder(tiny, sizeof tiny).device("ESP32").soilMoisture(Reading::ok(5)).build());
   CHECK(tiny[0] == '\0');
 }
 
@@ -367,7 +369,7 @@ static void the_proxy_drops_a_refused_event_and_the_oldest_when_full() {
 static void every_order_works_with_every_driver() {
   FakeClock clock;
   FakeDigital pins;
-  RelayDriver relay(pins, 7, true, clock);
+  RelayDriver relay(pins, 26, true, clock);
   SimulatedDriver simulated(clock);
   CHECK(pins.writes.empty());  // nothing touches a pin from a constructor, before the core is up
   relay.begin();
@@ -426,15 +428,17 @@ struct Bench {
   FakeBackend real;
   FakeWifi wifi;
   BackendProxy proxy{real, clock};
-  SimulatedHardwareFactory hardware{clock, 12000, 6000};
+  SimulatedHardwareFactory hardware{clock, 3000, 1500};
   AgroSenseDevice device{hardware, proxy, clock};
 
   Bench() {
     DeviceSettings settings;
     settings.wifiSsid = "red";
-    settings.deviceId = "UNO-1";
+    settings.deviceId = "ESP32-1";
     settings.deviceKey = "k";
     settings.host = "h";
+    settings.soilDryRaw = 3000;
+    settings.soilWetRaw = 1500;
     DeviceConfig::instance().load(settings);
     WifiManager::instance().attach(wifi, "red", "k");
     wifi.up = true;
@@ -495,7 +499,7 @@ static void the_order_in_an_answer_reaches_the_pump_through_the_facade() {
   bench.ticks();
   CHECK(!bench.hardware.actuator().running());
 
-  bench.hardware.rawSoil().set(6000);  // soaked: 100 %
+  bench.hardware.rawSoil().set(1500);  // soaked: 100 %
   bench.clock.ms += MIN_PUMP_GAP_MS;
   bench.real.body = SECOND_AI_ORDER;
   bench.ticks();
@@ -522,7 +526,7 @@ static void the_result_of_an_order_travels_in_the_next_event() {
   bench.ticks();
   CHECK(bench.real.sent.back().find("\"ack\"") == std::string::npos);  // reported once
 
-  bench.hardware.rawSoil().set(6000);
+  bench.hardware.rawSoil().set(1500);
   bench.clock.ms += MIN_PUMP_GAP_MS;
   bench.real.body = SECOND_AI_ORDER;
   bench.ticks();
@@ -606,7 +610,7 @@ static void no_order_runs_the_pump_past_the_absolute_maximum() {
 static void the_interrupt_stops_the_pump_while_the_loop_is_blocked() {
   FakeClock clock;
   FakeDigital pins;
-  RelayDriver relay(pins, 7, true, clock);
+  RelayDriver relay(pins, 26, true, clock);
   PumpGuard guard(relay, clock);
   guard.begin();
   clock.ms += MIN_PUMP_GAP_MS;
@@ -700,29 +704,6 @@ static void the_daily_limit_cuts_and_then_refuses_until_the_next_day() {
   CHECK(!limited.running());
 }
 
-static void the_answer_is_read_byte_by_byte() {
-  HttpResponseReader reader;
-  reader.reset();
-  const char* answer = "HTTP/1.1 200 OK\r\nDate: x\r\ncontent-LENGTH: 7\r\n\r\n{\"a\":1}";
-  for (const char* c = answer; *c != '\0'; c++) {
-    CHECK(!reader.complete());
-    reader.feed(*c);
-  }
-  CHECK(reader.complete());
-  CHECK(reader.status() == 200);
-  CHECK(std::string(reader.body()) == "{\"a\":1}");
-
-  reader.reset();
-  for (const char* c = "HTTP/1.1 502 Bad Gateway\r\n\r\nno"; *c != '\0'; c++) reader.feed(*c);
-  CHECK(reader.status() == 502 && !reader.complete());  // without a length, the end is the closed connection
-
-  reader.reset();
-  CHECK(reader.status() == 0);
-  std::string big = "HTTP/1.1 200 OK\r\n\r\n" + std::string(HttpResponseReader::BODY_BYTES * 2, 'x');
-  for (char c : big) reader.feed(c);
-  CHECK(std::strlen(reader.body()) == HttpResponseReader::BODY_BYTES - 1);
-}
-
 static void a_send_that_cannot_start_waits_and_an_event_lost_in_flight_is_not_popped_twice() {
   FakeClock clock;
   FakeBackend real;
@@ -750,19 +731,6 @@ static void a_send_that_cannot_start_waits_and_an_event_lost_in_flight_is_not_po
   CHECK(slow.sent[1] == "e1");
 }
 
-static void the_watchdog_is_fed_while_the_loop_lives_even_inside_a_long_connect() {
-  LoopSupervisor supervisor;
-  supervisor.beat(1000);
-  CHECK(supervisor.mayFeed(1000));
-  CHECK(supervisor.mayFeed(1000 + 8000));   // connect()
-  CHECK(supervisor.mayFeed(1000 + 45000));  // far beyond it
-  CHECK(!supervisor.mayFeed(1000 + LoopSupervisor::MAX_SILENCE_MS));  // hung: the board resets
-  supervisor.beat(70000);
-  CHECK(supervisor.mayFeed(70001));
-  supervisor.beat(0xFFFFFF00UL);
-  CHECK(supervisor.mayFeed(0x00000100UL));  // across the wrap of millis()
-}
-
 // The timer fires in the instant between "running" being set and the relay being written. Only a very short run can
 // expire there, and it is what the last milliseconds of the day's allowance give.
 class InterruptedPort : public DigitalPort {
@@ -784,7 +752,7 @@ class InterruptedPort : public DigitalPort {
 static void the_timer_firing_during_a_start_cannot_leave_the_relay_closed_and_unwatched() {
   FakeClock clock;
   InterruptedPort pin;
-  RelayDriver relay(pin, 7, true, clock);
+  RelayDriver relay(pin, 26, true, clock);
   relay.begin();
   pin.clock = &clock;
   pin.driver = &relay;
@@ -817,36 +785,6 @@ static void only_a_stored_event_may_carry_an_order() {
     bench.ticks();
     CHECK(bench.hardware.actuator().running() == (status == 201));
   }
-}
-
-static void feed(HttpResponseReader& reader, const char* text) {
-  for (const char* c = text; *c != '\0'; c++) reader.feed(*c);
-}
-
-static void an_answer_cut_short_counts_as_no_answer() {
-  HttpResponseReader reader;
-  reader.reset();
-  feed(reader, "HTTP/1.1 200 OK\r\nContent-Length: 90\r\n\r\n{\"command\":{\"id\":6");
-  CHECK(reader.finalStatus(true) == 0);   // closed before the promised length
-  CHECK(reader.finalStatus(false) == 0);  // or still waiting at the deadline
-
-  reader.reset();
-  feed(reader, "HTTP/1.1 200 OK\r\nContent-Le");
-  CHECK(reader.finalStatus(true) == 0);  // the headers never ended
-
-  reader.reset();
-  feed(reader, "HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\n{}");
-  CHECK(reader.finalStatus(false) == 200);
-
-  reader.reset();
-  feed(reader, "HTTP/1.1 502 Bad Gateway\r\n\r\nno");
-  CHECK(reader.finalStatus(true) == 502);  // without a length, the closed connection is the end
-  CHECK(reader.finalStatus(false) == 0);   // and while it stays open nothing says the answer ended
-
-  reader.reset();
-  CHECK(reader.finalStatus(true) == 0);
-  feed(reader, "garbage-without-a-space\r\n\r\n");
-  CHECK(reader.finalStatus(true) == 0);
 }
 
 static int countOf(const Bench& bench, const std::string& text) {
@@ -999,11 +937,11 @@ static void the_retry_wait_and_the_wifi_wait_cross_the_wrap() {
 
 static void a_calibration_with_no_span_gives_no_reading() {
   FakeAnalog analog;
-  analog.value = 9000;
+  analog.value = 2250;
   CapacitiveSoilSensor sensor(analog, 0);
-  SoilChain flat(sensor, 9000, 9000);  // 0 / 0
+  SoilChain flat(sensor, 2250, 2250);  // 0 / 0
   CHECK(!flat.end().read().valid);
-  analog.value = 9100;  // something / 0
+  analog.value = 2300;  // something / 0
   CHECK(!flat.end().read().valid);
 }
 
@@ -1014,7 +952,7 @@ static void what_is_not_a_number_is_never_a_valid_reading() {
   Scripted broken({Reading::ok(NOT_A_NUMBER)});
   CHECK(!RangeCheck(broken, 0, 100, 15).read().valid);
   char buffer[200];
-  CHECK(!ReadingJsonBuilder(buffer, sizeof buffer).device("UNO").soilMoisture(Reading::ok(NOT_A_NUMBER)).build());
+  CHECK(!ReadingJsonBuilder(buffer, sizeof buffer).device("ESP32").soilMoisture(Reading::ok(NOT_A_NUMBER)).build());
 }
 
 static void a_clock_that_never_synchronized_stamps_nothing() {
@@ -1028,13 +966,54 @@ static void a_clock_that_never_synchronized_stamps_nothing() {
   bench.clock.epoch = 1793500000;
   bench.clock.ms += 30000;
   bench.ticks();
-  CHECK(bench.real.sent.back().find("\"ts\":1793500000") != std::string::npos);
+  CHECK(bench.real.sent.back().find("\"ts\":\"2026-10-31T21:26:40-05:00\"") != std::string::npos);
+}
+
+// The ESP32 sends ISO-8601 in the field's zone: across a day, a year and a leap day, and with any offset.
+static void the_time_is_written_in_the_fields_zone() {
+  char stamp[40];
+  ReadingJsonBuilder::isoTime(1798772400, -300, stamp, sizeof stamp);  // 2027-01-01T03:00:00Z
+  CHECK(std::string(stamp) == "2026-12-31T22:00:00-05:00");
+  ReadingJsonBuilder::isoTime(1798772400, 330, stamp, sizeof stamp);
+  CHECK(std::string(stamp) == "2027-01-01T08:30:00+05:30");
+  ReadingJsonBuilder::isoTime(1709200799, -300, stamp, sizeof stamp);
+  CHECK(std::string(stamp) == "2024-02-29T04:59:59-05:00");
+  ReadingJsonBuilder::isoTime(951825600, -300, stamp, sizeof stamp);
+  CHECK(std::string(stamp) == "2000-02-29T07:00:00-05:00");
+  ReadingJsonBuilder::isoTime(4102444799UL, -300, stamp, sizeof stamp);
+  CHECK(std::string(stamp) == "2099-12-31T18:59:59-05:00");
+}
+
+// An order from the backend must not outlive the network that could stop it; a run started by hand offline may.
+static void losing_the_network_stops_the_pump() {
+  Bench bench;
+  bench.start();
+  bench.real.body = MANUAL_ORDER;
+  bench.ticks();
+  CHECK(bench.hardware.actuator().running());
+  bench.wifi.up = false;
+  bench.device.tick();
+  CHECK(!bench.hardware.actuator().running());
+  bench.real.body = "{\"status\":\"stored\"}";
+  bench.wifi.up = true;
+  bench.clock.ms += 30000;
+  bench.ticks();
+  CHECK(countOf(bench, "\"command_id\":13,\"result\":\"finished\",\"ran_seconds\":0}") == 1);
+
+  bench.wifi.up = false;
+  bench.device.tick();
+  bench.clock.ms += MIN_PUMP_GAP_MS;
+  bench.hardware.simulatedButton().press();
+  bench.ticks();
+  CHECK(bench.hardware.actuator().running());
 }
 
 int main() {
   a_calibration_with_no_span_gives_no_reading();
   what_is_not_a_number_is_never_a_valid_reading();
   a_clock_that_never_synchronized_stamps_nothing();
+  the_time_is_written_in_the_fields_zone();
+  losing_the_network_stops_the_pump();
   a_month_without_watering_does_not_lock_the_pump();
   a_month_without_network_does_not_stop_the_retries();
   the_pump_keeps_its_times_across_the_wrap_of_millis();
@@ -1044,7 +1023,6 @@ int main() {
   an_order_that_arrives_twice_runs_once_and_reports_once();
   what_is_not_a_whole_order_starts_nothing();
   only_a_stored_event_may_carry_an_order();
-  an_answer_cut_short_counts_as_no_answer();
   the_timer_firing_during_a_start_cannot_leave_the_relay_closed_and_unwatched();
   singletons_are_one_instance_and_refuse_incomplete_settings();
   wifi_retries_with_a_growing_wait_and_resets_once_connected();
@@ -1067,7 +1045,6 @@ int main() {
   without_wifi_it_keeps_measuring_and_catches_up();
   the_order_in_an_answer_reaches_the_pump_through_the_facade();
   the_button_starts_and_stops_the_pump();
-  the_watchdog_is_fed_while_the_loop_lives_even_inside_a_long_connect();
   an_order_above_the_maximum_reports_what_really_ran();
   stopping_an_order_by_hand_reports_the_shorter_run();
   the_result_of_an_order_travels_in_the_next_event();
@@ -1078,7 +1055,6 @@ int main() {
   the_loop_keeps_running_while_an_answer_is_pending();
   the_gap_between_runs_is_respected();
   the_daily_limit_cuts_and_then_refuses_until_the_next_day();
-  the_answer_is_read_byte_by_byte();
   a_send_that_cannot_start_waits_and_an_event_lost_in_flight_is_not_popped_twice();
   printf("%d checks, %d failed\n", checks, failures);
   return failures == 0 ? 0 : 1;

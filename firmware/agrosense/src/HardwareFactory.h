@@ -1,4 +1,4 @@
-// Abstract Factory: a family of parts that belong together. RealHardwareFactory (ArduinoPorts.h) makes the board's;
+// Abstract Factory: a family of parts that belong together. RealHardwareFactory (ArduinoPorts.h) makes the ESP32's;
 // SimulatedHardwareFactory makes parts that run on a bench with nothing wired, and in the tests.
 #pragma once
 #include "Core.h"

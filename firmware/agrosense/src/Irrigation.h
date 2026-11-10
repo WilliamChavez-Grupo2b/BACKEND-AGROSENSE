@@ -3,7 +3,7 @@
 //
 // The pump's safety lives in this file and depends on no network. TimedDriver stops at a deadline measured with the
 // local clock and refuses to run past MAX_PUMP_ON_MS; PumpGuard, a decorator, adds the limits per day and between
-// runs. An interrupt (ArduinoPorts.h) calls enforceDeadline() ten times a second, so a blocked loop() cannot keep
+// runs. A timer of its own (ArduinoPorts.h) calls enforceDeadline() ten times a second, so a blocked loop() cannot keep
 // the pump running.
 #pragma once
 #include "Core.h"
