@@ -7,6 +7,8 @@ import com.agrosense.backend.pattern.structural.adapter.esp32.Esp32TcpIngestionS
 import com.agrosense.backend.repository.AlertRepository;
 import com.agrosense.backend.repository.DeviceRepository;
 import com.agrosense.backend.repository.SensorReadingRepository;
+import com.agrosense.backend.repository.SensorRepository;
+import org.springframework.data.domain.PageRequest;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -48,7 +50,9 @@ import static org.assertj.core.api.Assertions.assertThat;
         "esp32.device-id=RPI-DEMO-01",
         "esp32.aggregate-seconds=1",
         "esp32.tcp.first-retry-ms=100",
-        "esp32.tcp.longest-retry-ms=400"
+        "esp32.tcp.longest-retry-ms=400",
+        // What .env.example and compose.yaml set for the ESP32, which now sends raw values.
+        "sensor.calibration=AIR_TEMPERATURE=-8.5:1,RELATIVE_HUMIDITY=-6:1"
 })
 @ActiveProfiles("seed")
 class Esp32TcpIntegrationTests {
@@ -65,6 +69,8 @@ class Esp32TcpIntegrationTests {
     private SensorReadingRepository readingRepository;
     @Autowired
     private AlertRepository alertRepository;
+    @Autowired
+    private SensorRepository sensorRepository;
 
     @DynamicPropertySource
     static void fakeEsp32(DynamicPropertyRegistry registry) throws IOException {
@@ -128,6 +134,10 @@ class Esp32TcpIntegrationTests {
         assertThat(status.lastStoredAt().getOffset().getTotalSeconds()).isEqualTo(-5 * 3600);
         assertThat(status.discardedBlocks()).isZero();
         assertThat(lowMoistureAlerts(cropId)).isGreaterThan(lowMoistureBefore);
+        // The ESP32 sent 23.40 °C and 58.00 % raw: stored once corrected (-8.5, -6), not twice (6.40, 46.00).
+        assertThat(latest("AS-002")).isEqualTo(14.90);
+        assertThat(latest("AS-007")).isEqualTo(52.00);
+        assertThat(latest("AS-001")).isEqualTo(12.50);  // the soil has no correction
         assertThat(deviceRepository.findByDeviceCode("RPI-DEMO-01").orElseThrow().getLastEventAt()).isNotNull();
 
         // The ESP32 restarts: the server goes away and comes back on the same port.
@@ -148,6 +158,12 @@ class Esp32TcpIntegrationTests {
             waitFor(() -> esp32.status().storedReadings() > storedBefore, "a reading after reconnecting");
         }
         assertThat(esp32.connections()).isGreaterThan(connectionsBefore);
+    }
+
+    private double latest(String sensorCode) {
+        Integer sensorId = sensorRepository.findBySensorCode(sensorCode).orElseThrow().getIdSensor();
+        return readingRepository.findBySensorIdSensorOrderByRecordedAtDesc(sensorId, PageRequest.of(0, 1)).get(0)
+                .getValue().doubleValue();
     }
 
     private long lowMoistureAlerts(Integer cropId) {

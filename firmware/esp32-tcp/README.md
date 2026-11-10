@@ -16,8 +16,8 @@ El sketch parte del que escribió el equipo. Desde el principio, el nombre y la 
 | Archivo | Qué hace |
 |---|---|
 | `planticas_proyecto/planticas_proyecto.ino` | Red AP, servidor TCP, tarea que envía el bloque cada segundo y `loop()` que lee los sensores |
-| `planticas_proyecto/TEMPERATURA.h` | Termocupla MAX6675: promedio de 500 lecturas, menos 8.5 °C |
-| `planticas_proyecto/HUMEDAD.h` | DHT11: humedad relativa menos 6 % |
+| `planticas_proyecto/TEMPERATURA.h` | Termocupla MAX6675, valor crudo (la compensación la aplica el backend) |
+| `planticas_proyecto/HUMEDAD.h` | DHT11: humedad relativa, valor crudo (la compensación la aplica el backend) |
 | `planticas_proyecto/SENSORTIERRA.h` | Sensor capacitivo de suelo: porcentaje entre `ADC_SECO` y `ADC_HUMEDO` (**pendiente de calibrar**), limitado a 0–100 %. Con `CALIBRAR_SUELO`, imprime el valor crudo del ADC |
 | `planticas_proyecto/arduino_secrets.example.h` | Plantilla de `arduino_secrets.h` |
 
@@ -107,10 +107,10 @@ minuto.
 
 1. **Resuelto:** `SENSORTIERRA.h` restaba 76 después de calcular el porcentaje, lo que dejaba la humedad del suelo casi
    siempre en 24 % o menos. Se quitó; falta calibrar `ADC_SECO` y `ADC_HUMEDO` (sección «Calibrar el sensor de suelo»).
-2. **Compensaciones fijas** de -8.5 °C (termocupla) y -6 % (DHT11). Falta saber de dónde salen (¿una medida contra un
-   termómetro e higrómetro de referencia?). **Propuesta:** si salen de una medida, moverlas al backend con
-   `SENSOR_CALIBRATION=AIR_TEMPERATURE=-8.5:1,RELATIVE_HUMIDITY=-6:1` y dejar que el ESP32 envíe el valor crudo. Así se
-   corrigen sin volver a programar la placa. No hay que hacer las dos cosas: se restaría dos veces.
+2. **Resuelto:** las compensaciones de -8.5 °C (termocupla) y -6 % (DHT11) salieron del sketch, que ahora envía el valor
+   crudo, y las aplica el backend con `SENSOR_CALIBRATION=AIR_TEMPERATURE=-8.5:1,RELATIVE_HUMIDITY=-6:1` (`.env.example`,
+   `compose.yaml`). Se aplican una sola vez. **Están por verificar con un termómetro y un higrómetro de referencia**: si la
+   medida da otra cosa, se cambia la variable sin volver a programar la placa.
 3. **La clave del Wi-Fi era igual al nombre de la red y estaba en el código.** Ya salió a `arduino_secrets.h`; falta
    elegir una clave propia y fuerte.
 4. **El servidor TCP no tiene autenticación.** Mitigaciones simples, sin implementar:

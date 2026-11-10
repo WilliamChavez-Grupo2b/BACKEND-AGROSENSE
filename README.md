@@ -106,6 +106,10 @@ referencia y define `SENSOR_CALIBRATION` como `TIPO=desplazamiento:ganancia`, se
 SENSOR_CALIBRATION=PH=0.1:1.02,SOIL_MOISTURE=-1.5:1
 ```
 
+Para el ESP32 (`firmware/esp32-tcp/`), que envía los valores crudos, `.env.example` y `compose.yaml` traen
+`SENSOR_CALIBRATION=AIR_TEMPERATURE=-8.5:1,RELATIVE_HUMIDITY=-6:1`: las compensaciones que antes restaba el sketch. **Están por verificar con un
+termómetro y un higrómetro de referencia.**
+
 El valor guardado es `lectura × ganancia + desplazamiento`: con ese ejemplo, un pH de 6 se guarda como 6,22. Se aplica antes
 de validar el rango, y a todos los sensores de ese tipo. Una entrada mal escrita impide arrancar. Reinicia el backend para
 aplicar un cambio. Es distinto de `AGRO_SOIL_DRY_RAW` y `AGRO_SOIL_WET_RAW`, que calibran el sensor de suelo en el firmware.

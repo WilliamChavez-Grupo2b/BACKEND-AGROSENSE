@@ -23,9 +23,14 @@ y se conecta a él.
    $env:ESP32_DEVICE_ID = "RPI-DEMO-01"     # ESP32_TCP_HOST y ESP32_TCP_PORT ya valen 192.168.4.1 y 8080
    $env:ESP32_AGGREGATE_SECONDS = "60"     # una lectura guardada por minuto
    $env:IRRIGATION_ACTUATOR = "simulated"  # el ESP32 no tiene bomba
+   $env:SENSOR_CALIBRATION = "AIR_TEMPERATURE=-8.5:1,RELATIVE_HUMIDITY=-6:1"  # por verificar
    $env:SPRING_PROFILES_ACTIVE = "seed"    # más JWT_SECRET, SEED_USER_PASSWORD y la conexión de la base
    ./mvnw spring-boot:run
    ```
+
+   `SENSOR_CALIBRATION` aplica en el backend las compensaciones que antes restaba el sketch: el ESP32 envía el valor
+   crudo, así que se restan **una sola vez**. Esos -8.5 °C y -6 % **están por verificar** con un termómetro y un
+   higrómetro de referencia; sin la variable, se guarda el valor crudo.
 
    En el registro debe aparecer `ESP32: connected to 192.168.4.1:8080`. Si sale `unreachable`, revisa el Wi-Fi del PC;
    el backend reintenta solo cada 2 a 30 s. Si sale `nothing from 192.168.4.1:8080 in 30 s`, hay otro cliente conectado.

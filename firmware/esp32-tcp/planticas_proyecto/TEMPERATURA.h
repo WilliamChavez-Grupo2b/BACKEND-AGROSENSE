@@ -21,8 +21,8 @@ double promTem = 0;
 double leerTemperaturaPromedio() {
   sumaTemperaturas = 0;
   for (int i = 0; i < 500; i++) {
+    // Valor crudo: la compensación (-8.5 °C, por verificar) la aplica el backend con SENSOR_CALIBRATION.
     double temperatura = termocupla.readCelsius();
-    temperatura -= 8.5;
     sumaTemperaturas += temperatura;
     delay(2);
   }

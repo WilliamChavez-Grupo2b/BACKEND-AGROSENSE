@@ -23,8 +23,8 @@ void iniciarHumedad() {
 
 // Leer humedad relativa
 float leerHumedad() {
+  // Valor crudo: la compensación (-6 %, por verificar) la aplica el backend con SENSOR_CALIBRATION.
   humedad = dht.readHumidity();
-  humedad = humedad - 6;
   return humedad;
 }
 

@@ -420,7 +420,7 @@ Meterlo todo en una clase impediría combinarlos o probarlos por separado.
 | `PumpGuard`, sobre el driver de la bomba | C++ | `F/Irrigation.h` | `the_gap_between_runs_is_respected` |
 | `CapacitiveSoilSensor` → `MedianFilter` → `Calibration` → `RangeCheck` | C++ | `F/SensorChain.h` | `the_median_ignores_a_spike_and_needs_a_majority`, `calibration_maps_either_way_the_sensor_counts`, `range_check_clamps_near_the_limit_and_refuses_far_from_it`, `the_whole_chain_turns_raw_counts_into_a_percentage` |
 | `LoggingChatModel`, `RateLimitChatModel`, `CacheChatModel` | Python | `IA/agrosense_ia/ai_decorators.py` | `DecoratorTests` en `IA/tests/test_patterns.py` |
-| `CalibrationDecorator`, nuevo eslabón de la cadena existente | Java | `B/pattern/structural/decorator/CalibrationDecorator.java` | `decoratorCorrectsTheReadingBeforeItIsValidated` |
+| `CalibrationDecorator`, nuevo eslabón de la cadena existente. Aplica `SENSOR_CALIBRATION`; desde el 10 de noviembre también las compensaciones del ESP32 real (-8.5 °C, -6 %, por verificar), que el sketch ya no resta | Java | `B/pattern/structural/decorator/CalibrationDecorator.java` | `decoratorCorrectsTheReadingBeforeItIsValidated`, `Esp32TcpIntegrationTests` (la compensación se aplica una sola vez) |
 | `SensorReadingProcessor`, `ValidationDecorator`, `NormalizationDecorator`, **ya existían** | Java | `B/pattern/structural/decorator/` | `PatternTests.decoratorsValidateThenNormalise` |
 
 ```mermaid
