@@ -276,7 +276,7 @@ evalúa por horario.
 | `Dht22AdapterT`, `Sht31AdapterT` (alias `Dht22Adapter`, `Sht31Adapter`) | C++ | `F/ClimateAdapters.h` | `adapters_give_two_libraries_the_same_face` |
 | `OpenMeteoAdapter` | Java | `B/pattern/structural/adapter/OpenMeteoAdapter.java` | `adapterTurnsOpenMeteoArraysIntoTheColdestDay` |
 | `MqttAdapter`, **ya existía** | Java | `B/pattern/structural/adapter/MqttAdapter.java` | `PatternTests.adapterTranslatesDeviceMessagesAndRejectsUnusableOnes` |
-| `Esp32ReadingAdapter`, con `Esp32TcpClient` y `Esp32TcpIngestionService` | Java | `B/pattern/structural/adapter/esp32/` | `Esp32ReadingAdapterTests`, `Esp32TcpIntegrationTests` |
+| `Esp32BlockParser`, `Esp32ReadingAggregator`, `Esp32TcpIngestionService` (con `Esp32TcpClient`) | Java | `B/pattern/structural/adapter/esp32/` | `Esp32BlockParserTests`, `Esp32ReadingAggregatorTests`, `Esp32TcpIntegrationTests`, `Esp32OffTests` |
 
 ```mermaid
 classDiagram
@@ -314,29 +314,34 @@ classDiagram
         +start()
         +stop()
     }
-    class Esp32ReadingAdapter {
-        +adapt(line, deviceId) Optional~DeviceEventRequest~
+    class Esp32BlockParser {
+        +accept(line) Optional~Esp32Reading~
+    }
+    class Esp32ReadingAggregator {
+        +add(reading) Optional~Window~
     }
     class Esp32TcpIngestionService
     class DeviceIngestionFacade {
         +ingestFromConfiguredDevice(event)
     }
     Esp32TcpClient --> Esp32TcpIngestionService : cada línea
-    Esp32TcpIngestionService --> Esp32ReadingAdapter
-    Esp32TcpIngestionService --> DeviceIngestionFacade
+    Esp32TcpIngestionService --> Esp32BlockParser
+    Esp32TcpIngestionService --> Esp32ReadingAggregator
+    Esp32TcpIngestionService --> DeviceIngestionFacade : DeviceEventRequest
 ```
 
-**El adaptador del ESP32.** El ESP32 es un servidor TCP en su propia red Wi-Fi y envía una lectura por línea, en JSON plano
-(`{"temp": 24.5, "hum": 61, "suelo": 31.2}`) o en pares `clave=valor` / `clave:valor`. `Esp32ReadingAdapter` traduce cada
-línea al mismo `DeviceEventRequest` que recibe `POST /api/internal/events` (`temp`/`temperatura` → `air_temperature`,
-`hum`/`humedad`/`humedad_aire` → `relative_humidity`, `suelo`/`humedad_suelo` → `soil_moisture`), ignora los campos que no
-conoce y descarta con un aviso la línea sin ningún dato válido; nunca rellena un valor. `Esp32TcpIngestionService` entrega
-el resultado a `DeviceIngestionFacade`, así que calibración, guardado, alertas, publicación y predicción son las del
-webhook, sin duplicar nada. `Esp32TcpClient` es solo el transporte: un hilo propio, reconexión con espera de 2 a 30 s.
+**El adaptador del ESP32.** El ESP32 real (`firmware/esp32-tcp/`) es un servidor TCP en su propia red Wi-Fi y escribe cada
+segundo un bloque de texto (`===== PLANTICAS =====`, `Temperatura exterior: 24.50 C`, `Humedad relativa: 60.00 %`,
+`Humedad del suelo: 31.00 %`, línea vacía). El resto del backend solo conoce el evento de `POST /api/internal/events`.
+`Esp32BlockParser` lee las etiquetas sin distinguir mayúsculas ni tildes y deja fuera `nan`, `inf` y lo que esté fuera
+de rango; `Esp32ReadingAggregator` promedia 60 s; `Esp32TcpIngestionService` escribe el resultado como ese evento
+(`air_temperature`, `relative_humidity`, `soil_moisture`, con la hora del final de la ventana) y lo entrega a
+`DeviceIngestionFacade`. Así, calibración, guardado, alertas, publicación y predicción son las del webhook, sin duplicar
+nada. `Esp32TcpClient` es solo el transporte: un hilo propio, reconexión con espera de 2 a 30 s.
 
 **Justificación.** Cada adaptador esconde lo raro de su tercero: el DHT22 da NaN y exige 2 s de descanso, el SHT31 lee
 los dos valores en una sola transacción, Open-Meteo responde con listas paralelas y el ESP32 escribe líneas de texto
-con sus propios nombres. Cambiar de sensor, de servicio de clima o de formato de línea no toca a quien los usa.
+con sus propias etiquetas. Cambiar de sensor, de servicio de clima o de formato de bloque no toca a quien los usa.
 
 ## 7. Bridge
 
@@ -575,7 +580,7 @@ Los repositorios siguen la sección 1 de `ARQUITECTURA.md`. `firmware/` todavía
 | Adapter | firmware | `Dht22Adapter`, `Sht31Adapter` | `firmware/agrosense/src/ClimateAdapters.h` |
 | Adapter | BACKEND-AGROSENSE | `OpenMeteoAdapter` | `B/pattern/structural/adapter/OpenMeteoAdapter.java` |
 | Adapter (existente) | BACKEND-AGROSENSE | `MqttAdapter` | `B/pattern/structural/adapter/MqttAdapter.java` |
-| Adapter | BACKEND-AGROSENSE | `Esp32ReadingAdapter` (con `Esp32TcpClient` y `Esp32TcpIngestionService`) | `B/pattern/structural/adapter/esp32/` |
+| Adapter | BACKEND-AGROSENSE | `Esp32BlockParser`, `Esp32ReadingAggregator`, `Esp32TcpIngestionService` | `B/pattern/structural/adapter/esp32/` |
 | Bridge | BACKEND-AGROSENSE | `IrrigationOrder` × `ActuatorDriver` | `B/pattern/structural/bridge/` |
 | Bridge | firmware | `IrrigationOrder` × `ActuatorDriver` | `firmware/agrosense/src/Irrigation.h` |
 | Decorator | firmware | `MedianFilter`, `Calibration`, `RangeCheck` | `firmware/agrosense/src/SensorChain.h` |

@@ -12,12 +12,15 @@
 **AgroSense** es un proyecto universitario de la materia **Patrones de Software**. Es un sistema de monitoreo de
 cultivos:
 
-1. Un **dispositivo en el campo** (ESP32 Dev Module) mide la humedad del suelo, la temperatura y la humedad del aire.
-2. Envía cada lectura a un **manejador de eventos**, que la reenvía al **backend**.
+1. Un **dispositivo en el campo** (ESP32 Dev Module, `firmware/esp32-tcp/`) mide la humedad del suelo (sensor capacitivo),
+   la temperatura exterior (termocupla MAX6675) y la humedad del aire (DHT11).
+2. El ESP32 crea su propia red Wi-Fi (`PLANTICAS`) y es un **servidor TCP** en `192.168.4.1:8080`: escribe un bloque de texto
+   por segundo. El **backend** se conecta a él, promedia 60 s y guarda una lectura por minuto. (El sistema también acepta
+   eventos HTTP a través de un **manejador de eventos**; es la vía de `tools/e2e` y del firmware alternativo.)
 3. El backend guarda las lecturas en **PostgreSQL**, genera **alertas** cuando un valor sale del rango del cultivo y pide
    al **servicio de IA** una **recomendación de riego**.
 4. Una **aplicación web** muestra fincas, cultivos, sensores, gráficas, alertas en vivo, un asistente conversacional (texto y
-   voz) y permite **ordenar riegos**, que pueden llegar a una bomba a través de un relé del dispositivo.
+   voz) y permite **ordenar riegos**. El ESP32 real no tiene bomba ni acepta órdenes: su riego solo se registra.
 
 El objetivo académico es **aplicar patrones de diseño creacionales y estructurales** en código real y conectado al flujo
 del sistema, y sustentarlo. Hay 10 patrones implementados en 4 lenguajes (Java, Python, C++, TypeScript); ver la sección 7
@@ -38,11 +41,11 @@ El workspace es un **monorepo local** con un solo `.git`. Cada carpeta se public
 | `frontend/` | Aplicación web renderizada en servidor | Java 21, Spring Boot 4.1.1, Thymeleaf, Spring Security (sesión), JPA; scripts en **TypeScript estricto** compilados con `tsc` | `./mvnw test`, `npm run build && npm test` |
 | `IA/` | Reglas de riego (`/predict/irrigation`) y asistente (`/chat`, `/voice`) | Python, FastAPI. **Reglas fijas, no un modelo entrenado** | `pytest`; `python -m unittest tests.test_patterns tests.test_rules` |
 | `event-service/` | Webhook de dispositivos (`POST /events`) y canal en vivo SSE (`GET /stream`) | Python, FastAPI | `pytest` |
-| `firmware/` | Dispositivo de campo: ESP32 Dev Module (core `esp32` de Espressif 2.x/3.x). Suelo en GPIO34, DHT22 en GPIO4, relé en GPIO26 | C++ (pruebas en PC con g++; compilación con `arduino-cli` para `esp32:esp32:esp32`) | `sh firmware/test/run-tests.sh`, `sh firmware/test/compile.sh` |
+| `firmware/esp32-tcp/` | **El dispositivo real**: sketch del equipo para ESP32 Dev Module (modo AP `PLANTICAS`, servidor TCP 8080, un bloque por segundo, un solo cliente, sin órdenes). MAX6675 en GPIO5/17/16, DHT11 en GPIO4, suelo en GPIO34 | C++ / Arduino | `sh firmware/test/compile.sh` (en la CI) |
+| `firmware/agrosense/` | **Alternativa no usada**: firmware cliente HTTP con relé y patrones (no está cargado en la placa) | C++ (pruebas en PC con g++) | `sh firmware/test/run-tests.sh` |
 | `database/` | Esquema (`schema.sql`, única fuente de verdad), `seed_demo.sql`, `reset.sql`, `migrations/001..003`, `datasource.properties` | PostgreSQL (Neon en producción; H2 modo PostgreSQL en pruebas) | — |
 | `api/` | Contrato OpenAPI del backend (`openapi.json`), peticiones de ejemplo, verificador de contrato | Python | `python api/tools/validate_spec.py` |
 | `tools/e2e/` | Recorrido completo sin hardware (plan B sin placa): envía eventos con su propio cliente HTTP, con el mismo contrato que el ESP32 → backend → alerta → predicción → orden de riego | Python, solo biblioteca estándar | `python tools/e2e/run_e2e.py` |
-| (hardware actual) | El ESP32 instalado corre su propio programa como **servidor TCP** (red `PLANTICAS`, `192.168.4.1:8080`), que no está en este repositorio; el backend lo lee por TCP. `firmware/` es el firmware cliente HTTP, que no está cargado en esa placa | — | — |
 | `.github/workflows/agrosense.yml` | CI: todas las pruebas, esquema y migraciones sobre PostgreSQL real | GitHub Actions | — |
 | `compose.yaml`, `.env.example` | Todo el sistema en una máquina y todas sus variables | Docker Compose | — |
 | `agrosense-entrega/`, `agrosense-export/`, `temp_agrosense/` | Copias de los repositorios de entrega y restos de trabajo. **No se editan como fuente**; ver sección 10 | — | — |
@@ -53,8 +56,8 @@ El workspace es un **monorepo local** con un solo `.git`. Cada carpeta se public
 
 ```mermaid
 flowchart LR
-    A["ESP32 Dev Module<br/>firmware/ · C++"]
-    T["ESP32 servidor TCP<br/>red PLANTICAS · 192.168.4.1:8080"]
+    T["ESP32 (AP PLANTICAS)<br/>firmware/esp32-tcp · 192.168.4.1:8080"]
+    A["Firmware HTTP alternativo<br/>firmware/agrosense · no cargado"]
     S["Recorrido sin hardware<br/>tools/e2e/ · Python"]
     E["Manejador de eventos<br/>event-service/ · Python"]
     B["Backend<br/>Java · Spring Boot"]
@@ -65,7 +68,7 @@ flowchart LR
     F["Frontend<br/>Thymeleaf + TypeScript"]
 
     A -- "POST /events · X-Device-Key" --> E
-    T -- "TCP 8080 · una lectura por línea" --> B
+    T -- "TCP 8080 · un bloque por segundo" --> B
     S -- "el mismo contrato" --> E
     E -- "POST /api/internal/events<br/>X-Internal-Key + X-Device-Key" --> B
     B -- "dueño, lo guardado + orden de riego" --> E
@@ -85,7 +88,7 @@ flowchart LR
 | Conexión | Código | Seguridad / contrato |
 |---|---|---|
 | Dispositivo → manejador de eventos | `firmware/agrosense/src/BackendProxy.h` y `ArduinoPorts.h` (`HttpBackend`: `HTTPClient` + `WiFiClientSecure` en una tarea propia), `tools/e2e/run_e2e.py` → `event-service/agrosense_events/app.py` (`POST /events`, alias `POST /webhook/eventos`) | `X-Device-Key` (alias `X-API-KEY`): llave propia del dispositivo; el backend compara su SHA-256 en tiempo constante |
-| ESP32 --TCP 8080--> Backend | `Esp32TcpClient` (hilo propio, reconexión 2–30 s) → `Esp32ReadingAdapter` (JSON plano o `clave=valor`) → `Esp32TcpIngestionService` → `DeviceIngestionFacade.ingestFromConfiguredDevice` | **Sin `X-Device-Key`**: el dispositivo es `ESP32_DEVICE_ID` porque la configuración lo dice; solo para la red local del ESP32 (decisión 40 de `docs/ARQUITECTURA.md`). El backend es el cliente; el PC se une a la red `PLANTICAS` desde el sistema operativo. No se envían órdenes de riego por TCP (TODO hasta definir el protocolo). Sin pasar por el manejador de eventos, la vista del cultivo se actualiza consultando `/api/ui/crops/{id}/latest` cada 30 s |
+| ESP32 (AP PLANTICAS) --TCP 8080--> Backend | `Esp32TcpClient` (hilo propio; 5 s para conectar, 30 s sin datos = conexión muerta, reconexión 2–30 s, líneas de más de 256 caracteres fuera) → `Esp32BlockParser` (un bloque `===== PLANTICAS =====` → una lectura; `nan` y fuera de rango se omiten) → `Esp32ReadingAggregator` (promedio de `ESP32_AGGREGATE_SECONDS`, 60) → `Esp32TcpIngestionService` → `DeviceIngestionFacade.ingestFromConfiguredDevice` | **Sin `X-Device-Key`**: el dispositivo es `ESP32_DEVICE_ID` porque la configuración lo dice; `ESP32_TCP_HOST` solo IPv4 privada. Solo para la red local del ESP32 (decisión 40 de `docs/ARQUITECTURA.md`). El PC se une a `PLANTICAS` desde el sistema operativo. Nada se escribe en el socket: las órdenes de su cultivo solo se registran (`Esp32ReadOnlyActuatorDriver`). Estado en `GET /api/devices/esp32/status`. En vivo: la vista del cultivo consulta `/api/ui/crops/{id}/latest` cada 30 s |
 | Manejador de eventos → backend | `app.py` (`receive`) → `InternalEventController`, `DeviceEventService`, `DeviceIngestionFacade` | `X-Internal-Key` = `EVENTS_INTERNAL_KEY`, verificada por `InternalKeyFilter`; ruta fuera del JWT de usuarios. Reintenta 3 veces (0,5/1/2 s) si el backend no guardó; responde 502 después |
 | Backend → manejador → dispositivo (orden de riego) | `irrigation_dispatches`, patrón Bridge (`IrrigationOrder` × `ActuatorDriver`) | Solo con `IRRIGATION_ACTUATOR=relay`. La orden viaja **en la respuesta** al siguiente evento, una sola vez; caduca en 5 min; el dispositivo confirma con `ack` en el evento siguiente |
 | Backend ↔ BD | Repositorios Spring Data | Credenciales por variables; `ddl-auto=validate` (nunca crea tablas) |
@@ -176,9 +179,10 @@ Todas están en `.env.example`. Ninguna llave tiene valor por defecto ni se escr
 | IA | `INTERNAL_API_KEY`, `AI_SERVICE_TOKEN`, `AI_ALLOW_OPEN`, `AI_CHAT_API_KEY`, `AI_CHAT_BASE_URL`, `AI_CHAT_MODEL`, `AI_TRANSCRIPTION_MODEL`, `ANTHROPIC_*`, `GEMINI_*`, `AI_TIMEOUT_MS`, `AI_MAX_OUTPUT_TOKENS`, `AI_PROVIDER_REQUESTS_PER_MINUTE`, `AI_REPLY_CACHE_SECONDS` |
 | Manejador de eventos | `BACKEND_URL`, `EVENTS_INTERNAL_KEY`, `EVENTS_STREAM_SECRET`, `EVENTS_ALLOWED_ORIGINS`, `BACKEND_TIMEOUT_MS`, `BACKEND_RETRIES`, `EVENTS_HEARTBEAT_S`, `EVENTS_MAX_STREAMS*` |
 | Frontend | `BACKEND_URL`, `BACKEND_JWT_SECRET` (= `JWT_SECRET`), `EVENTS_PUBLIC_URL`, `IRRIGATION_ACTUATOR`, `NEON_*` / `DATABASE_*` |
-| Backend, ESP32 por TCP | `ESP32_TCP_ENABLED` (`false`; en Render siempre apagado), `ESP32_TCP_HOST` (`192.168.4.1`), `ESP32_TCP_PORT` (`8080`), `ESP32_DEVICE_ID` (`RPI-DEMO-01`, debe existir en `devices`). La contraseña de la red Wi-Fi no va en el repositorio |
+| Backend, ESP32 por TCP | `ESP32_TCP_ENABLED` (`false`; en Render siempre apagado), `ESP32_TCP_HOST` (`192.168.4.1`, solo IPv4 privada), `ESP32_TCP_PORT` (`8080`), `ESP32_DEVICE_ID` (`RPI-DEMO-01`, debe existir en `devices`), `ESP32_AGGREGATE_SECONDS` (`60`). La clave de la red Wi-Fi no va en el repositorio |
 | Recorrido sin hardware | `BACKEND_URL`, `EVENTS_URL`, `API_EMAIL`, `API_PASSWORD`, `DEVICE_ID`, `DEVICE_KEY`, `CROP_ID`, `EXPECT_MODEL` |
-| Firmware (ESP32) | `arduino_secrets.h`, fuera del repositorio: `SECRET_WIFI_SSID/PASS` (2,4 GHz), `SECRET_DEVICE_ID/KEY`, `SECRET_EVENTS_HOST/PORT/TLS`, `SECRET_EVENTS_CA_CERT` (opcional), `AGRO_SOIL_DRY_RAW`/`AGRO_SOIL_WET_RAW` (en 0 = sin calibrar, no envía la humedad del suelo) |
+| ESP32 real (`firmware/esp32-tcp/`) | `arduino_secrets.h`, fuera del repositorio: `SECRET_AP_SSID` (`PLANTICAS`) y `SECRET_AP_PASS` |
+| Firmware alternativo (`firmware/agrosense/`) | `arduino_secrets.h`, fuera del repositorio: `SECRET_WIFI_SSID/PASS`, `SECRET_DEVICE_ID/KEY`, `SECRET_EVENTS_HOST/PORT/TLS`, `SECRET_EVENTS_CA_CERT`, `AGRO_SOIL_DRY_RAW`/`AGRO_SOIL_WET_RAW` |
 
 **Secretos que deben ser iguales en dos sitios:** `JWT_SECRET` (backend) = `BACKEND_JWT_SECRET` (frontend);
 `INTERNAL_API_KEY` (IA) = `AI_SERVICE_KEY` (backend); `EVENTS_INTERNAL_KEY` y `EVENTS_STREAM_SECRET` (backend = manejador).
@@ -217,7 +221,7 @@ Rutas: `B/` = `backend/agrosense/src/main/java/com/agrosense/backend/`, `F/` = `
 | **Builder** | `B/.../builder/PredictionRequest.java`, `AlertBuilder.java`, `F/ReadingJsonBuilder.h` | Objetos con muchos opcionales; `build()` valida |
 | **Abstract Factory** | `IA/agrosense_ia/ai_factory.py`, `F/HardwareFactory.h`, `F/ArduinoPorts.h` (`RealHardwareFactory`, la del ESP32) | Familias: chat + transcripción por proveedor; sensores + actuador del ESP32 o simulados |
 | **Factory Method** | `B/.../factory/alert/AlertCreator.java` + 8 subclases, `SensorFactory.java` | Cada regla crea su alerta; una alerta nueva = una clase nueva |
-| **Adapter** (ESP32 por TCP) | `B/pattern/structural/adapter/esp32/Esp32ReadingAdapter.java` | Traduce cada línea del ESP32 al evento del webhook |
+| **Adapter** (ESP32 por TCP) | `B/pattern/structural/adapter/esp32/` (`Esp32BlockParser`, `Esp32ReadingAggregator`, `Esp32TcpIngestionService`) | Traduce el bloque de texto del ESP32 al evento del webhook |
 | **Adapter** | `IA/agrosense_ia/providers.py`, `F/ClimateAdapters.h`, `B/.../adapter/OpenMeteoAdapter.java`, `MqttAdapter.java` | Traducen APIs/bibliotecas distintas a una interfaz común |
 | **Bridge** | `B/pattern/structural/bridge/` (`IrrigationOrder` × `ActuatorDriver`), `F/Irrigation.h` | Quién ordena el riego y cómo se acciona varían por separado |
 | **Decorator** | `F/SensorChain.h`, `F/Irrigation.h` (`PumpGuard`), `IA/agrosense_ia/ai_decorators.py`, `B/.../decorator/` | Filtrar/calibrar/validar; registrar/limitar/cachear, en capas |
@@ -249,12 +253,18 @@ FastAPI no carga en este equipo, así que las pruebas Python con FastAPI corren 
 
 Prioridad aproximada para la entrega/sustentación:
 
+0. **ESP32 real** (`firmware/esp32-tcp/README.md`, «Hallazgos», pendientes de decidir con el equipo; no se cambió nada):
+   el `- 76` de `SENSORTIERRA.h` deja la humedad del suelo casi siempre en 24 % o menos (calibrar `ADC_SECO`/`ADC_HUMEDO`
+   y quitarlo); el origen de las compensaciones -8.5 °C y -6 % (y si se mueven a `SENSOR_CALIBRATION`); una clave Wi-Fi
+   propia; mitigaciones para el servidor TCP sin autenticación; GPIO5 es pin de arranque. Probar el recorrido con la
+   placa: conectar el PC a `PLANTICAS`, `ESP32_TCP_ENABLED=true` y abrir el cultivo (`docs/DEMO.md`). Un protocolo de
+   órdenes si el ESP32 llega a tener bomba (TODO en `DeviceIngestionFacade` y `Esp32ReadOnlyActuatorDriver`).
+
 1. **Desplegar** la rama `feature/arquitectura-servicios`: migraciones en Neon, frontend, backend, IA, manejador de eventos
    (necesita repositorio propio o la rama `feat/event-service` de `API-AGROSENSE`), `EVENTS_PUBLIC_URL` en el frontend.
    Guía: `docs/DESPLIEGUE.md`.
 2. **Decisión abierta:** mantener el manejador de eventos (recomendado, `docs/EVENT-SERVICE.md`) o enviar directo al backend.
-3. **Probar con el ESP32 real**: relé (que abra con GPIO26 en alto y no pulse al arrancar) y bomba **primero sin carga**,
-   calibrar `AGRO_SOIL_DRY_RAW`/`AGRO_SOIL_WET_RAW`, HTTPS contra el manejador desplegado. Lista en `firmware/README.md`.
+3. **Firmware alternativo (`firmware/agrosense/`)**: solo si se decide usarlo en vez del sketch real; está sin probar en una placa.
 4. **Desviación del diagrama**: migrar las 9 clases del frontend que usan JPA directo a la API del backend (requiere en el
    backend edición/baja de fincas, cultivos y sensores, listados completos, alertas paginadas con finca, reportes, perfil y
    baja de cuenta).

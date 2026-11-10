@@ -2,35 +2,44 @@
 
 ## ESP32 por TCP (red local PLANTICAS)
 
-El ESP32 crea la red Wi-Fi `PLANTICAS` y espera en `192.168.4.1:8080`. El backend corre en el PC y se conecta a él.
+El ESP32 (`firmware/esp32-tcp/`) crea la red Wi-Fi `PLANTICAS` y espera en `192.168.4.1:8080`. El backend corre en el PC
+y se conecta a él.
 
-1. **Base de datos sin internet.** Unido a `PLANTICAS`, el PC normalmente pierde internet, y con él Neon. Usa una base
-   local: el PostgreSQL de `docker compose` o, sin Docker, el perfil `seed` del backend contra H2 (como el trabajo
-   `end-to-end` de la CI). Si el PC tiene además cable o el teléfono por USB con internet, Neon puede servir, pero
-   compruébalo antes.
-2. **Conecta el PC a la red `PLANTICAS`** desde el sistema operativo (Configuración > Red e Internet > Wi-Fi). La
-   contraseña la tiene el equipo; no está en el repositorio. Comprueba que llega: `Test-NetConnection 192.168.4.1 -Port
-   8080` en PowerShell debe decir `TcpTestSucceeded : True`.
-3. **Levanta el backend con el ESP32 activado**, fuera de Docker para que no haya dudas de red:
+1. **Internet y base de datos.** Unido a `PLANTICAS`, el PC pierde internet por ese adaptador. Si la base es **Neon**, el
+   PC necesita internet por otro lado: **cable de red, un segundo adaptador Wi-Fi o el teléfono por USB**. Sin eso, usa
+   una base local: el PostgreSQL de `docker compose`, o el perfil `seed` del backend contra H2, como el trabajo
+   `end-to-end` de la CI.
+2. **Conecta el PC a la red `PLANTICAS`** desde el sistema operativo (Configuración > Red e Internet > Wi-Fi). La clave
+   la tiene el equipo y no está en el repositorio. Comprueba el puerto en PowerShell:
+   `Test-NetConnection 192.168.4.1 -Port 8080` debe decir `TcpTestSucceeded : True`. Esa prueba abre y cierra una
+   conexión; no la dejes abierta.
+3. **No dejes PuTTY ni otro cliente conectado al ESP32.** Atiende un solo cliente: si PuTTY ocupa el cupo, el backend se
+   conecta pero no recibe nada, y cada 30 s lo vuelve a intentar.
+4. **Levanta el backend con el receptor encendido**, fuera de Docker para no depender de la red de los contenedores:
 
    ```powershell
    cd backend/agrosense
    $env:ESP32_TCP_ENABLED = "true"
-   $env:ESP32_DEVICE_ID = "RPI-DEMO-01"   # ESP32_TCP_HOST y ESP32_TCP_PORT ya valen 192.168.4.1 y 8080
-   $env:SPRING_PROFILES_ACTIVE = "seed"   # más JWT_SECRET, SEED_USER_PASSWORD y la conexión de la base
+   $env:ESP32_DEVICE_ID = "RPI-DEMO-01"     # ESP32_TCP_HOST y ESP32_TCP_PORT ya valen 192.168.4.1 y 8080
+   $env:ESP32_AGGREGATE_SECONDS = "60"     # una lectura guardada por minuto
+   $env:IRRIGATION_ACTUATOR = "simulated"  # el ESP32 no tiene bomba
+   $env:SPRING_PROFILES_ACTIVE = "seed"    # más JWT_SECRET, SEED_USER_PASSWORD y la conexión de la base
    ./mvnw spring-boot:run
    ```
 
-   En el registro debe aparecer `ESP32: connected to 192.168.4.1:8080`. Si sale `unreachable`, el backend reintenta solo
-   cada 2 a 30 s: revisa el Wi-Fi del PC. Con `docker compose`, pon `ESP32_TCP_ENABLED=true` en `.env`; el contenedor sale
-   por la red del PC, pero si no conecta, corre el backend fuera de Docker como arriba.
-4. **Levanta el frontend** apuntando a ese backend y a la misma base, inicia sesión con la cuenta de ejemplo y abre
-   **Cultivos > Café**. Arriba debe decir «ESP32 conectado»; los valores de los sensores AS-001, AS-002 y AS-007 se
-   actualizan solos cada 30 s, y las gráficas del inicio muestran las lecturas guardadas.
-5. Si una línea del ESP32 no trae datos que el backend entienda, el registro dice `line without any usable measure
-   dropped`. Formatos aceptados: JSON plano o `clave=valor` separados por comas (`temp`, `hum`, `suelo` y sus variantes en
-   español). Una humedad del suelo por debajo del rango del cultivo crea la alerta de humedad baja, como por el webhook.
-6. El riego **no** llega al ESP32 por TCP todavía: registrar un riego lo guarda, pero no acciona la bomba.
+   En el registro debe aparecer `ESP32: connected to 192.168.4.1:8080`. Si sale `unreachable`, revisa el Wi-Fi del PC;
+   el backend reintenta solo cada 2 a 30 s. Si sale `nothing from 192.168.4.1:8080 in 30 s`, hay otro cliente conectado.
+   Con `docker compose`, pon `ESP32_TCP_ENABLED=true` en `.env`; si el contenedor no llega al ESP32, corre el backend
+   fuera de Docker como arriba.
+5. **Levanta el frontend** contra ese backend y la misma base, inicia sesión con la cuenta de ejemplo y abre
+   **Cultivos > Café**. Al minuto arriba dice «ESP32 conectado» y los valores de AS-001 (suelo), AS-002 (temperatura) y
+   AS-007 (humedad del aire) se actualizan solos cada 30 s. Las gráficas del inicio muestran una lectura por minuto.
+6. Para ver el receptor por dentro: `GET /api/devices/esp32/status` con la sesión del backend (conectado, último bloque,
+   última lectura guardada, bloques descartados).
+7. El riego **no** llega al ESP32: no acepta órdenes ni tiene bomba. Registrar un riego para Café solo lo guarda.
+
+**Plan B sin ESP32:** `python tools/e2e/run_e2e.py` envía lecturas al manejador de eventos con el mismo modelo de evento
+y recorre lectura, alerta, predicción y orden de riego (sección «Correr todo en local» de `README.md`).
 
 ## Antes de empezar
 
@@ -85,7 +94,7 @@ Ten listo también:
 | **Render dormido** | La interfaz muestra «Despertando el servidor» | Espera 1 a 3 minutos y explica el diseño: el dispositivo reintenta cada 15 s y no pierde lecturas mientras tanto |
 | **Manejador de eventos dormido o caído** | El dispositivo no recibe respuesta | Lo mismo. Si no vuelve, la interfaz sigue mostrando lo guardado, sin datos en vivo |
 | **IA caída** | Recomendaciones con la etiqueta «Respaldo local»; asistente con la nota de que no respondió el modelo | Es un caso a favor: enseña que el sistema sigue dando una recomendación y dice de dónde sale |
-| **ESP32 por TCP sin datos** | «ESP32 sin datos desde hh:mm» en el cultivo; `unreachable` en el registro del backend | Comprueba que el PC sigue en `PLANTICAS` y el puerto con `Test-NetConnection`. El backend reconecta solo |
+| **ESP32 por TCP sin datos** | «Sin datos desde hh:mm» en el cultivo; `unreachable` o `nothing from … in 30 s` en el registro del backend | Comprueba que el PC sigue en `PLANTICAS`, cierra PuTTY u otro cliente y prueba el puerto con `Test-NetConnection`. El backend reconecta solo. Si no vuelve, plan B: `tools/e2e` |
 | **Hardware** (sensor, relé, placa) | Lecturas ausentes, alerta `SENSOR_FAULT` | Plan B: corre `python tools/e2e/run_e2e.py` en el portátil. Envía eventos con el mismo contrato y recorre lectura, alerta, predicción y orden de riego (con `IRRIGATION_ACTUATOR=relay`). Para la bomba, sube el sketch con `AGRO_SIMULATED_HARDWARE` |
 | **Base de datos** | Errores al iniciar sesión | Corre el frontend en local con el perfil `demo`, que usa datos de ejemplo en memoria |
 | **Todo lo anterior** | | Usa las capturas y `docs/PATRONES.md` |

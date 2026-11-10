@@ -15,14 +15,21 @@ Los orígenes del navegador permitidos se indican en `CORS_ALLOWED_ORIGINS`, sep
 Los dispositivos ESP32 (`firmware/` del workspace) envían sus eventos al servicio de eventos (`event-service/` del workspace), que los reenvía
 aquí. MQTT queda apagado por defecto (`MQTT_ENABLED=false`) y su código se conserva.
 
-**ESP32 por TCP.** Con `ESP32_TCP_ENABLED=true` el backend se conecta como cliente al ESP32 (`ESP32_TCP_HOST`, por defecto
-`192.168.4.1`, y `ESP32_TCP_PORT`, `8080`) y lee una lectura por línea, en JSON plano o `clave=valor`. Las clases están en
-`pattern/structural/adapter/esp32/`: `Esp32TcpClient` (hilo propio que arranca con `ApplicationReadyEvent` y se detiene
-en `@PreDestroy`; 5 s para conectar, 120 s de lectura, reconexión de 2 a 30 s), `Esp32ReadingAdapter` (patrón Adapter:
-traduce la línea al evento de `POST /api/internal/events`) y `Esp32TcpIngestionService`, que llama a
-`DeviceIngestionFacade.ingestFromConfiguredDevice`. Las lecturas son del dispositivo `ESP32_DEVICE_ID` sin comprobar
-llave: úsalo solo en la red local del ESP32 (decisión 40 de `docs/ARQUITECTURA.md`). No envía órdenes de riego al ESP32.
-Un ESP32 ausente no retrasa ni detiene el arranque.
+**ESP32 por TCP (el dispositivo real, `firmware/esp32-tcp/`).** Con `ESP32_TCP_ENABLED=true` el backend se conecta
+como cliente al ESP32 (`ESP32_TCP_HOST`, por defecto `192.168.4.1`, solo IPv4 privada, y `ESP32_TCP_PORT`, `8080`) y lee
+su bloque de texto de cada segundo. Las clases están en `pattern/structural/adapter/esp32/`:
+
+| Clase | Qué hace |
+|---|---|
+| `Esp32TcpClient` | Hilo propio que arranca con `ApplicationReadyEvent` y se detiene en `@PreDestroy`. 5 s para conectar, 30 s sin datos = conexión muerta, reconexión de 2 a 30 s, líneas de más de 256 caracteres descartadas. Solo lee: nunca escribe en el socket |
+| `Esp32BlockParser` | Una lectura por bloque `===== PLANTICAS =====` … línea vacía. `nan`, `inf`, vacío o fuera de rango (humedad de 0 a 100, temperatura de -20 a 80) dejan fuera ese campo |
+| `Esp32ReadingAggregator` | Promedia cada campo durante `ESP32_AGGREGATE_SECONDS` (60) y da una lectura con la hora del final de la ventana |
+| `Esp32TcpIngestionService` | Escribe esa lectura como el evento de `POST /api/internal/events` y la entrega a `DeviceIngestionFacade.ingestFromConfiguredDevice` |
+| `Esp32ReadOnlyActuatorDriver` | El riego del cultivo de ese ESP32 solo se registra: no acepta órdenes |
+| `Esp32ReceiverStatus` | Lo que responde `GET /api/devices/esp32/status` (con sesión): conectado, último bloque, última lectura, contadores |
+
+Las lecturas son del dispositivo `ESP32_DEVICE_ID` sin comprobar llave: úsalo solo en la red local del ESP32 (decisión
+40 de `docs/ARQUITECTURA.md`). Un ESP32 ausente no retrasa ni detiene el arranque.
 
 | Variable | Por defecto |
 |---|---|
@@ -30,6 +37,7 @@ Un ESP32 ausente no retrasa ni detiene el arranque.
 | `ESP32_TCP_HOST` | `192.168.4.1` |
 | `ESP32_TCP_PORT` | `8080` |
 | `ESP32_DEVICE_ID` | `RPI-DEMO-01` |
+| `ESP32_AGGREGATE_SECONDS` | `60` |
 
 | Método y ruta | Quién la llama | Respuesta |
 |---|---|---|

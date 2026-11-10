@@ -454,7 +454,9 @@ done
     tienen acceso a la BD; el frontend lo conserva en las 9 clases de la sección 2 hasta migrarlo, servicio
     por servicio, en una rama aparte.
 
-28. **El dispositivo de campo es un ESP32 Dev Module** (10 de noviembre de 2026). El firmware está en `firmware/`, con el
+28. **El dispositivo de campo es un ESP32 Dev Module** (10 de noviembre de 2026). *El dispositivo real corre
+    `firmware/esp32-tcp/` y se lee por TCP (decisión 40); lo que sigue describe la alternativa por HTTP, no cargada.* El
+    firmware alternativo está en `firmware/agrosense/`, con el
     core `esp32` de Espressif (2.x o 3.x), y habla el contrato de siempre (`POST /events`, `X-Device-Key`). Suelo en
     `GPIO34` (ADC1), DHT22 en `GPIO4`, relé activo en bajo en `GPIO26`. La petición HTTPS va en una tarea propia, así que
     `loop()` no espera a la red. Para probar sin placa está `tools/e2e/run_e2e.py`, que envía los eventos con su propio
@@ -499,28 +501,38 @@ done
 35. **Lecturas en vivo por SSE, no por `/ws`.** La decisión 26 sigue vigente: el navegador recibe lecturas y alertas del
     manejador de eventos. El backend publica también por WebSocket, y una prueba lo comprueba, pero la interfaz no usa ese
     canal. Añadir un segundo cliente duplicaría lo que ya funciona.
-40. **El backend lee el ESP32 por TCP, confiando en la configuración** (10 de noviembre de 2026). El ESP32 crea su propia red
-    Wi-Fi (`PLANTICAS`) y es un servidor TCP en `192.168.4.1:8080` que envía una lectura por línea. Con
-    `ESP32_TCP_ENABLED=true`, el backend se conecta como cliente (`Esp32TcpClient`, hilo propio, 5 s para conectar, 120 s
-    sin datos antes de reconectar, espera de 2 a 30 s entre intentos), traduce cada línea (`Esp32ReadingAdapter`) y la
-    entrega a `DeviceIngestionFacade.ingestFromConfiguredDevice`: calibración, guardado, alertas, publicación y predicción
-    son las del webhook. El PC se une a la red desde el sistema operativo; ni la conexión Wi-Fi ni su contraseña pasan por
-    Java ni por el repositorio.
+40. **El backend lee el ESP32 real por TCP, confiando en la configuración** (10 de noviembre de 2026). El dispositivo
+    de campo corre `firmware/esp32-tcp/` (el sketch del equipo): crea su propia red Wi-Fi (`PLANTICAS`, modo AP), es un
+    servidor TCP en `192.168.4.1:8080` y escribe cada segundo un bloque de texto (`===== PLANTICAS =====`, temperatura
+    exterior, humedad relativa, humedad del suelo, línea vacía). Atiende un solo cliente y no lee nada de lo que se le
+    envía. `firmware/agrosense/` (cliente HTTP con relé) es una alternativa que no está cargada en la placa.
+    - **Recorrido.** Con `ESP32_TCP_ENABLED=true` el backend se conecta como cliente (`Esp32TcpClient`: un hilo propio,
+      5 s para conectar, 30 s sin datos = conexión muerta, espera de 2 a 30 s entre intentos, líneas de más de 256
+      caracteres descartadas). `Esp32BlockParser` arma una lectura por bloque, `Esp32ReadingAggregator` promedia cada
+      campo durante `ESP32_AGGREGATE_SECONDS` (60) y `Esp32TcpIngestionService` entrega una sola lectura por ventana, con
+      la hora del final de la ventana en -05:00, a `DeviceIngestionFacade.ingestFromConfiguredDevice`. Calibración,
+      guardado, alertas, publicación y predicción son las del webhook. Promediar evita guardar 3 600 lecturas por hora y
+      sensor y respeta `DEVICE_MAX_EVENTS_PER_MINUTE`.
     - **Confianza.** La conexión no trae `X-Device-Key`: las lecturas son del dispositivo `ESP32_DEVICE_ID` porque la
-      configuración lo dice. **Riesgo:** cualquiera que se una a esa red y ocupe `192.168.4.1:8080` (u otro ESP32 con la
-      misma red) puede escribir lecturas a nombre de ese cultivo, y con ellas generar alertas y predicciones. Por eso es
-      solo para la red local del ESP32, con una contraseña Wi-Fi propia, y queda apagado por defecto y en Render (que
-      además no llega a esa red). El límite `DEVICE_MAX_EVENTS_PER_MINUTE` sigue aplicando.
-    - **Hora.** El ESP32 no tiene internet en su red, así que su reloj no está sincronizado: la hora de una línea se ignora
-      y el backend pone la de llegada. Las lecturas por TCP no se descartan como repetidas.
-    - **Órdenes de riego.** No se envían por TCP hasta definir ese protocolo (TODO en `DeviceIngestionFacade`). Las órdenes
-      quedan en `irrigation_dispatches` y caducan. La seguridad de la bomba sigue en el ESP32.
+      configuración lo dice. `ESP32_TCP_HOST` solo admite una IPv4 privada (10.x, 172.16-31.x, 192.168.x; el backend no
+      arranca con otra), así que nunca se lee de internet. **Riesgo:** cualquiera unido a `PLANTICAS` puede leer los datos,
+      ocupar el único cupo de cliente y dejar al backend sin lecturas, o hacerse pasar por `192.168.4.1:8080` y escribir
+      lecturas falsas a nombre de ese cultivo (con sus alertas y predicciones). Solo es aceptable en esa red local, con una
+      clave Wi-Fi propia; queda apagado por defecto y en Render, que además no llega a esa red. Las mitigaciones propuestas
+      están en `firmware/esp32-tcp/README.md` («Hallazgos»).
+    - **Hora.** La red del ESP32 no tiene internet, así que no envía hora: cada lectura lleva el final de su ventana,
+      medido por el reloj del backend.
+    - **Órdenes de riego.** El ESP32 no acepta órdenes ni tiene bomba. Con el receptor encendido, el actuador pasa por
+      `Esp32ReadOnlyActuatorDriver` (decorador): un riego para el cultivo de ese dispositivo solo se registra, como con
+      `IRRIGATION_ACTUATOR=simulated`, y nunca se escribe nada en el socket. TODO: enviarlas cuando exista un protocolo.
+    - **Estado.** `GET /api/devices/esp32/status` (con sesión) dice si está encendido y conectado, la hora del último bloque
+      y de la última lectura guardada, y cuántas lecturas se guardaron o rechazaron, cuántos bloques y líneas se
+      descartaron. No muestra la dirección ni ninguna clave.
     - **En vivo.** Estas lecturas no pasan por el manejador de eventos, así que el SSE no las lleva. Se eligió lo más
       pequeño: la vista del cultivo consulta `/api/ui/crops/{id}/latest` del frontend cada 30 s (`crop-live.ts`) y muestra
-      «ESP32 conectado» o «ESP32 sin datos desde hh:mm» según la última lectura guardada (2 minutos de margen). Un cliente
-      STOMP de `/ws` habría necesitado otra biblioteca en el navegador, abrir la CSP al backend y darle al navegador un
-      token del backend, que hoy nunca recibe; reenviar al manejador de eventos habría sumado una ruta nueva en otro
-      servicio que en esta red local quizás ni esté.
+      «ESP32 conectado» o «Sin datos desde hh:mm» si pasan más de 3 minutos sin lecturas. Con una lectura promediada por
+      minuto, 30 s de retraso no se notan. Un cliente STOMP de `/ws` habría necesitado una biblioteca nueva en el navegador,
+      abrir la CSP al backend y darle al navegador un token del backend, que hoy nunca recibe.
     - **Sin esquema nuevo.** El dispositivo de ejemplo `RPI-DEMO-01` ya está en el cultivo Café con sensores de humedad del
       suelo (AS-001), temperatura del aire (AS-002) y humedad del aire (AS-007).
 

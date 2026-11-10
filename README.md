@@ -7,8 +7,8 @@ recomendaciones de riego, y una aplicación web lo muestra todo y permite ordena
 
 ```mermaid
 flowchart LR
-    A["ESP32 Dev Module<br/>firmware/ · C++"]
-    T["ESP32 servidor TCP<br/>red PLANTICAS · 192.168.4.1:8080"]
+    A["Firmware HTTP alternativo<br/>firmware/agrosense · no cargado"]
+    T["ESP32 (AP PLANTICAS)<br/>firmware/esp32-tcp · 192.168.4.1:8080"]
     S["Recorrido sin hardware<br/>tools/e2e/ · Python"]
     E["Manejador de eventos<br/>event-service/ · Python<br/>servicio aparte: también se duerme"]
     B["Backend<br/>Java · Spring Boot"]
@@ -19,7 +19,7 @@ flowchart LR
     F["Frontend<br/>Java/Thymeleaf con scripts TypeScript"]
 
     A -- "POST /events · X-Device-Key" --> E
-    T -- "TCP 8080 · una lectura por línea" --> B
+    T -- "TCP 8080 · un bloque por segundo" --> B
     S -- "el mismo contrato" --> E
     E -- "POST /api/internal/events" --> B
     B -- "guardado + orden de riego" --> E
@@ -63,13 +63,15 @@ API_PASSWORD=<SEED_USER_PASSWORD> DEVICE_KEY=<SEED_DEVICE_KEY> python tools/e2e/
 Solo usa la biblioteca estándar de Python y envía los eventos con el mismo contrato que el ESP32. La lista de materiales,
 el cableado, las advertencias de pines y la calibración del dispositivo están en `firmware/README.md`.
 
-### ESP32 por TCP
+### ESP32 por TCP (el dispositivo real)
 
-El ESP32 también puede trabajar como servidor TCP en su propia red Wi-Fi (`PLANTICAS`, `192.168.4.1:8080`, una lectura por
-línea). Con `ESP32_TCP_ENABLED=true` el backend se conecta a él y guarda cada lectura por el mismo camino que el webhook
-(alertas y predicción incluidas); la vista del cultivo se actualiza cada 30 s y dice si el ESP32 está enviando. El PC se
-une a esa red desde el sistema operativo. Pasos en `docs/DEMO.md`; la decisión y su riesgo, en `docs/ARQUITECTURA.md`
-(decisión 40).
+El dispositivo de campo corre `firmware/esp32-tcp/`: crea su propia red Wi-Fi (`PLANTICAS`), es un servidor TCP en
+`192.168.4.1:8080` y escribe un bloque de texto con sus tres lecturas cada segundo. Con `ESP32_TCP_ENABLED=true` el
+backend se conecta a él, promedia 60 s y guarda una lectura por minuto por el mismo camino que el webhook (alertas y
+predicción incluidas). La vista del cultivo se actualiza cada 30 s y dice si el ESP32 está enviando. El ESP32 no acepta
+órdenes: el riego de su cultivo solo se registra. El PC se une a la red desde el sistema operativo. Pasos en
+`docs/DEMO.md`; la decisión y su riesgo, en `docs/ARQUITECTURA.md` (decisión 40). `firmware/agrosense/` es un firmware
+alternativo por HTTP que no está cargado en la placa.
 
 ## Variables nuevas
 
@@ -79,8 +81,9 @@ pública si no tiene credencial.
 | Variable | Servicio | Por defecto | Efecto |
 |---|---|---|---|
 | `ESP32_TCP_ENABLED` | Backend | `false` | `true` conecta el backend al ESP32 por TCP. Apagado en Render |
-| `ESP32_TCP_HOST`, `ESP32_TCP_PORT` | Backend | `192.168.4.1`, `8080` | Dónde escucha el ESP32 |
+| `ESP32_TCP_HOST`, `ESP32_TCP_PORT` | Backend | `192.168.4.1`, `8080` | Dónde escucha el ESP32. Solo una IPv4 privada |
 | `ESP32_DEVICE_ID` | Backend | `RPI-DEMO-01` | Dispositivo de `devices` al que pertenecen esas lecturas. La conexión no trae llave |
+| `ESP32_AGGREGATE_SECONDS` | Backend | `60` | Segundos que se promedian antes de guardar una lectura |
 | `IRRIGATION_ACTUATOR` | Backend y frontend | `simulated` | `relay` envía cada riego al dispositivo y cambia los textos de la interfaz |
 | `IRRIGATION_AI_ORDERS` | Backend | `false` | `true` deja a una predicción con confianza de 0,70 o más ordenar un riego sola |
 | `AI_INGESTION_PREDICTION_MINUTES` | Backend | `30` | Cada cuánto pide predicción cada cultivo con dispositivo; 0 lo apaga |
