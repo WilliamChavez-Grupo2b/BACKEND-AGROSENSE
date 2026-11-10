@@ -101,7 +101,10 @@ minuto.
   conectado** cuando el backend tenga que leer: el backend esperará 30 s sin datos y volverá a intentarlo.
 - **No acepta órdenes.** No lee nada de lo que le envía el cliente. No tiene relé ni bomba: el riego que se registre en
   AgroSense para su cultivo solo se guarda.
-- **Sin autenticación.** Cualquiera unido a la red puede leer los datos u ocupar el único cupo de cliente.
+- **Una sola estación en la red.** `WiFi.softAP(nombre, clave, 1, 0, 1)`: canal 1, red visible, como máximo un equipo
+  unido. Mientras el PC del backend esté en `PLANTICAS`, ningún otro equipo puede unirse; para usar PuTTY desde otro
+  equipo, saca antes al PC de la red.
+- **Sin autenticación en el TCP.** Quien esté unido a la red puede leer los datos u ocupar el único cupo de cliente.
 - **Sin hora.** Su red no tiene internet: el backend pone la hora de cada lectura.
 
 ## Hallazgos (pendientes de decidir con el equipo; no se cambió nada)
@@ -115,13 +118,10 @@ minuto.
 3. **Resuelto:** la clave del Wi-Fi era igual al nombre de la red y estaba en el código. Está en `arduino_secrets.h`, fuera
    del repositorio; el ejemplo trae un marcador y el sketch exige al compilar 12 caracteres o más y una clave distinta
    del nombre. La clave la pone el equipo.
-4. **El servidor TCP no tiene autenticación.** Mitigaciones simples, sin implementar:
-   - una clave Wi-Fi fuerte (12 o más caracteres) y `WiFi.softAP(nombre, clave, canal, ocultar, 1)` para admitir una sola
-     estación;
-   - un límite de tiempo por cliente en el ESP32: cerrar al que lleve, por ejemplo, 10 minutos o no haya leído nada, para
-     que un PuTTY olvidado no deje al backend sin datos;
-   - un token en la primera línea: el cliente envía `TOKEN <secreto>\n` y el ESP32 cierra la conexión si no coincide.
-     El backend lo enviaría al conectar (hoy no escribe nada en el socket).
+4. **En parte resuelto:** el servidor TCP no tiene autenticación. Ahora la red admite una sola estación
+   (`WiFi.softAP(nombre, clave, 1, 0, 1)`) y la clave es propia y de 12 o más caracteres. Por decisión del equipo **no** se
+   cierra al cliente por tiempo. El token en la primera línea queda como mejora futura (`docs/ARQUITECTURA.md`, decisión
+   40 y sección «Seguridad»).
 5. **GPIO5 es un pin de arranque** (ver advertencias).
 6. Otras observaciones menores: `leerTemperaturaPromedio()` hace 500 lecturas en 1 s, pero el MAX6675 solo convierte
    cada unos 220 ms, así que repite el mismo valor; y `loop()` lee los sensores cada 1,5 s, mientras que se envía cada

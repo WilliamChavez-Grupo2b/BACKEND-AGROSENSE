@@ -518,8 +518,13 @@ done
       arranca con otra), así que nunca se lee de internet. **Riesgo:** cualquiera unido a `PLANTICAS` puede leer los datos,
       ocupar el único cupo de cliente y dejar al backend sin lecturas, o hacerse pasar por `192.168.4.1:8080` y escribir
       lecturas falsas a nombre de ese cultivo (con sus alertas y predicciones). Solo es aceptable en esa red local, con una
-      clave Wi-Fi propia; queda apagado por defecto y en Render, que además no llega a esa red. Las mitigaciones propuestas
-      están en `firmware/esp32-tcp/README.md` («Hallazgos»).
+      clave Wi-Fi propia; queda apagado por defecto y en Render, que además no llega a esa red. Mitigaciones aplicadas: la
+      red admite **una sola estación** (`WiFi.softAP(nombre, clave, 1, 0, 1)`), que es el PC del backend, y su clave es
+      propia, de 12 o más caracteres y distinta del nombre (el sketch no compila si no). No se cierra al cliente por tiempo.
+    - **Mejora futura: token en la primera línea.** Al conectarse, el cliente enviaría `TOKEN <secreto>\n` y el ESP32
+      cerraría la conexión si no coincide; el backend lo leería de una variable (`ESP32_TCP_TOKEN`) y sería lo único que
+      escribe en el socket. Protegería el cupo de cliente y los datos aunque alguien conozca la clave Wi-Fi. No está
+      implementado.
     - **Hora.** La red del ESP32 no tiene internet, así que no envía hora: cada lectura lleva el final de su ventana,
       medido por el reloj del backend.
     - **Órdenes de riego.** El ESP32 no acepta órdenes ni tiene bomba. Con el receptor encendido, el actuador pasa por
@@ -605,6 +610,11 @@ backend. Con el perfil `demo` esa base de datos está en memoria, contiene datos
 no interviene.
 
 ## 6. Seguridad
+
+Del ESP32 por TCP (decisión 40): la confianza es la red local `PLANTICAS`, sin llave de dispositivo. La red admite una
+sola estación y una clave propia de 12 o más caracteres; `ESP32_TCP_HOST` solo acepta una IPv4 privada; el backend nunca
+escribe en el socket. **Mejora futura, no implementada:** un token en la primera línea (`TOKEN <secreto>`) que el ESP32
+compruebe antes de enviar datos.
 
 Del frontend (la del backend está en la sección 1):
 

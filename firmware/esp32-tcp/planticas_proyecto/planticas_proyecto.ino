@@ -52,7 +52,9 @@ void setup() {
 
   WiFi.mode(WIFI_AP);
 
-  bool redIniciada = WiFi.softAP(nombreRed, claveRed);
+  // Canal 1, red visible (0) y como maximo 1 estacion: solo el PC del backend puede unirse a la red. Misma firma en el
+  // core esp32 2.x y 3.x: softAP(ssid, passphrase, channel, ssid_hidden, max_connection).
+  bool redIniciada = WiFi.softAP(nombreRed, claveRed, 1, 0, 1);
 
   if (redIniciada) {
 
