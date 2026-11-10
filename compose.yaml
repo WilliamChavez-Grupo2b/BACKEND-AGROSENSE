@@ -90,6 +90,14 @@ services:
       AI_CHAT_VIA_SERVICE: ${AI_CHAT_VIA_SERVICE:-true}
       EVENTS_INTERNAL_KEY: ${EVENTS_INTERNAL_KEY:?Set EVENTS_INTERNAL_KEY in .env}
       EVENTS_STREAM_SECRET: ${EVENTS_STREAM_SECRET:?Set EVENTS_STREAM_SECRET in .env}
+      # The ESP32 over TCP. No network_mode is needed: the container's outgoing connections leave through the host,
+      # so 192.168.4.1 is reachable while the host is joined to the ESP32's Wi-Fi. network_mode: host would cut the
+      # backend off from postgres and ia-service by name, and Docker Desktop on Windows does not support it well. If
+      # the container cannot reach the ESP32, run the backend outside Docker (docs/DEMO.md).
+      ESP32_TCP_ENABLED: ${ESP32_TCP_ENABLED:-false}
+      ESP32_TCP_HOST: ${ESP32_TCP_HOST:-192.168.4.1}
+      ESP32_TCP_PORT: ${ESP32_TCP_PORT:-8080}
+      ESP32_DEVICE_ID: ${ESP32_DEVICE_ID:-RPI-DEMO-01}
     depends_on:
       postgres:
         condition: service_healthy

@@ -192,7 +192,7 @@ JOIN (VALUES
     ) AS v(crop_name, confidence, recommendation) ON v.crop_name = c.name
 WHERE NOT EXISTS (SELECT 1 FROM ai_predictions p WHERE p.id_crop = c.id_crop);
 
--- A sample device (Raspberry Pi) on the coffee crop, whose sensors AS-001 (soil moisture), AS-002 (air
+-- A sample device on the coffee crop (the ESP32 read over TCP uses it with ESP32_DEVICE_ID=RPI-DEMO-01), whose sensors AS-001 (soil moisture), AS-002 (air
 -- temperature), AS-003 (pH) and AS-007 (air humidity, the DHT22's second value) receive its readings. Like the demo user, it is created with a key hash that
 -- matches no key, so it cannot send events until the backend sets one from SEED_DEVICE_KEY.
 INSERT INTO devices (id_crop, device_code, key_hash)
