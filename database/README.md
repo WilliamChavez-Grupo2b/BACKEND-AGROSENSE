@@ -161,6 +161,13 @@ archivo es idempotente: se puede ejecutar varias veces sin efecto adicional.
 |---------|-------|--------|
 | `migrations/001_devices.sql` | 2026-10-16 | Tabla `devices` (dispositivos de campo y el SHA-256 de su llave) e índice `idx_devices_crop` |
 
+| `migrations/002_alert_types.sql` | 2026-11-01 | Amplía `ck_alerts_type` con `FROST_RISK`, `SENSOR_OFFLINE` y `SENSOR_FAULT` |
+| `migrations/003_reliability.sql` | 2026-11-01 | Tablas `irrigation_dispatches` y `sensor_readings_hourly`; columnas `moisture_before` y `moisture_after` en `irrigations` |
+
+Orden de despliegue: **migraciones 001, 002 y 003 en este orden, frontend, backend**. Prueba cada una primero en una base
+de desarrollo. Las tres se pueden repetir sin efecto y ninguna borra datos. Sin la 003 el backend nuevo no arranca, sin la
+002 la base rechaza las alertas nuevas, y un frontend anterior falla al leer un tipo de alerta que no conoce.
+
 **Antes de desplegar** un backend que use la tabla nueva, ejecuta la migración a mano en la base de
 producción (Neon, la que usan el backend de Render y el frontend de Vercel). El backend valida sus tablas
 al arrancar (`ddl-auto=validate`) y no arranca si falta `devices`.
@@ -176,6 +183,14 @@ al arrancar (`ddl-auto=validate`) y no arranca si falta `devices`.
 
    ```sql
    SELECT column_name, data_type FROM information_schema.columns WHERE table_name = 'devices';
+   ```
+
+   Tras la 002 y la 003, comprueba también:
+
+   ```sql
+   SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conname = 'ck_alerts_type';
+   SELECT table_name FROM information_schema.tables
+    WHERE table_name IN ('irrigation_dispatches', 'sensor_readings_hourly');
    ```
 
 3. Despliega el backend. Volver a ejecutar la migración más tarde no cambia nada.

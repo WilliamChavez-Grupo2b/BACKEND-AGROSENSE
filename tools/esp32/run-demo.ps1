@@ -20,6 +20,11 @@
     Aplica schema.sql, las migraciones 001 a 003 y seed_demo.sql en la base (y la contraseña de la cuenta demo). Pide
     escribir SI. Nunca contra producción.
 
+.PARAMETER BaseLocal
+    Sin Neon: usa una base H2 en archivo en tools/esp32/.run/h2 (git la ignora), que se crea y se llena con los datos de
+    ejemplo sola en cada arranque (idempotente). No necesita DB_HOST ni internet para la base. Los datos quedan solo en
+    este PC.
+
 .PARAMETER NoAbrir
     No abre el navegador al final.
 
@@ -34,6 +39,7 @@ param(
     [switch]$SinEsp32,
     [switch]$Simulado,
     [switch]$PrepararBase,
+    [switch]$BaseLocal,
     [switch]$NoAbrir,
     [switch]$Verificar,
     [string]$EnvFile = ''
@@ -170,6 +176,7 @@ function Invoke-Checks([hashtable]$values, [bool]$useEsp32, [bool]$isH2, [bool]$
     $missing = @($Required | Where-Object { -not $values.ContainsKey($_) -or $values[$_] -eq '' })
     if ($isH2) { $missing = @($missing | Where-Object { $_ -notin @('DB_HOST', 'DB_NAME', 'DB_USER', 'DB_PASSWORD', 'PROD_DB_HOST') }) }
     $markers = @($values.Keys | Where-Object { Test-Marker $values[$_] } | Sort-Object)
+    if ($isH2) { $markers = @($markers | Where-Object { $_ -notin @('DB_HOST', 'DB_NAME', 'DB_USER', 'DB_PASSWORD', 'PROD_DB_HOST') }) }
     if ($missing.Count -gt 0) {
         Write-Bad "Faltan variables: $($missing -join ', ')" "Cópialas de tools\esp32\.env.local.example a $EnvFile y llénalas."
         $failed++
@@ -186,7 +193,7 @@ function Invoke-Checks([hashtable]$values, [bool]$useEsp32, [bool]$isH2, [bool]$
 
     Write-Step '2. La base no es producción'
     if ($isH2) {
-        Write-Ok 'Base H2 local (solo para probar el script): no es producción'
+        Write-Ok 'Base H2 local de este PC: no es producción'
     } else {
         $dbHost = (Get-Value $values 'DB_HOST').Trim().ToLowerInvariant()
         $prodHost = (Get-Value $values 'PROD_DB_HOST').Trim().ToLowerInvariant()
@@ -388,6 +395,13 @@ $override = Get-Value $values 'DATABASE_URL'
 if ($override -and -not $override.StartsWith('jdbc:h2:')) {
     Stop-Demo 'DATABASE_URL en el archivo de variables solo se admite para una base H2 de prueba. Para Neon usa DB_HOST, DB_NAME, DB_USER y DB_PASSWORD.'
 }
+if ($BaseLocal -and $override) { Stop-Demo 'Usa -BaseLocal o DATABASE_URL en el archivo, no los dos.' }
+if ($BaseLocal -and $PrepararBase) { Stop-Demo '-BaseLocal ya prepara su base en cada arranque: no hace falta -PrepararBase.' }
+if ($BaseLocal) {
+    $h2 = (Join-Path $RunDir 'h2\agrosense') -replace '\\', '/'
+    $override = "jdbc:h2:file:$h2;AUTO_SERVER=TRUE;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;DEFAULT_NULL_ORDERING=HIGH"
+    Write-Host 'Modo -BaseLocal: base H2 en tools\esp32\.run\h2, no Neon; los datos quedan solo en este PC.' -ForegroundColor Magenta
+}
 $isH2 = [bool]$override
 if ($Simulado -and $SinEsp32) { Stop-Demo 'Usa -Simulado o -SinEsp32, no los dos.' }
 $useEsp32 = $Simulado -or ((-not $SinEsp32) -and ((Get-Value $values 'ESP32_TCP_ENABLED' 'true') -eq 'true'))
@@ -412,7 +426,11 @@ $backendPort = [int](Get-Value $values 'BACKEND_PORT' '9000')
 $frontendPort = [int](Get-Value $values 'FRONTEND_PORT' '8080')
 $database = Join-Path $Workspace 'database'
 $databaseUri = 'file:' + ($database -replace '\\', '/')
-if ($isH2) {
+if ($BaseLocal) {
+    $jdbc = $override
+    $dbUser = 'sa'
+    $dbPassword = ''
+} elseif ($isH2) {
     $jdbc = $override
     $dbUser = Get-Value $values 'DB_USER' 'sa'
     $dbPassword = Get-Value $values 'DB_PASSWORD' ''
@@ -456,6 +474,16 @@ if ($PrepararBase) {
     $backendVars['SPRING_PROFILES_ACTIVE'] = 'seed'
     $backendVars['SQL_INIT_MODE'] = 'always'
     # schema.sql first (it builds an empty base) and then the migrations (they bring an older base up to date).
+    $backendVars['SCHEMA_LOCATION'] = (@("$databaseUri/schema.sql") + $migrations) -join ','
+    $backendVars['SEED_LOCATION'] = "$databaseUri/seed_demo.sql"
+    $backendVars['SEED_USER_PASSWORD'] = Get-Value $values 'DEMO_PASSWORD'
+}
+
+if ($BaseLocal) {
+    # A local base needs no confirmation: schema, migrations and sample rows on every start, all idempotent.
+    $migrations = @('001_devices.sql', '002_alert_types.sql', '003_reliability.sql') | ForEach-Object { "$databaseUri/migrations/$_" }
+    $backendVars['SPRING_PROFILES_ACTIVE'] = 'seed'
+    $backendVars['SQL_INIT_MODE'] = 'always'
     $backendVars['SCHEMA_LOCATION'] = (@("$databaseUri/schema.sql") + $migrations) -join ','
     $backendVars['SEED_LOCATION'] = "$databaseUri/seed_demo.sql"
     $backendVars['SEED_USER_PASSWORD'] = Get-Value $values 'DEMO_PASSWORD'
@@ -552,6 +580,9 @@ $url = "http://localhost:$frontendPort"
 Write-Host ''
 if ($Simulado) {
     Write-Host '*** DATOS SIMULADOS: las lecturas vienen de esp32_simulado.py, no de la placa ***' -ForegroundColor Magenta
+}
+if ($BaseLocal) {
+    Write-Host '*** BASE LOCAL: H2 en tools\esp32\.run\h2, no Neon ***' -ForegroundColor Magenta
 }
 Write-Host "Frontend: $url" -ForegroundColor Green
 Write-Host "Cuenta demo: $DemoEmail (la contraseña es DEMO_PASSWORD de tu .env.local)"
