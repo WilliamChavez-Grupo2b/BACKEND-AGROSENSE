@@ -39,6 +39,17 @@ Los otros tipos (pH, conductividad, luz, lluvia, temperatura del suelo) siguen e
 así los datos viejos no se rompen y las pruebas del backend siguen igual. Solo dejan de verse. En la demo, AS-003 (pH) y
 AS-005 (conductividad) quedan guardados pero ocultos, y AS-006 pasó de luz a humedad del suelo (sigue inactivo).
 
+## Aviso «Sin datos del ESP32»
+
+El ESP32 guarda una lectura por minuto. Si pasan más de **5 minutos** sin ninguna lectura de humedad, la sección muestra un
+aviso amarillo arriba, por ejemplo: «Sin datos del ESP32 desde las 14:32 (hace 12 minutos). Revisa que esté encendido y el
+cable USB o la red PLANTICAS». El aviso aparece y desaparece solo con la consulta de cada 30 s, sin recargar la página.
+
+- El servidor arma la frase con su propia hora, así la zona horaria del navegador no la cambia.
+- Si el cultivo nunca recibió lecturas, el aviso dice que el ESP32 todavía no ha enviado nada.
+- El límite se cambia con `ESP32_SILENT_AFTER_MINUTES`. Es distinto del estado «Sin datos recientes» de los sensores,
+  que llega a la hora.
+
 ## Alertas de humedad del aire
 
 Cada lectura de humedad relativa se compara con el rango de humedad del aire del cultivo:
@@ -96,6 +107,7 @@ humedad del aire a `crops` y renombra el dispositivo `RPI-DEMO-01` a `ESP32-PLAN
 | Formato del feed y cuándo repintar | `src/test/ts/api-patterns.test.mjs` (`esp32Humidity`) |
 | La página no hace más consultas de las previstas | `QueryBudgetTests` (`/sensores`: 5) |
 | Solo se ofrecen y se muestran los tres valores del ESP32 | `WebFlowTests.theApplicationOnlyOffersAndShowsWhatTheEsp32Measures` |
+| El aviso «Sin datos del ESP32»: cuándo sale y qué dice | `Esp32SilencePolicyTests`, `WebFlowTests.anEsp32ThatStoppedSendingIsSaidOnThePageAndInTheFeed` |
 | Alerta de aire baja o alta, solo con su propio rango | `DesignPatternTests.theAirsHumidityIsJudgedOnlyAgainstItsOwnOptionalRange`, `DeviceIntegrationTests` |
 | Editar un cultivo sin campo de pH no borra su pH | `WebFlowTests.editingACropWithoutAPhFieldKeepsTheStoredPh` |
 | La gráfica de 24 h: series, rangos y solo del dueño | `WebFlowTests.theEsp32DayChartHasTheOwnersSoilAndAirHumidityWithTheirRanges` |
