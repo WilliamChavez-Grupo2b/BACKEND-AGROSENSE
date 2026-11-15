@@ -62,7 +62,7 @@ cada 30 s ([SENSOR-ESP32.md](SENSOR-ESP32.md)).
 Si el PC no logra unirse a la red PLANTICAS pero el ESP32 está conectado por USB, usa los datos reales por el cable:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File tools\esp32un-demo.ps1 -Usb -BaseLocal
+powershell -ExecutionPolicy Bypass -File tools\esp32\run-demo.ps1 -Usb -BaseLocal
 ```
 
 `tools\esp32\esp32_usb.py` lee el puerto serie (el primer adaptador CH340 o CP210x, o `ESP32_SERIAL_PORT=COMn` en el
