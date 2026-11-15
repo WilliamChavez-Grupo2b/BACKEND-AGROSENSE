@@ -10,6 +10,7 @@ lleva directo a ella. Muestra solo lo que el ESP32 real mide del agua y todo lo 
 | La planta | Cultivo, variedad, etapa, fecha de siembra, finca, lugar y área |
 | Rangos del cultivo | Humedad del suelo, humedad del aire (opcional) y temperatura |
 | Sensores de humedad | Los sensores de humedad del suelo y humedad relativa de ese cultivo, su última lectura y su conexión |
+| Humedad en las últimas 24 horas | Una gráfica con una línea por sensor (suelo y aire), promediada cada 15 minutos, y el mínimo y el máximo de cada rango como líneas punteadas |
 | Niveles de humedad | Las 50 lecturas más recientes de esos sensores, de la más nueva a la más antigua, con su nivel |
 
 Cada lectura se califica contra el rango que le corresponde:
@@ -45,7 +46,9 @@ AS-005 (conductividad) quedan guardados pero ocultos, y AS-006 pasó de luz a hu
    (por defecto `ESP32-PLANTICAS`), que pertenece al cultivo Café de la demo.
 3. El frontend busca el cultivo de ese dispositivo (tabla `devices`) **solo si es del usuario que inició sesión**; si no,
    muestra «Sin sensor conectado». Nadie ve la planta de otro adivinando un código.
-4. La página consulta `/api/ui/esp32/humidity` cada 30 s (`src/main/ts/esp32-humidity.ts`) y repinta la lista cuando hay
+4. La gráfica pide `/api/ui/esp32/humidity/day` al abrir la página y otra vez cada vez que llega una lectura nueva. Si el
+   ESP32 estuvo apagado un rato, la línea queda cortada en ese tramo en vez de unir los puntos.
+5. La página consulta `/api/ui/esp32/humidity` cada 30 s (`src/main/ts/esp32-humidity.ts`) y repinta la lista cuando hay
    una lectura más nueva. Las lecturas del ESP32 llegan por TCP y no pasan por el manejador de eventos, por eso no viajan por
    el canal en vivo.
 
@@ -81,3 +84,5 @@ humedad del aire a `crops` y renombra el dispositivo `RPI-DEMO-01` a `ESP32-PLAN
 | La página no hace más consultas de las previstas | `QueryBudgetTests` (`/sensores`: 5) |
 | Solo se ofrecen y se muestran los tres valores del ESP32 | `WebFlowTests.theApplicationOnlyOffersAndShowsWhatTheEsp32Measures` |
 | Editar un cultivo sin campo de pH no borra su pH | `WebFlowTests.editingACropWithoutAPhFieldKeepsTheStoredPh` |
+| La gráfica de 24 h: series, rangos y solo del dueño | `WebFlowTests.theEsp32DayChartHasTheOwnersSoilAndAirHumidityWithTheirRanges` |
+| Promedios cada 15 minutos y huecos sin unir | `HumidityBucketTests`, `api-patterns.test.mjs` (`alignSeries`) |
