@@ -195,6 +195,24 @@ class DesignPatternTests {
 	}
 
 	@Test
+	void theAirsHumidityIsJudgedOnlyAgainstItsOwnOptionalRange() {
+		assertThat(alertFor(SensorType.RELATIVE_HUMIDITY, "95")).as("no air range, no alert").isEmpty();
+		crop.setAirHumidityMin(new BigDecimal("60"));
+		crop.setAirHumidityMax(new BigDecimal("85"));
+
+		Alert dry = alertFor(SensorType.RELATIVE_HUMIDITY, "36.5").orElseThrow();
+		assertThat(dry.getAlertType()).isEqualTo(AlertType.LOW_AIR_HUMIDITY);
+		assertThat(dry.getMessage()).contains("humedad del aire", "por debajo");
+		assertThat(alertFor(SensorType.RELATIVE_HUMIDITY, "90").orElseThrow().getAlertType())
+				.isEqualTo(AlertType.HIGH_AIR_HUMIDITY);
+		assertThat(alertFor(SensorType.RELATIVE_HUMIDITY, "60")).as("the edges are inside the range").isEmpty();
+		assertThat(alertFor(SensorType.RELATIVE_HUMIDITY, "85")).isEmpty();
+		// 30 % is low for the soil (40–80 %) but the soil's range never applies to the air.
+		crop.setAirHumidityMin(new BigDecimal("20"));
+		assertThat(alertFor(SensorType.RELATIVE_HUMIDITY, "30")).isEmpty();
+	}
+
+	@Test
 	void frostWinsOverLowTemperatureButOnlyInTheAir() {
 		Alert frost = alertFor(SensorType.AIR_TEMPERATURE, "1.5").orElseThrow();
 		assertThat(frost.getAlertType()).isEqualTo(AlertType.FROST_RISK);

@@ -441,7 +441,8 @@ class FieldWatchIntegrationTests {
 		Path database = Path.of("../../database");
 		List<String> types = Arrays.stream(AlertType.values()).map(type -> "'" + type.name() + "'").toList();
 		assertThat(Files.readString(database.resolve("schema.sql"))).contains(types);
-		assertThat(Files.readString(database.resolve("migrations/002_alert_types.sql"))).contains(types);
+		// The newest migration that redefines ck_alerts_type must list every type.
+		assertThat(Files.readString(database.resolve("migrations/005_air_humidity_alerts.sql"))).contains(types);
 		assertThat(Duration.ofMinutes(5)).isEqualTo(PendingIrrigationCommands.EXPIRES_AFTER);
 	}
 }

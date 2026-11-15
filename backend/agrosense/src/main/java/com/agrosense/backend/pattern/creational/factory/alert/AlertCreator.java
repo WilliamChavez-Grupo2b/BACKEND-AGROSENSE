@@ -18,7 +18,8 @@ public abstract class AlertCreator {
     /** Checked in this order: frost must win over the plain low temperature it also is. */
     private static final List<AlertCreator> FOR_READINGS = List.of(new FrostRiskAlertCreator(),
             new LowTemperatureAlertCreator(), new HighTemperatureAlertCreator(), new LowMoistureAlertCreator(),
-            new HighMoistureAlertCreator(), new PhOutOfRangeAlertCreator());
+            new HighMoistureAlertCreator(), new LowAirHumidityAlertCreator(), new HighAirHumidityAlertCreator(),
+            new PhOutOfRangeAlertCreator());
 
     public static Optional<Alert> firstFor(AlertContext context) {
         return FOR_READINGS.stream().map(creator -> creator.evaluate(context)).flatMap(Optional::stream).findFirst();

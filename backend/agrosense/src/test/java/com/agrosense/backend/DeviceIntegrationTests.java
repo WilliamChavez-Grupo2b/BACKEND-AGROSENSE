@@ -179,7 +179,8 @@ class DeviceIntegrationTests {
 		assertThat(humidAir.statusCode()).isEqualTo(200);
 		JsonNode stored = JSON.readTree(humidAir.body()).path("event");
 		assertThat(stored.path("readings").findValuesAsString("sensorCode")).containsExactly("AS-007");
-		assertThat(stored.path("alerts")).isEmpty();
+		// Judged against the coffee's own air range (60–85 %), never the soil's (40–80 %).
+		assertThat(stored.path("alerts").findValuesAsString("alertType")).containsExactly("HIGH_AIR_HUMIDITY");
 
 		HttpResponse<String> wetSoil = internal(INTERNAL_KEY, DEMO_KEY, "{\"device_id\":\"" + DEMO_DEVICE
 				+ "\",\"type\":\"reading\",\"data\":{\"soil_moisture\":92}}");

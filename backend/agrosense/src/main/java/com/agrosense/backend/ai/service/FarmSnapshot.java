@@ -25,7 +25,9 @@ public record FarmSnapshot(int totalCrops, int totalSensors, int pendingAlerts, 
             Map.entry("PEST_DETECTED", "plaga detectada"), Map.entry("RECOMMENDED_WATERING", "riego recomendado"),
             Map.entry("WATER_STRESS", "estrés hídrico"),
             Map.entry("FROST_RISK", "riesgo de helada"), Map.entry("SENSOR_OFFLINE", "dispositivo sin reportar"),
-            Map.entry("SENSOR_FAULT", "sensor con lecturas dudosas"));
+            Map.entry("SENSOR_FAULT", "sensor con lecturas dudosas"),
+            Map.entry("LOW_AIR_HUMIDITY", "humedad del aire baja"),
+            Map.entry("HIGH_AIR_HUMIDITY", "humedad del aire alta"));
     private static final Map<String, String> IRRIGATION_TYPES = Map.of("AUTOMATIC", "automático", "MANUAL", "manual");
 
     public FarmSnapshot(int totalCrops, int totalSensors, int pendingAlerts, List<CropStatus> crops,

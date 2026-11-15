@@ -39,6 +39,19 @@ Los otros tipos (pH, conductividad, luz, lluvia, temperatura del suelo) siguen e
 así los datos viejos no se rompen y las pruebas del backend siguen igual. Solo dejan de verse. En la demo, AS-003 (pH) y
 AS-005 (conductividad) quedan guardados pero ocultos, y AS-006 pasó de luz a humedad del suelo (sigue inactivo).
 
+## Alertas de humedad del aire
+
+Cada lectura de humedad relativa se compara con el rango de humedad del aire del cultivo:
+
+| Alerta | Cuándo | Qué hacer |
+|---|---|---|
+| **Humedad del aire baja** (`LOW_AIR_HUMIDITY`) | Por debajo del mínimo | El aire seco hace que la planta pierda agua más rápido: revisa el suelo y considera regar |
+| **Humedad del aire alta** (`HIGH_AIR_HUMIDITY`) | Por encima del máximo | Suben los hongos: ventila si es posible y vigila hojas y frutos |
+
+Los bordes del rango cuentan como normales. Si el cultivo no tiene rango de aire, no hay alerta, y el rango del suelo nunca
+se usa para el aire. Como las demás alertas, no se repite mientras haya una igual sin atender en ese cultivo. Necesita la
+migración `database/migrations/005_air_humidity_alerts.sql`.
+
 ## De dónde salen los datos
 
 1. El ESP32 (`firmware/esp32-tcp/`) sirve bloques de texto por TCP en la red `PLANTICAS` (`192.168.4.1:8080`).
@@ -83,6 +96,7 @@ humedad del aire a `crops` y renombra el dispositivo `RPI-DEMO-01` a `ESP32-PLAN
 | Formato del feed y cuándo repintar | `src/test/ts/api-patterns.test.mjs` (`esp32Humidity`) |
 | La página no hace más consultas de las previstas | `QueryBudgetTests` (`/sensores`: 5) |
 | Solo se ofrecen y se muestran los tres valores del ESP32 | `WebFlowTests.theApplicationOnlyOffersAndShowsWhatTheEsp32Measures` |
+| Alerta de aire baja o alta, solo con su propio rango | `DesignPatternTests.theAirsHumidityIsJudgedOnlyAgainstItsOwnOptionalRange`, `DeviceIntegrationTests` |
 | Editar un cultivo sin campo de pH no borra su pH | `WebFlowTests.editingACropWithoutAPhFieldKeepsTheStoredPh` |
 | La gráfica de 24 h: series, rangos y solo del dueño | `WebFlowTests.theEsp32DayChartHasTheOwnersSoilAndAirHumidityWithTheirRanges` |
 | Promedios cada 15 minutos y huecos sin unir | `HumidityBucketTests`, `api-patterns.test.mjs` (`alignSeries`) |

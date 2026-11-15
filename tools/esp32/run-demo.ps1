@@ -22,7 +22,7 @@
     127.0.0.1. Como en -Simulado, solo el proceso del backend recibe ESP32_TCP_ALLOW_LOOPBACK. Necesita pyserial.
 
 .PARAMETER PrepararBase
-    Aplica schema.sql, las migraciones 001 a 004 y seed_demo.sql en la base (y la contraseña de la cuenta demo). Pide
+    Aplica schema.sql, las migraciones 001 a 005 y seed_demo.sql en la base (y la contraseña de la cuenta demo). Pide
     escribir SI. Nunca contra producción.
 
 .PARAMETER BaseLocal
@@ -505,11 +505,11 @@ if ($Simulado -or $Usb) {
 if ($PrepararBase) {
     Write-Step 'Preparar la base'
     $target = $(if ($isH2) { $jdbc } else { "$(Get-Value $values 'DB_HOST') / base $(Get-Value $values 'DB_NAME')" })
-    Write-Host "  Se aplicarán schema.sql, migrations/001 a 004 y seed_demo.sql en: $target"
+    Write-Host "  Se aplicarán schema.sql, migrations/001 a 005 y seed_demo.sql en: $target"
     Write-Host '  Todo es idempotente: se puede repetir. No borra datos. La cuenta demo recibe DEMO_PASSWORD.'
     $answer = Read-Host '  Escribe SI para continuar'
     if ($answer -cne 'SI') { Stop-Demo 'Cancelado: la base no se tocó.' }
-    $migrations = @('001_devices.sql', '002_alert_types.sql', '003_reliability.sql', '004_esp32_air_humidity.sql') | ForEach-Object { "$databaseUri/migrations/$_" }
+    $migrations = @('001_devices.sql', '002_alert_types.sql', '003_reliability.sql', '004_esp32_air_humidity.sql', '005_air_humidity_alerts.sql') | ForEach-Object { "$databaseUri/migrations/$_" }
     $backendVars['SPRING_PROFILES_ACTIVE'] = 'seed'
     $backendVars['SQL_INIT_MODE'] = 'always'
     # schema.sql first (it builds an empty base) and then the migrations (they bring an older base up to date).
@@ -520,7 +520,7 @@ if ($PrepararBase) {
 
 if ($BaseLocal) {
     # A local base needs no confirmation: schema, migrations and sample rows on every start, all idempotent.
-    $migrations = @('001_devices.sql', '002_alert_types.sql', '003_reliability.sql', '004_esp32_air_humidity.sql') | ForEach-Object { "$databaseUri/migrations/$_" }
+    $migrations = @('001_devices.sql', '002_alert_types.sql', '003_reliability.sql', '004_esp32_air_humidity.sql', '005_air_humidity_alerts.sql') | ForEach-Object { "$databaseUri/migrations/$_" }
     $backendVars['SPRING_PROFILES_ACTIVE'] = 'seed'
     $backendVars['SQL_INIT_MODE'] = 'always'
     $backendVars['SCHEMA_LOCATION'] = (@("$databaseUri/schema.sql") + $migrations) -join ','
