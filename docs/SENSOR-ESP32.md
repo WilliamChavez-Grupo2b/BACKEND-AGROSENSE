@@ -8,7 +8,7 @@ lleva directo a ella. Muestra solo lo que el ESP32 real mide del agua y todo lo 
 | Bloque | Contenido |
 |---|---|
 | La planta | Cultivo, variedad, etapa, fecha de siembra, finca, lugar y área |
-| Rangos del cultivo | Humedad del suelo, humedad del aire (opcional), temperatura y pH |
+| Rangos del cultivo | Humedad del suelo, humedad del aire (opcional) y temperatura |
 | Sensores de humedad | Los sensores de humedad del suelo y humedad relativa de ese cultivo, su última lectura y su conexión |
 | Niveles de humedad | Las 50 lecturas más recientes de esos sensores, de la más nueva a la más antigua, con su nivel |
 
@@ -24,6 +24,19 @@ Cada lectura se califica contra el rango que le corresponde:
 La humedad del suelo usa el rango de humedad del cultivo. La humedad relativa usa el rango de **humedad del aire**, que se
 define en **Cultivos > Editar**. El rango del suelo nunca se aplica al aire. Si falta el rango del aire, la sección lo dice y
 enlaza al formulario del cultivo.
+
+## Solo lo que mide el ESP32
+
+El ESP32 mide tres valores: **humedad del suelo** (la sonda), **temperatura del aire** y **humedad relativa** (el DHT11).
+Toda la aplicación web trabaja solo con esos tres:
+
+- **Sensores > Nuevo** ofrece solo esos tres tipos, y el servidor rechaza cualquier otro.
+- El tablero, Sensores, Cultivos, Parcelas y Reportes muestran solo sensores de esos tipos.
+- El formulario del cultivo ya no pide pH. Al editar un cultivo, el pH que tenía guardado se conserva.
+
+Los otros tipos (pH, conductividad, luz, lluvia, temperatura del suelo) siguen existiendo en la base y en el backend,
+así los datos viejos no se rompen y las pruebas del backend siguen igual. Solo dejan de verse. En la demo, AS-003 (pH) y
+AS-005 (conductividad) quedan guardados pero ocultos, y AS-006 pasó de luz a humedad del suelo (sigue inactivo).
 
 ## De dónde salen los datos
 
@@ -66,3 +79,5 @@ humedad del aire a `crops` y renombra el dispositivo `RPI-DEMO-01` a `ESP32-PLAN
 | El rango del aire es opcional, pero completo y en orden | `CropFormAirHumidityTests` |
 | Formato del feed y cuándo repintar | `src/test/ts/api-patterns.test.mjs` (`esp32Humidity`) |
 | La página no hace más consultas de las previstas | `QueryBudgetTests` (`/sensores`: 5) |
+| Solo se ofrecen y se muestran los tres valores del ESP32 | `WebFlowTests.theApplicationOnlyOffersAndShowsWhatTheEsp32Measures` |
+| Editar un cultivo sin campo de pH no borra su pH | `WebFlowTests.editingACropWithoutAPhFieldKeepsTheStoredPh` |

@@ -58,10 +58,16 @@ JOIN (VALUES
         ('Café', 'AS-003', 'PH', 'Lote sur', TRUE),
         ('Plátano', 'AS-004', 'SOIL_MOISTURE', 'Platanera', TRUE),
         ('Plátano', 'AS-005', 'CONDUCTIVITY', 'Platanera', TRUE),
-        ('Papa', 'AS-006', 'LIGHT', 'Parcela 1', FALSE),
+        ('Papa', 'AS-006', 'SOIL_MOISTURE', 'Parcela 1', FALSE),
         ('Café', 'AS-007', 'RELATIVE_HUMIDITY', 'Lote norte', TRUE)
     ) AS v(crop_name, sensor_code, sensor_type, location, active) ON v.crop_name = c.name
 WHERE NOT EXISTS (SELECT 1 FROM sensors s WHERE s.sensor_code = v.sensor_code);
+
+-- AS-006 was a light sensor, which the ESP32 does not have. It never had readings, so it only changes type.
+-- AS-003 (pH) and AS-005 (conductivity) stay for the backend's tests; the frontend shows only what the ESP32 measures.
+UPDATE sensors SET sensor_type = 'SOIL_MOISTURE'
+WHERE sensor_code = 'AS-006' AND sensor_type = 'LIGHT'
+  AND NOT EXISTS (SELECT 1 FROM sensor_readings r WHERE r.id_sensor = sensors.id_sensor);
 
 -- A sample outline for one estate, so the map shows both cases: a drawn outline and, for the other estate,
 -- the circle used while none exists. Only set while empty, so an outline drawn in the application is kept.
