@@ -2,6 +2,7 @@ package com.agrosense.backend;
 
 import com.agrosense.backend.domain.enums.AlertType;
 import com.agrosense.backend.models.Device;
+import com.agrosense.backend.pattern.creational.singleton.CalibrationRegistry;
 import com.agrosense.backend.pattern.structural.adapter.esp32.Esp32ReceiverStatus;
 import com.agrosense.backend.pattern.structural.adapter.esp32.Esp32TcpIngestionService;
 import com.agrosense.backend.repository.AlertRepository;
@@ -83,6 +84,8 @@ class Esp32TcpIntegrationTests {
 
     @AfterAll
     static void closeTheFake() throws IOException {
+        // The calibration above lives in an application-wide singleton: leave it neutral for the classes that run next.
+        CalibrationRegistry.INSTANCE.clear();
         if (server != null) {
             server.close();
         }
