@@ -164,7 +164,7 @@ archivo es idempotente: se puede ejecutar varias veces sin efecto adicional.
 | `migrations/002_alert_types.sql` | 2026-11-01 | Amplía `ck_alerts_type` con `FROST_RISK`, `SENSOR_OFFLINE` y `SENSOR_FAULT` |
 | `migrations/003_reliability.sql` | 2026-11-01 | Tablas `irrigation_dispatches` y `sensor_readings_hourly`; columnas `moisture_before` y `moisture_after` en `irrigations` |
 | `migrations/004_esp32_air_humidity.sql` | 2026-11-15 | Columnas `air_humidity_min` y `air_humidity_max` en `crops` con `ck_crops_air_humidity`; renombra el dispositivo `RPI-DEMO-01` a `ESP32-PLANTICAS` |
-| `migrations/005_air_humidity_alerts.sql` | 2026-11-15 | Amplía `ck_alerts_type` con `LOW_AIR_HUMIDITY` y `HIGH_AIR_HUMIDITY` (humedad del aire fuera de su rango) |
+| `migrations/005_air_humidity_alerts.sql` | 2026-11-15 | Amplía `ck_alerts_type` con `LOW_AIR_HUMIDITY` y `HIGH_AIR_HUMIDITY` (humedad del aire fuera de su rango). La 002 ya trae la misma lista, así repetirla después no rechaza esas alertas |
 
 Orden de despliegue: **migraciones 001, 002, 003, 004 y 005 en este orden, frontend, backend**. Prueba cada una primero en una base
 de desarrollo. Las cinco se pueden repetir sin efecto y ninguna borra datos. Sin la 004 ni el frontend ni el backend nuevos arrancan
