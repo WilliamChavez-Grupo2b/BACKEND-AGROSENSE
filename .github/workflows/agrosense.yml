@@ -96,7 +96,7 @@ jobs:
       - name: Entities against PostgreSQL
         working-directory: backend/agrosense
         run: |
-          sed -i 's/$//' mvnw
+          sed -i 's/\r$//' mvnw
           chmod +x mvnw
           ./mvnw -q -B test -Dtest=PostgresCompatibilityTests
 
