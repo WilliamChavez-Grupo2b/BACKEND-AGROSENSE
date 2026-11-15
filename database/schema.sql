@@ -46,6 +46,9 @@ CREATE TABLE IF NOT EXISTS crops (
     temp_max     NUMERIC(5, 2) DEFAULT 35,
     ph_min       NUMERIC(4, 2) DEFAULT 5.5,
     ph_max       NUMERIC(4, 2) DEFAULT 7.0,
+    -- The air's relative humidity the crop tolerates. Optional: nobody invents it, the farmer sets it.
+    air_humidity_min NUMERIC(5, 2),
+    air_humidity_max NUMERIC(5, 2),
     active       BOOLEAN      NOT NULL DEFAULT TRUE,
     created_at   TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT fk_crops_estate FOREIGN KEY (id_estate) REFERENCES estates (id_estate) ON DELETE CASCADE,
@@ -53,7 +56,9 @@ CREATE TABLE IF NOT EXISTS crops (
         ('GERMINATION', 'GROWTH', 'FLOWERING', 'FRUITING', 'RIPENING', 'HARVEST')),
     CONSTRAINT ck_crops_humidity CHECK (humidity_min IS NULL OR humidity_max IS NULL OR humidity_min < humidity_max),
     CONSTRAINT ck_crops_temp CHECK (temp_min IS NULL OR temp_max IS NULL OR temp_min < temp_max),
-    CONSTRAINT ck_crops_ph CHECK (ph_min IS NULL OR ph_max IS NULL OR ph_min < ph_max)
+    CONSTRAINT ck_crops_ph CHECK (ph_min IS NULL OR ph_max IS NULL OR ph_min < ph_max),
+    CONSTRAINT ck_crops_air_humidity CHECK (air_humidity_min IS NULL OR air_humidity_max IS NULL
+        OR air_humidity_min < air_humidity_max)
 );
 
 CREATE TABLE IF NOT EXISTS sensors (

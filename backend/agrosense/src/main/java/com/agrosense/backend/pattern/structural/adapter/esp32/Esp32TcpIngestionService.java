@@ -60,7 +60,7 @@ public class Esp32TcpIngestionService {
             @Value("${esp32.tcp.enabled:false}") boolean enabled,
             @Value("${esp32.tcp.host:192.168.4.1}") String host,
             @Value("${esp32.tcp.port:8080}") int port,
-            @Value("${esp32.device-id:RPI-DEMO-01}") String deviceId,
+            @Value("${esp32.device-id:ESP32-PLANTICAS}") String deviceId,
             @Value("${esp32.aggregate-seconds:60}") int aggregateSeconds,
             @Value("${esp32.tcp.connect-timeout-ms:5000}") long connectTimeoutMs,
             @Value("${esp32.tcp.read-timeout-ms:30000}") long readTimeoutMs,

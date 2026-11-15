@@ -201,7 +201,7 @@ POST /events  (X-Device-Key)
 
 POST /api/internal/events  (X-Internal-Key, X-Device-Key)   mismo cuerpo
   → 200 {"ownerEmail": "demo@agrosense.co",
-         "event": {"type": "reading", "deviceId": "RPI-DEMO-01", "cropId": 1, "cropName": "Café",
+         "event": {"type": "reading", "deviceId": "ESP32-PLANTICAS", "cropId": 1, "cropName": "Café",
                    "readings": [{"idReading", "idSensor", "sensorCode", "sensorType", "value", "unit",
                                  "quality", "recordedAt"}],
                    "alerts": [{"idAlert", "alertType", "severity", "message", "detectedValue",
@@ -241,7 +241,7 @@ repositorio.
 | Manejador de eventos | `BACKEND_URL`, `EVENTS_INTERNAL_KEY`, `EVENTS_STREAM_SECRET`, `EVENTS_ALLOWED_ORIGINS`, `BACKEND_TIMEOUT_MS` (30000), `BACKEND_RETRIES` (3), `BACKEND_RETRY_FIRST_MS` (500), `EVENTS_HEARTBEAT_S`, `EVENTS_MAX_STREAMS_PER_USER`, `EVENTS_MAX_STREAMS`, `PORT` |
 | Frontend | `EVENTS_PUBLIC_URL` |
 | ESP32 (`arduino_secrets.h`, no son variables de entorno) | `SECRET_WIFI_SSID`, `SECRET_WIFI_PASS`, `SECRET_DEVICE_ID`, `SECRET_DEVICE_KEY`, `SECRET_EVENTS_HOST`, `SECRET_EVENTS_PORT`, `SECRET_EVENTS_TLS`, `SECRET_EVENTS_CA_CERT`, `AGRO_SOIL_DRY_RAW`, `AGRO_SOIL_WET_RAW` |
-| Recorrido sin hardware (`tools/e2e/run_e2e.py`) | `BACKEND_URL`, `EVENTS_URL`, `API_EMAIL`, `API_PASSWORD`, `DEVICE_ID` (`RPI-DEMO-01`), `DEVICE_KEY`, `CROP_ID`, `EXPECT_MODEL`, `E2E_WAIT_S` |
+| Recorrido sin hardware (`tools/e2e/run_e2e.py`) | `BACKEND_URL`, `EVENTS_URL`, `API_EMAIL`, `API_PASSWORD`, `DEVICE_ID` (`ESP32-PLANTICAS`), `DEVICE_KEY`, `CROP_ID`, `EXPECT_MODEL`, `E2E_WAIT_S` |
 
 ### Ejecutar todo junto
 
@@ -461,7 +461,7 @@ done
     `GPIO34` (ADC1), DHT22 en `GPIO4`, relé activo en bajo en `GPIO26`. La petición HTTPS va en una tarea propia, así que
     `loop()` no espera a la red. Para probar sin placa está `tools/e2e/run_e2e.py`, que envía los eventos con su propio
     cliente HTTP; el simulador en Python se retiró. El dispositivo de ejemplo de `seed_demo.sql` conserva su código
-    `RPI-DEMO-01`, que es solo un identificador.
+    `ESP32-PLANTICAS`, que es solo un identificador.
 29. **Órdenes de riego por la respuesta del dispositivo.** No hay conexión hacia el campo: con
     `IRRIGATION_ACTUATOR=relay` la orden se guarda en `irrigation_dispatches` y sale en la respuesta al siguiente
     evento del dispositivo, una sola vez. Caduca a los 5 minutos, porque no regar es más seguro que regar tarde, y el
@@ -538,7 +538,7 @@ done
       «ESP32 conectado» o «Sin datos desde hh:mm» si pasan más de 3 minutos sin lecturas. Con una lectura promediada por
       minuto, 30 s de retraso no se notan. Un cliente STOMP de `/ws` habría necesitado una biblioteca nueva en el navegador,
       abrir la CSP al backend y darle al navegador un token del backend, que hoy nunca recibe.
-    - **Sin esquema nuevo.** El dispositivo de ejemplo `RPI-DEMO-01` ya está en el cultivo Café con sensores de humedad del
+    - **Sin esquema nuevo.** El dispositivo de ejemplo `ESP32-PLANTICAS` ya está en el cultivo Café con sensores de humedad del
       suelo (AS-001), temperatura del aire (AS-002) y humedad del aire (AS-007).
 
 ## 4. Estructura del frontend

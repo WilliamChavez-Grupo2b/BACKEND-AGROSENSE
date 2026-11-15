@@ -36,7 +36,7 @@ Las lecturas son del dispositivo `ESP32_DEVICE_ID` sin comprobar llave: úsalo s
 | `ESP32_TCP_ENABLED` | `false` (apagado también en Render) |
 | `ESP32_TCP_HOST` | `192.168.4.1` |
 | `ESP32_TCP_PORT` | `8080` |
-| `ESP32_DEVICE_ID` | `RPI-DEMO-01` |
+| `ESP32_DEVICE_ID` | `ESP32-PLANTICAS` |
 | `ESP32_AGGREGATE_SECONDS` | `60` |
 
 | Método y ruta | Quién la llama | Respuesta |
@@ -60,7 +60,7 @@ Las lecturas son del dispositivo `ESP32_DEVICE_ID` sin comprobar llave: úsalo s
 |---|---|
 | `EVENTS_INTERNAL_KEY` | Llave que el servicio de eventos envía en `X-Internal-Key`. Sin ella, la ruta interna rechaza todo |
 | `EVENTS_STREAM_SECRET` | Secreto de al menos 32 bytes, compartido solo con el servicio de eventos, que firma los tokens del canal en vivo (HS256, 5 minutos) |
-| `SEED_DEVICE_KEY` | Llave que recibe al arrancar el dispositivo de ejemplo `RPI-DEMO-01`. Solo para bases locales y de prueba |
+| `SEED_DEVICE_KEY` | Llave que recibe al arrancar el dispositivo de ejemplo `ESP32-PLANTICAS`. Solo para bases locales y de prueba |
 
 ## Asistente de IA
 

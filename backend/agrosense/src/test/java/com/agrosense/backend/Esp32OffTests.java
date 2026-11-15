@@ -89,22 +89,22 @@ class Esp32OffTests {
 
     @Test
     void aPublicOrNamedAddressIsRefusedWhenTheReceiverIsOn() {
-        assertThatThrownBy(() -> new Esp32TcpIngestionService(null, true, "8.8.8.8", 8080, "RPI-DEMO-01", 60,
+        assertThatThrownBy(() -> new Esp32TcpIngestionService(null, true, "8.8.8.8", 8080, "ESP32-PLANTICAS", 60,
                 5000, 30000, 2000, 30000, false)).isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("private");
-        assertThatThrownBy(() -> new Esp32TcpIngestionService(null, true, "esp32.example.com", 8080, "RPI-DEMO-01", 60,
+        assertThatThrownBy(() -> new Esp32TcpIngestionService(null, true, "esp32.example.com", 8080, "ESP32-PLANTICAS", 60,
                 5000, 30000, 2000, 30000, false)).isInstanceOf(IllegalStateException.class);
         // Off, nothing is checked: the setting is not used.
-        new Esp32TcpIngestionService(null, false, "8.8.8.8", 8080, "RPI-DEMO-01", 60, 5000, 30000, 2000, 30000, false);
+        new Esp32TcpIngestionService(null, false, "8.8.8.8", 8080, "ESP32-PLANTICAS", 60, 5000, 30000, 2000, 30000, false);
     }
 
     @Test
     void anOrderForTheEsp32sCropIsOnlyRecordedAndOthersGoOn() {
         ActuatorDriver inner = mock(ActuatorDriver.class);
         DeviceRepository devices = mock(DeviceRepository.class);
-        Device esp = Device.builder().deviceCode("RPI-DEMO-01").crop(Crop.builder().idCrop(7).build()).build();
-        when(devices.findByDeviceCode("RPI-DEMO-01")).thenReturn(Optional.of(esp));
-        Esp32ReadOnlyActuatorDriver driver = new Esp32ReadOnlyActuatorDriver(inner, devices, "rpi-demo-01");
+        Device esp = Device.builder().deviceCode("ESP32-PLANTICAS").crop(Crop.builder().idCrop(7).build()).build();
+        when(devices.findByDeviceCode("ESP32-PLANTICAS")).thenReturn(Optional.of(esp));
+        Esp32ReadOnlyActuatorDriver driver = new Esp32ReadOnlyActuatorDriver(inner, devices, "esp32-planticas");
 
         driver.start(new IrrigationCommand(1, 7, 3, IrrigationCommand.MANUAL, null, 10));
         verify(inner, never()).start(any());

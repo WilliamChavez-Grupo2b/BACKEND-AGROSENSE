@@ -48,7 +48,7 @@ import static org.assertj.core.api.Assertions.assertThat;
         "esp32.tcp.enabled=true",
         "esp32.tcp.host=127.0.0.1",
         "esp32.tcp.allow-loopback=true",
-        "esp32.device-id=RPI-DEMO-01",
+        "esp32.device-id=ESP32-PLANTICAS",
         "esp32.aggregate-seconds=1",
         "esp32.tcp.first-retry-ms=100",
         "esp32.tcp.longest-retry-ms=400",
@@ -101,7 +101,7 @@ class Esp32TcpIntegrationTests {
 
     @Test
     void averagedReadingsAreStoredRaiseAnAlertAndTheClientComesBackAfterTheServerCloses() throws Exception {
-        Device device = deviceRepository.findByDeviceCode("RPI-DEMO-01").orElseThrow();
+        Device device = deviceRepository.findByDeviceCode("ESP32-PLANTICAS").orElseThrow();
         Integer cropId = device.getCrop().getIdCrop();
         // The seed leaves a low moisture alert open on this crop, and an open alert is not repeated: answer it first.
         alertRepository.findAll().stream()
@@ -142,7 +142,7 @@ class Esp32TcpIntegrationTests {
         assertThat(latest("AS-002")).isEqualTo(14.90);
         assertThat(latest("AS-007")).isEqualTo(52.00);
         assertThat(latest("AS-001")).isEqualTo(12.50);  // the soil has no correction
-        assertThat(deviceRepository.findByDeviceCode("RPI-DEMO-01").orElseThrow().getLastEventAt()).isNotNull();
+        assertThat(deviceRepository.findByDeviceCode("ESP32-PLANTICAS").orElseThrow().getLastEventAt()).isNotNull();
 
         // The ESP32 restarts: the server goes away and comes back on the same port.
         server.close();

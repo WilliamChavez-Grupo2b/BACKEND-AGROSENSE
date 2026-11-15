@@ -23,7 +23,7 @@ function Invoke-Verificar([string]$dbHost, [string]$prodHost, [string[]]$extra =
     $lines = @(
         "DB_HOST=$dbHost", 'DB_NAME=neondb', 'DB_USER=u', 'DB_PASSWORD=p', "PROD_DB_HOST=$prodHost",
         'JWT_SECRET=un-secreto-de-prueba-de-mas-de-sesenta-y-cuatro-bytes-0123456789abcdefghijklmnop',
-        'DEMO_PASSWORD=demo', 'ESP32_TCP_HOST=192.168.4.1', 'ESP32_TCP_PORT=8080', 'ESP32_DEVICE_ID=RPI-DEMO-01',
+        'DEMO_PASSWORD=demo', 'ESP32_TCP_HOST=192.168.4.1', 'ESP32_TCP_PORT=8080', 'ESP32_DEVICE_ID=ESP32-PLANTICAS',
         'BACKEND_PORT=9000', 'FRONTEND_PORT=8080') + $extra
     Set-Content -LiteralPath $file -Value $lines -Encoding UTF8
     $output = & $shell -NoProfile -ExecutionPolicy Bypass -File $script -Verificar -SinEsp32 -EnvFile $file 2>&1 | Out-String

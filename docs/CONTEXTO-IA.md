@@ -165,7 +165,7 @@ Tipos de alerta incluyen los de rango (humedad baja/alta, temperatura baja/alta,
 - Migraciones para la base existente, en orden: `001_devices.sql`, `002_alert_types.sql`, `003_reliability.sql`.
   Sin la 001 y la 003 el backend nuevo no arranca; sin la 002 la base rechaza las alertas nuevas.
 - `seed_demo.sql`: usuario de ejemplo con hash inutilizable (cada app le pone su contraseña con `SEED_USER_PASSWORD` /
-  `DEMO_PASSWORD`) y dispositivo `RPI-DEMO-01` (llave con `SEED_DEVICE_KEY`). **Nunca correr `seed_demo.sql` ni
+  `DEMO_PASSWORD`) y dispositivo `ESP32-PLANTICAS` (llave con `SEED_DEVICE_KEY`). **Nunca correr `seed_demo.sql` ni
   `reset.sql` en producción.**
 
 ---
@@ -180,7 +180,7 @@ Todas están en `.env.example`. Ninguna llave tiene valor por defecto ni se escr
 | IA | `INTERNAL_API_KEY`, `AI_SERVICE_TOKEN`, `AI_ALLOW_OPEN`, `AI_CHAT_API_KEY`, `AI_CHAT_BASE_URL`, `AI_CHAT_MODEL`, `AI_TRANSCRIPTION_MODEL`, `ANTHROPIC_*`, `GEMINI_*`, `AI_TIMEOUT_MS`, `AI_MAX_OUTPUT_TOKENS`, `AI_PROVIDER_REQUESTS_PER_MINUTE`, `AI_REPLY_CACHE_SECONDS` |
 | Manejador de eventos | `BACKEND_URL`, `EVENTS_INTERNAL_KEY`, `EVENTS_STREAM_SECRET`, `EVENTS_ALLOWED_ORIGINS`, `BACKEND_TIMEOUT_MS`, `BACKEND_RETRIES`, `EVENTS_HEARTBEAT_S`, `EVENTS_MAX_STREAMS*` |
 | Frontend | `BACKEND_URL`, `BACKEND_JWT_SECRET` (= `JWT_SECRET`), `EVENTS_PUBLIC_URL`, `IRRIGATION_ACTUATOR`, `NEON_*` / `DATABASE_*` |
-| Backend, ESP32 por TCP | `ESP32_TCP_ENABLED` (`false`; en Render siempre apagado), `ESP32_TCP_HOST` (`192.168.4.1`, solo IPv4 privada), `ESP32_TCP_PORT` (`8080`), `ESP32_DEVICE_ID` (`RPI-DEMO-01`, debe existir en `devices`), `ESP32_AGGREGATE_SECONDS` (`60`). La clave de la red Wi-Fi no va en el repositorio |
+| Backend, ESP32 por TCP | `ESP32_TCP_ENABLED` (`false`; en Render siempre apagado), `ESP32_TCP_HOST` (`192.168.4.1`, solo IPv4 privada), `ESP32_TCP_PORT` (`8080`), `ESP32_DEVICE_ID` (`ESP32-PLANTICAS`, debe existir en `devices`), `ESP32_AGGREGATE_SECONDS` (`60`). La clave de la red Wi-Fi no va en el repositorio |
 | Recorrido sin hardware | `BACKEND_URL`, `EVENTS_URL`, `API_EMAIL`, `API_PASSWORD`, `DEVICE_ID`, `DEVICE_KEY`, `CROP_ID`, `EXPECT_MODEL` |
 | ESP32 real (`firmware/esp32-tcp/`) | `arduino_secrets.h`, fuera del repositorio: `SECRET_AP_SSID` (`PLANTICAS`) y `SECRET_AP_PASS` (12 caracteres o más, distinta del nombre; el sketch no compila si no) |
 | Backend, compensación del ESP32 | `SENSOR_CALIBRATION=AIR_TEMPERATURE=-8.5:1,RELATIVE_HUMIDITY=-6:1` en `.env.example` y `compose.yaml` (Decorator `CalibrationDecorator`, se aplica una sola vez). **Por verificar con termómetro e higrómetro de referencia** |

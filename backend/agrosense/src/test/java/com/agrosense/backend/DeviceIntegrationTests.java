@@ -58,7 +58,7 @@ class DeviceIntegrationTests {
 
 	private static final String EMAIL = "demo@agrosense.co";
 	private static final String PASSWORD = "seed-password";
-	private static final String DEMO_DEVICE = "RPI-DEMO-01";
+	private static final String DEMO_DEVICE = "ESP32-PLANTICAS";
 	private static final String DEMO_KEY = "demo-device-key-for-tests";
 	private static final String INTERNAL_KEY = "internal-key-of-the-events";
 	private static final String STREAM_SECRET = "stream-secret-of-at-least-32-bytes";
@@ -92,20 +92,20 @@ class DeviceIntegrationTests {
 		Integer cropId = cropOf(EMAIL).getIdCrop();
 
 		HttpResponse<String> created = send("POST", "/api/devices", token,
-				"{\"cropId\":" + cropId + ",\"deviceCode\":\" rpi-lote-norte \"}");
+				"{\"cropId\":" + cropId + ",\"deviceCode\":\" esp32-lote-norte \"}");
 
 		assertThat(created.statusCode()).isEqualTo(201);
 		assertThat(created.headers().firstValue("Cache-Control").orElse("")).contains("no-store");
-		assertThat(created.body()).contains("\"deviceCode\":\"RPI-LOTE-NORTE\"", "\"idCrop\":" + cropId);
+		assertThat(created.body()).contains("\"deviceCode\":\"ESP32-LOTE-NORTE\"", "\"idCrop\":" + cropId);
 		String key = extract(created.body(), "deviceKey");
 		assertThat(key).hasSizeGreaterThanOrEqualTo(43);
-		Device stored = deviceRepository.findByDeviceCode("RPI-LOTE-NORTE").orElseThrow();
+		Device stored = deviceRepository.findByDeviceCode("ESP32-LOTE-NORTE").orElseThrow();
 		assertThat(stored.getKeyHash()).isEqualTo(DeviceService.hash(key)).doesNotContain(key).hasSize(64);
-		assertThat(deviceService.require("rpi-lote-norte", key).getDeviceCode()).isEqualTo("RPI-LOTE-NORTE");
-		assertThatThrownBy(() -> deviceService.require("RPI-LOTE-NORTE", key + "x")).isInstanceOf(ApiException.class);
+		assertThat(deviceService.require("esp32-lote-norte", key).getDeviceCode()).isEqualTo("ESP32-LOTE-NORTE");
+		assertThatThrownBy(() -> deviceService.require("ESP32-LOTE-NORTE", key + "x")).isInstanceOf(ApiException.class);
 
 		HttpResponse<String> again = send("POST", "/api/devices", token,
-				"{\"cropId\":" + cropId + ",\"deviceCode\":\"RPI-LOTE-NORTE\"}");
+				"{\"cropId\":" + cropId + ",\"deviceCode\":\"ESP32-LOTE-NORTE\"}");
 		assertThat(again.statusCode()).isEqualTo(409);
 		assertThat(again.body()).doesNotContain("deviceKey");
 	}
@@ -118,12 +118,12 @@ class DeviceIntegrationTests {
 		Crop othersCrop = cropRepository.save(Crop.builder()
 				.estate(estateRepository.save(Estate.builder().user(other).name("Ajena").build())).name("Maíz").build());
 
-		assertThat(send("POST", "/api/devices", null, "{\"cropId\":" + cropId + ",\"deviceCode\":\"RPI-X1\"}")
+		assertThat(send("POST", "/api/devices", null, "{\"cropId\":" + cropId + ",\"deviceCode\":\"ESP32-X1\"}")
 				.statusCode()).isEqualTo(401);
 		assertThat(send("POST", "/api/devices", token("tecnico@agrosense.test", "other-password"),
-				"{\"cropId\":" + cropId + ",\"deviceCode\":\"RPI-X2\"}").statusCode()).isEqualTo(403);
+				"{\"cropId\":" + cropId + ",\"deviceCode\":\"ESP32-X2\"}").statusCode()).isEqualTo(403);
 		assertThat(send("POST", "/api/devices", token(EMAIL, PASSWORD),
-				"{\"cropId\":" + othersCrop.getIdCrop() + ",\"deviceCode\":\"RPI-X3\"}").statusCode()).isEqualTo(404);
+				"{\"cropId\":" + othersCrop.getIdCrop() + ",\"deviceCode\":\"ESP32-X3\"}").statusCode()).isEqualTo(404);
 		assertThat(send("POST", "/api/devices", token(EMAIL, PASSWORD),
 				"{\"cropId\":" + cropId + ",\"deviceCode\":\"no vale\"}").statusCode()).isEqualTo(400);
 	}
@@ -146,14 +146,14 @@ class DeviceIntegrationTests {
 		assertThat(wrongDevice.statusCode()).isEqualTo(403);
 		assertThat(wrongDevice.body()).contains("Dispositivo desconocido o llave incorrecta");
 		assertThat(internal(INTERNAL_KEY, DEMO_KEY,
-				"{\"device_id\":\"RPI-NO-EXISTE\",\"type\":\"reading\",\"data\":{\"ph\":6.4}}").statusCode()).isEqualTo(403);
+				"{\"device_id\":\"ESP32-NO-EXISTE\",\"type\":\"reading\",\"data\":{\"ph\":6.4}}").statusCode()).isEqualTo(403);
 	}
 
 	@Test
 	void aReadingEventIsStoredLikeAnyReadingAndAnsweredWithTheOwnerAndWhatWasStored() throws Exception {
 		long before = readingRepository.count();
 
-		HttpResponse<String> answer = internal(INTERNAL_KEY, DEMO_KEY, "{\"device_id\":\"rpi-demo-01\",\"type\":\"reading\","
+		HttpResponse<String> answer = internal(INTERNAL_KEY, DEMO_KEY, "{\"device_id\":\"esp32-planticas\",\"type\":\"reading\","
 				+ "\"ts\":\"" + OffsetDateTime.now().minusMinutes(1) + "\","
 				+ "\"data\":{\"soil_moisture\":55.5,\"air_temperature\":22.1,\"ph\":9.1}}");
 
@@ -192,24 +192,24 @@ class DeviceIntegrationTests {
 		Crop crop = cropRepository.save(Crop.builder().estate(cropOf(EMAIL).getEstate()).name("Fresa").build());
 		sensorRepository.save(Sensor.builder().crop(crop).sensorCode("FR-01").sensorType(SensorType.SOIL_MOISTURE).build());
 		sensorRepository.save(Sensor.builder().crop(crop).sensorCode("FR-02").sensorType(SensorType.SOIL_MOISTURE).build());
-		String key = deviceService.create(EMAIL, crop.getIdCrop(), "RPI-FRESA").getDeviceKey();
+		String key = deviceService.create(EMAIL, crop.getIdCrop(), "ESP32-FRESA").getDeviceKey();
 		long before = readingRepository.count();
 
 		HttpResponse<String> ambiguous = internal(INTERNAL_KEY, key,
-				"{\"device_id\":\"RPI-FRESA\",\"type\":\"reading\",\"data\":{\"soil_moisture\":50}}");
+				"{\"device_id\":\"ESP32-FRESA\",\"type\":\"reading\",\"data\":{\"soil_moisture\":50}}");
 
 		assertThat(ambiguous.statusCode()).isEqualTo(400);
 		assertThat(JSON.readTree(ambiguous.body()).path("message").asString())
 				.contains("2 sensores activos de soil_moisture (FR-01, FR-02)", "sensor_code");
 		assertThat(readingRepository.count()).isEqualTo(before);
 
-		HttpResponse<String> named = internal(INTERNAL_KEY, key, "{\"device_id\":\"RPI-FRESA\",\"type\":\"reading\","
+		HttpResponse<String> named = internal(INTERNAL_KEY, key, "{\"device_id\":\"ESP32-FRESA\",\"type\":\"reading\","
 				+ "\"data\":{\"soil_moisture\":{\"value\":50,\"sensor_code\":\"fr-02\"}}}");
 		assertThat(named.statusCode()).isEqualTo(200);
 		assertThat(JSON.readTree(named.body()).path("event").path("readings").path(0).path("sensorCode").asString())
 				.isEqualTo("FR-02");
 
-		assertThat(internal(INTERNAL_KEY, key, "{\"device_id\":\"RPI-FRESA\",\"type\":\"reading\","
+		assertThat(internal(INTERNAL_KEY, key, "{\"device_id\":\"ESP32-FRESA\",\"type\":\"reading\","
 				+ "\"data\":{\"soil_moisture\":{\"value\":50,\"sensor_code\":\"AS-001\"}}}").statusCode()).isEqualTo(400);
 	}
 
@@ -238,8 +238,8 @@ class DeviceIntegrationTests {
 	@Test
 	void anAlertTheDeviceReportsIsStoredOnceWhileItStaysOpen() throws Exception {
 		Crop crop = cropRepository.save(Crop.builder().estate(cropOf(EMAIL).getEstate()).name("Mora").build());
-		String key = deviceService.create(EMAIL, crop.getIdCrop(), "RPI-MORA").getDeviceKey();
-		String event = "{\"device_id\":\"RPI-MORA\",\"type\":\"alert\",\"ts\":1790000000,"
+		String key = deviceService.create(EMAIL, crop.getIdCrop(), "ESP32-MORA").getDeviceKey();
+		String event = "{\"device_id\":\"ESP32-MORA\",\"type\":\"alert\",\"ts\":1790000000,"
 				+ "\"data\":{\"alert_type\":\"pest_detected\",\"message\":\"Trampa con insectos.\"}}";
 
 		HttpResponse<String> first = internal(INTERNAL_KEY, key, event);
@@ -250,7 +250,7 @@ class DeviceIntegrationTests {
 		assertThat(alert.path("alertType").asString()).isEqualTo("PEST_DETECTED");
 		assertThat(alert.path("severity").asString()).isEqualTo("VERY_HIGH");
 		assertThat(JSON.readTree(second.body()).path("event").path("alerts")).isEmpty();
-		assertThat(internal(INTERNAL_KEY, key, "{\"device_id\":\"RPI-MORA\",\"type\":\"alert\","
+		assertThat(internal(INTERNAL_KEY, key, "{\"device_id\":\"ESP32-MORA\",\"type\":\"alert\","
 				+ "\"data\":{\"alert_type\":\"granizo\",\"message\":\"x\"}}").statusCode()).isEqualTo(400);
 	}
 

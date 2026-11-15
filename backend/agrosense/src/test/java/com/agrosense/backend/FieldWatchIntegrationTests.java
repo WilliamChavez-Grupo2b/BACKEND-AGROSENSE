@@ -85,7 +85,7 @@ import static org.mockito.Mockito.when;
 class FieldWatchIntegrationTests {
 
 	private static final String EMAIL = "demo@agrosense.co";
-	private static final String DEVICE = "RPI-DEMO-01";
+	private static final String DEVICE = "ESP32-PLANTICAS";
 	private static final String KEY = "demo-device-key-for-tests";
 	private static final JsonMapper JSON = JsonMapper.builder().build();
 

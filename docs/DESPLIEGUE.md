@@ -42,7 +42,7 @@ El backend nuevo valida sus tablas al arrancar y **no arranca sin `devices`**. L
 
    Deben aparecer `id_device`, `id_crop`, `device_code`, `key_hash`, `active`, `last_event_at` y `created_at`.
 
-4. No ejecutes `seed_demo.sql` ni `reset.sql` en producción. El dispositivo demo (`RPI-DEMO-01`) solo se crea
+4. No ejecutes `seed_demo.sql` ni `reset.sql` en producción. El dispositivo demo (`ESP32-PLANTICAS`) solo se crea
    con los datos de ejemplo, y su `key_hash` `DISABLED` no sirve como llave.
 
 ## 2. IA (`ia-agrosense`): variables y despliegue

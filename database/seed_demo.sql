@@ -32,6 +32,20 @@ JOIN (VALUES
     ) AS v(estate_name, name, variety, sowing_date, stage) ON v.estate_name = e.name
 WHERE NOT EXISTS (SELECT 1 FROM crops c WHERE c.id_estate = e.id_estate AND c.name = v.name);
 
+-- Sample ranges of the air's relative humidity, only where none was set.
+UPDATE crops SET air_humidity_min = 60, air_humidity_max = 85
+WHERE name = 'Café' AND air_humidity_min IS NULL AND air_humidity_max IS NULL
+  AND id_estate IN (SELECT e.id_estate FROM estates e JOIN users u ON u.id_user = e.id_user
+                    WHERE u.email = 'demo@agrosense.co');
+UPDATE crops SET air_humidity_min = 60, air_humidity_max = 90
+WHERE name = 'Plátano' AND air_humidity_min IS NULL AND air_humidity_max IS NULL
+  AND id_estate IN (SELECT e.id_estate FROM estates e JOIN users u ON u.id_user = e.id_user
+                    WHERE u.email = 'demo@agrosense.co');
+UPDATE crops SET air_humidity_min = 70, air_humidity_max = 90
+WHERE name = 'Papa' AND air_humidity_min IS NULL AND air_humidity_max IS NULL
+  AND id_estate IN (SELECT e.id_estate FROM estates e JOIN users u ON u.id_user = e.id_user
+                    WHERE u.email = 'demo@agrosense.co');
+
 INSERT INTO sensors (id_crop, sensor_code, sensor_type, location, active, last_reading_at)
 SELECT c.id_crop, v.sensor_code, v.sensor_type, v.location, v.active,
        CASE WHEN v.active THEN CURRENT_TIMESTAMP ELSE CURRENT_TIMESTAMP - INTERVAL '3' DAY END
@@ -192,13 +206,13 @@ JOIN (VALUES
     ) AS v(crop_name, confidence, recommendation) ON v.crop_name = c.name
 WHERE NOT EXISTS (SELECT 1 FROM ai_predictions p WHERE p.id_crop = c.id_crop);
 
--- A sample device on the coffee crop (the ESP32 read over TCP uses it with ESP32_DEVICE_ID=RPI-DEMO-01), whose sensors AS-001 (soil moisture), AS-002 (air
--- temperature), AS-003 (pH) and AS-007 (air humidity, the DHT22's second value) receive its readings. Like the demo user, it is created with a key hash that
+-- A sample device on the coffee crop (the ESP32 read over TCP uses it with ESP32_DEVICE_ID=ESP32-PLANTICAS), whose sensors AS-001 (soil moisture), AS-002 (air
+-- temperature), AS-003 (pH) and AS-007 (air humidity, the DHT11's second value) receive its readings. Like the demo user, it is created with a key hash that
 -- matches no key, so it cannot send events until the backend sets one from SEED_DEVICE_KEY.
 INSERT INTO devices (id_crop, device_code, key_hash)
-SELECT c.id_crop, 'RPI-DEMO-01', 'DISABLED'
+SELECT c.id_crop, 'ESP32-PLANTICAS', 'DISABLED'
 FROM crops c
 JOIN estates e ON e.id_estate = c.id_estate
 JOIN users u ON u.id_user = e.id_user AND u.email = 'demo@agrosense.co'
 WHERE c.name = 'Café'
-  AND NOT EXISTS (SELECT 1 FROM devices d WHERE d.device_code = 'RPI-DEMO-01');
+  AND NOT EXISTS (SELECT 1 FROM devices d WHERE d.device_code = 'ESP32-PLANTICAS');

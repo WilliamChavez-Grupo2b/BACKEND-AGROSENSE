@@ -212,13 +212,13 @@ class DesignPatternTests {
 
 	@Test
 	void aSilentDeviceRaisesAnOfflineAlertThatNamesIt() {
-		Alert alert = new SensorOfflineAlertCreator().evaluate(AlertContext.ofSilentDevice(crop, "RPI-1",
+		Alert alert = new SensorOfflineAlertCreator().evaluate(AlertContext.ofSilentDevice(crop, "ESP32-1",
 				LocalDateTime.parse("2026-11-01T08:00:00.5"))).orElseThrow();
 
 		assertThat(alert.getAlertType()).isEqualTo(AlertType.SENSOR_OFFLINE);
 		assertThat(alert.getSeverity()).isEqualTo(Severity.HIGH);
-		assertThat(alert.getMessage()).contains("RPI-1", "2026-11-01T08:00");
-		assertThat(new SensorOfflineAlertCreator().evaluate(AlertContext.ofSilentDevice(crop, "RPI-1", null))).isEmpty();
+		assertThat(alert.getMessage()).contains("ESP32-1", "2026-11-01T08:00");
+		assertThat(new SensorOfflineAlertCreator().evaluate(AlertContext.ofSilentDevice(crop, "ESP32-1", null))).isEmpty();
 	}
 
 	@Test
@@ -277,7 +277,7 @@ class DesignPatternTests {
 
 	private DeviceEventRequest readingEvent() {
 		DeviceEventRequest request = new DeviceEventRequest();
-		request.setDeviceId("RPI-1");
+		request.setDeviceId("ESP32-1");
 		request.setType("reading");
 		return request;
 	}

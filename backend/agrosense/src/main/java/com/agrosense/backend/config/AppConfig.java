@@ -32,7 +32,7 @@ public class AppConfig {
     @Bean
     public ActuatorDriver actuatorDriver(@Value("${irrigation.actuator:simulated}") String actuator,
             @Value("${irrigation.max-run-minutes:5}") int maxRunMinutes, PendingIrrigationCommands pending,
-            @Value("${esp32.tcp.enabled:false}") boolean esp32OverTcp, @Value("${esp32.device-id:RPI-DEMO-01}") String esp32,
+            @Value("${esp32.tcp.enabled:false}") boolean esp32OverTcp, @Value("${esp32.device-id:ESP32-PLANTICAS}") String esp32,
             DeviceRepository devices) {
         ActuatorDriver driver = "relay".equalsIgnoreCase(actuator.trim()) ? new RelayActuatorDriver(pending, maxRunMinutes)
                 : new SimulatedActuatorDriver();

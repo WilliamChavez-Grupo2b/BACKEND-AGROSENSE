@@ -17,7 +17,7 @@
     DATOS SIMULADOS. No necesita la red PLANTICAS ni el manejador de eventos.
 
 .PARAMETER PrepararBase
-    Aplica schema.sql, las migraciones 001 a 003 y seed_demo.sql en la base (y la contraseña de la cuenta demo). Pide
+    Aplica schema.sql, las migraciones 001 a 004 y seed_demo.sql en la base (y la contraseña de la cuenta demo). Pide
     escribir SI. Nunca contra producción.
 
 .PARAMETER BaseLocal
@@ -466,11 +466,11 @@ if ($Simulado) {
 if ($PrepararBase) {
     Write-Step 'Preparar la base'
     $target = $(if ($isH2) { $jdbc } else { "$(Get-Value $values 'DB_HOST') / base $(Get-Value $values 'DB_NAME')" })
-    Write-Host "  Se aplicarán schema.sql, migrations/001 a 003 y seed_demo.sql en: $target"
+    Write-Host "  Se aplicarán schema.sql, migrations/001 a 004 y seed_demo.sql en: $target"
     Write-Host '  Todo es idempotente: se puede repetir. No borra datos. La cuenta demo recibe DEMO_PASSWORD.'
     $answer = Read-Host '  Escribe SI para continuar'
     if ($answer -cne 'SI') { Stop-Demo 'Cancelado: la base no se tocó.' }
-    $migrations = @('001_devices.sql', '002_alert_types.sql', '003_reliability.sql') | ForEach-Object { "$databaseUri/migrations/$_" }
+    $migrations = @('001_devices.sql', '002_alert_types.sql', '003_reliability.sql', '004_esp32_air_humidity.sql') | ForEach-Object { "$databaseUri/migrations/$_" }
     $backendVars['SPRING_PROFILES_ACTIVE'] = 'seed'
     $backendVars['SQL_INIT_MODE'] = 'always'
     # schema.sql first (it builds an empty base) and then the migrations (they bring an older base up to date).
@@ -481,7 +481,7 @@ if ($PrepararBase) {
 
 if ($BaseLocal) {
     # A local base needs no confirmation: schema, migrations and sample rows on every start, all idempotent.
-    $migrations = @('001_devices.sql', '002_alert_types.sql', '003_reliability.sql') | ForEach-Object { "$databaseUri/migrations/$_" }
+    $migrations = @('001_devices.sql', '002_alert_types.sql', '003_reliability.sql', '004_esp32_air_humidity.sql') | ForEach-Object { "$databaseUri/migrations/$_" }
     $backendVars['SPRING_PROFILES_ACTIVE'] = 'seed'
     $backendVars['SQL_INIT_MODE'] = 'always'
     $backendVars['SCHEMA_LOCATION'] = (@("$databaseUri/schema.sql") + $migrations) -join ','
@@ -586,6 +586,6 @@ if ($BaseLocal) {
 }
 Write-Host "Frontend: $url" -ForegroundColor Green
 Write-Host "Cuenta demo: $DemoEmail (la contraseña es DEMO_PASSWORD de tu .env.local)"
-Write-Host 'Abre Cultivos > Café; la primera lectura aparece al minuto.' -ForegroundColor Green
+Write-Host 'Abre Cultivos > Café (la primera lectura aparece al minuto) o Sensores > Humedad del ESP32.' -ForegroundColor Green
 Write-Host 'Para detener todo: tools\esp32\stop-demo.ps1'
 if (-not $NoAbrir) { Start-Process $url }

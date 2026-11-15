@@ -15,7 +15,7 @@ public class DemoDeviceKeyInitializer implements ApplicationRunner {
 
     private final DeviceService deviceService;
 
-    @Value("${agrosense.seed.device-code:RPI-DEMO-01}")
+    @Value("${agrosense.seed.device-code:ESP32-PLANTICAS}")
     private String deviceCode;
 
     @Value("${agrosense.seed.device-key:}")

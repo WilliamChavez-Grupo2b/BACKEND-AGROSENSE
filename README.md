@@ -85,7 +85,7 @@ pública si no tiene credencial.
 |---|---|---|---|
 | `ESP32_TCP_ENABLED` | Backend | `false` | `true` conecta el backend al ESP32 por TCP. Apagado en Render |
 | `ESP32_TCP_HOST`, `ESP32_TCP_PORT` | Backend | `192.168.4.1`, `8080` | Dónde escucha el ESP32. Solo una IPv4 privada |
-| `ESP32_DEVICE_ID` | Backend | `RPI-DEMO-01` | Dispositivo de `devices` al que pertenecen esas lecturas. La conexión no trae llave |
+| `ESP32_DEVICE_ID` | Backend | `ESP32-PLANTICAS` | Dispositivo de `devices` al que pertenecen esas lecturas. La conexión no trae llave |
 | `ESP32_AGGREGATE_SECONDS` | Backend | `60` | Segundos que se promedian antes de guardar una lectura |
 | `IRRIGATION_ACTUATOR` | Backend y frontend | `simulated` | `relay` envía cada riego al dispositivo y cambia los textos de la interfaz |
 | `IRRIGATION_AI_ORDERS` | Backend | `false` | `true` deja a una predicción con confianza de 0,70 o más ordenar un riego sola |

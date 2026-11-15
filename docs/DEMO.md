@@ -31,7 +31,7 @@ internet por **cable o por el celular en USB** (el Wi-Fi `PLANTICAS` no tiene in
    ```
 
    Pide escribir `SI` y aplica `schema.sql`, `migrations/001` a `003` y `seed_demo.sql` (la cuenta demo, el cultivo Café,
-   el dispositivo `RPI-DEMO-01` y sus sensores AS-001, AS-002 y AS-007), y le pone `DEMO_PASSWORD` a la cuenta demo. Todo
+   el dispositivo `ESP32-PLANTICAS` y sus sensores AS-001, AS-002 y AS-007), y le pone `DEMO_PASSWORD` a la cuenta demo. Todo
    es idempotente y no borra datos. No hace falta `psql`: lo aplica el propio backend (perfil `seed`). Después sigue
    arrancando como en el día de la demo.
 
@@ -45,6 +45,8 @@ Hace las comprobaciones, arranca el backend y espera a que `/api/health` respond
 apuntando al backend, espera hasta 30 s el mensaje `ESP32: connected to 192.168.4.1:8080` y muestra el estado del
 receptor (conectado, bloques recibidos y descartados, última lectura). Abre el navegador en `http://localhost:8080`.
 Entra con `demo@agrosense.co` y tu `DEMO_PASSWORD`, y abre **Cultivos > Café**: la primera lectura aparece al minuto.
+Para ver solo la humedad del ESP32 y la planta que mide, abre **Sensores > Humedad del ESP32**: la lista se actualiza
+cada 30 s ([SENSOR-ESP32.md](SENSOR-ESP32.md)).
 
 - **No dejes PuTTY conectado al ESP32**: atiende un solo cliente.
 - Los registros quedan en `tools\esp32\.run\backend.log` y `frontend.log` (git los ignora). Ningún secreto se escribe en
@@ -100,7 +102,7 @@ y se conecta a él.
    ```powershell
    cd backend/agrosense
    $env:ESP32_TCP_ENABLED = "true"
-   $env:ESP32_DEVICE_ID = "RPI-DEMO-01"     # ESP32_TCP_HOST y ESP32_TCP_PORT ya valen 192.168.4.1 y 8080
+   $env:ESP32_DEVICE_ID = "ESP32-PLANTICAS"     # ESP32_TCP_HOST y ESP32_TCP_PORT ya valen 192.168.4.1 y 8080
    $env:ESP32_AGGREGATE_SECONDS = "60"     # una lectura guardada por minuto
    $env:IRRIGATION_ACTUATOR = "simulated"  # el ESP32 no tiene bomba
    $env:SENSOR_CALIBRATION = "AIR_TEMPERATURE=-8.5:1,RELATIVE_HUMIDITY=-6:1"  # por verificar

@@ -1,4 +1,4 @@
--- Migration 001 (2026-10-16): field devices (Raspberry Pi) that send events to the event service.
+-- Migration 001 (2026-10-16): field devices (today the ESP32) that send events to the event service.
 -- Run it by hand on the production database BEFORE deploying a backend that includes devices: the backend
 -- validates its tables at start-up and refuses to start without this one. Safe to run more than once.
 -- The same statements are in schema.sql, so a database created from scratch already has the table.

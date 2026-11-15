@@ -4,7 +4,7 @@ Standard library only. It needs the services running, and fails with a message a
 
   BACKEND_URL (http://localhost:9000)   EVENTS_URL (http://localhost:8100)
   API_EMAIL (demo@agrosense.co)         API_PASSWORD
-  DEVICE_ID (RPI-DEMO-01)               DEVICE_KEY
+  DEVICE_ID (ESP32-PLANTICAS)               DEVICE_KEY
   CROP_ID (1, the crop of that device)
 
 The backend must run with IRRIGATION_ACTUATOR=relay for the order to reach the device; EXPECT_MODEL=rules also requires
@@ -21,7 +21,7 @@ BACKEND = os.environ.get("BACKEND_URL", "http://localhost:9000").rstrip("/")
 EVENTS = os.environ.get("EVENTS_URL", "http://localhost:8100").rstrip("/")
 EMAIL = os.environ.get("API_EMAIL", "demo@agrosense.co")
 PASSWORD = os.environ.get("API_PASSWORD", "")
-DEVICE = os.environ.get("DEVICE_ID", "RPI-DEMO-01")
+DEVICE = os.environ.get("DEVICE_ID", "ESP32-PLANTICAS")
 KEY = os.environ.get("DEVICE_KEY", "")
 EXPECT_MODEL = os.environ.get("EXPECT_MODEL", "")
 LOCAL_MODEL = "agrosense-reglas-locales"

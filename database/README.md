@@ -46,7 +46,7 @@ users ─┬─< estates ─< crops ─┬─< sensors ─< sensor_readings
 |-------------------|------------------------------------------------------------------------|
 | `users`           | Cuentas. `email` único; `password_hash` con BCrypt.                    |
 | `estates`         | Fincas o parcelas de un usuario, con coordenadas opcionales.           |
-| `crops`           | Cultivos de una finca y sus rangos aceptables de humedad, temperatura y pH. |
+| `crops`           | Cultivos de una finca y sus rangos aceptables de humedad del suelo, humedad del aire (opcional), temperatura y pH. |
 | `sensors`         | Sensores instalados en un cultivo. `sensor_code` único.                |
 | `sensor_readings` | Lecturas de cada sensor.                                               |
 | `alerts`          | Alertas de un cultivo, con severidad y estado de atención.             |
@@ -163,9 +163,11 @@ archivo es idempotente: se puede ejecutar varias veces sin efecto adicional.
 
 | `migrations/002_alert_types.sql` | 2026-11-01 | Amplía `ck_alerts_type` con `FROST_RISK`, `SENSOR_OFFLINE` y `SENSOR_FAULT` |
 | `migrations/003_reliability.sql` | 2026-11-01 | Tablas `irrigation_dispatches` y `sensor_readings_hourly`; columnas `moisture_before` y `moisture_after` en `irrigations` |
+| `migrations/004_esp32_air_humidity.sql` | 2026-11-15 | Columnas `air_humidity_min` y `air_humidity_max` en `crops` con `ck_crops_air_humidity`; renombra el dispositivo `RPI-DEMO-01` a `ESP32-PLANTICAS` |
 
-Orden de despliegue: **migraciones 001, 002 y 003 en este orden, frontend, backend**. Prueba cada una primero en una base
-de desarrollo. Las tres se pueden repetir sin efecto y ninguna borra datos. Sin la 003 el backend nuevo no arranca, sin la
+Orden de despliegue: **migraciones 001, 002, 003 y 004 en este orden, frontend, backend**. Prueba cada una primero en una base
+de desarrollo. Las cuatro se pueden repetir sin efecto y ninguna borra datos. Sin la 004 ni el frontend ni el backend nuevos arrancan
+(validan `air_humidity_min` y `air_humidity_max`) y, después de aplicarla, `ESP32_DEVICE_ID` debe decir `ESP32-PLANTICAS`. Sin la 003 el backend nuevo no arranca, sin la
 002 la base rechaza las alertas nuevas, y un frontend anterior falla al leer un tipo de alerta que no conoce.
 
 **Antes de desplegar** un backend que use la tabla nueva, ejecuta la migración a mano en la base de
@@ -195,11 +197,11 @@ al arrancar (`ddl-auto=validate`) y no arranca si falta `devices`.
 
 3. Despliega el backend. Volver a ejecutar la migración más tarde no cambia nada.
 
-La migración no inserta filas. El dispositivo de ejemplo (`RPI-DEMO-01`) solo lo crea `seed_demo.sql`.
+La migración no inserta filas. El dispositivo de ejemplo (`ESP32-PLANTICAS`) solo lo crea `seed_demo.sql`.
 
 ## El dispositivo de ejemplo y su llave
 
-`seed_demo.sql` crea el dispositivo `RPI-DEMO-01` en el cultivo Café, cuyos sensores `AS-001` (humedad del
+`seed_demo.sql` crea el dispositivo `ESP32-PLANTICAS` en el cultivo Café, cuyos sensores `AS-001` (humedad del
 suelo), `AS-002` (temperatura del aire) y `AS-003` (pH) reciben sus lecturas. Igual que el usuario de
 ejemplo, se crea con un `key_hash` (`DISABLED`) que no corresponde a ninguna llave. El backend le asigna
 una al arrancar si se define `SEED_DEVICE_KEY`; es para bases locales y de pruebas, no para producción.
