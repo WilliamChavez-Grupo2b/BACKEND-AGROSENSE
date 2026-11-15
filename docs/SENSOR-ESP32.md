@@ -39,6 +39,14 @@ Los otros tipos (pH, conductividad, luz, lluvia, temperatura del suelo) siguen e
 así los datos viejos no se rompen y las pruebas del backend siguen igual. Solo dejan de verse. En la demo, AS-003 (pH) y
 AS-005 (conductividad) quedan guardados pero ocultos, y AS-006 pasó de luz a humedad del suelo (sigue inactivo).
 
+## Parcelas y Cultivos muestran lo que mide cada sensor
+
+En **Parcelas**, en el detalle de cada parcela y en **Cultivos**, cada cultivo muestra solo lo que miden sus sensores
+**activados**: humedad del suelo, temperatura del aire y humedad relativa, con su último valor. Una medida sin sensor
+activado no aparece, y un cultivo sin ninguno dice «Sin sensores activados». Un sensor desactivado no muestra datos (ni
+en la página ni en la actualización cada 30 segundos) y dice «Desactivado: no muestra datos». Ninguna de estas páginas
+muestra el código del sensor.
+
 ## Humedad del día en Riego
 
 La página **Riego** tiene la tarjeta **«Humedad del día»**, con las últimas 24 horas del cultivo que mide el ESP32. Por cada
@@ -120,9 +128,10 @@ humedad del aire a `crops` y renombra el dispositivo `RPI-DEMO-01` a `ESP32-PLAN
 | Baja, normal y alta en los bordes | `HumidityLevelTests` |
 | El rango del aire es opcional, pero completo y en orden | `CropFormAirHumidityTests` |
 | Formato del feed y cuándo repintar | `src/test/ts/api-patterns.test.mjs` (`esp32Humidity`) |
-| La página no hace más consultas de las previstas | `QueryBudgetTests` (`/sensores`: 5, `/riego`: 6) |
+| La página no hace más consultas de las previstas | `QueryBudgetTests` (`/parcelas`: 4, `/sensores`: 5, `/riego`: 6) |
 | Solo se ofrecen y se muestran los tres valores del ESP32 | `WebFlowTests.theApplicationOnlyOffersAndShowsWhatTheEsp32Measures` |
 | El aviso «Sin datos del ESP32»: cuándo sale y qué dice | `Esp32SilencePolicyTests`, `WebFlowTests.anEsp32ThatStoppedSendingIsSaidOnThePageAndInTheFeed` |
+| Parcelas y Cultivos muestran solo los datos de los sensores activados, sin códigos | `WebFlowTests.estatesAndCropsShowWhatEachCropsActivatedSensorsMeasureAndADeactivatedSensorShowsNoData` |
 | La humedad del día en Riego: cifras, tiempo fuera de lo ideal y solo para el dueño | `HumidityDaySummaryTests`, `WebFlowTests.theIrrigationPageShowsTheDaysHumidityOfTheEsp32sCropOnlyToItsOwner` |
 | Alerta de aire baja o alta, solo con su propio rango | `DesignPatternTests.theAirsHumidityIsJudgedOnlyAgainstItsOwnOptionalRange`, `DeviceIntegrationTests` |
 | Editar un cultivo sin campo de pH no borra su pH | `WebFlowTests.editingACropWithoutAPhFieldKeepsTheStoredPh` |
