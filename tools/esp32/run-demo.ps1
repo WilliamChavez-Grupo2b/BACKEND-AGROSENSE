@@ -16,6 +16,11 @@
     de él. Solo en este modo, y solo en el proceso del backend, se activa ESP32_TCP_ALLOW_LOOPBACK. El resumen dice
     DATOS SIMULADOS. No necesita la red PLANTICAS ni el manejador de eventos.
 
+.PARAMETER Usb
+    Lee el ESP32 REAL por el cable USB cuando el PC no puede unirse a la red PLANTICAS. Arranca esp32_usb.py, que lee el
+    puerto serie (ESP32_SERIAL_PORT o el primer adaptador CH340/CP210x que encuentre) y sirve el mismo bloque TCP en
+    127.0.0.1. Como en -Simulado, solo el proceso del backend recibe ESP32_TCP_ALLOW_LOOPBACK. Necesita pyserial.
+
 .PARAMETER PrepararBase
     Aplica schema.sql, las migraciones 001 a 004 y seed_demo.sql en la base (y la contraseña de la cuenta demo). Pide
     escribir SI. Nunca contra producción.
@@ -38,6 +43,7 @@
 param(
     [switch]$SinEsp32,
     [switch]$Simulado,
+    [switch]$Usb,
     [switch]$PrepararBase,
     [switch]$BaseLocal,
     [switch]$NoAbrir,
@@ -116,6 +122,16 @@ function Get-NeonEndpoint([string]$hostName) {
     return ($label -replace '-pooler$', '')
 }
 
+function Get-Esp32SerialPort([hashtable]$values) {
+    $configured = Get-Value $values 'ESP32_SERIAL_PORT'
+    if ($configured) { return $configured }
+    # The usual USB-to-serial chips of ESP32 boards; their friendly name ends in (COMn).
+    $device = Get-CimInstance Win32_PnPEntity -ErrorAction SilentlyContinue |
+        Where-Object { $_.Name -match '(CH340|CH910|CP210|USB.*(Serial|UART)).*\((COM\d+)\)' } | Select-Object -First 1
+    if ($device -and $device.Name -match '\((COM\d+)\)') { return $Matches[1] }
+    return $null
+}
+
 function Get-PythonExe {
     # The python.exe in WindowsApps is only a shortcut to the Store: it does not run scripts.
     foreach ($name in @('python', 'py')) {
@@ -169,7 +185,7 @@ function Get-PomJava([string]$pom) {
     return 0
 }
 
-function Invoke-Checks([hashtable]$values, [bool]$useEsp32, [bool]$isH2, [bool]$simulated) {
+function Invoke-Checks([hashtable]$values, [bool]$useEsp32, [bool]$isH2, [bool]$simulated, [bool]$usb = $false) {
     $failed = 0
 
     Write-Step '1. Archivo de variables'
@@ -274,7 +290,28 @@ function Invoke-Checks([hashtable]$values, [bool]$useEsp32, [bool]$isH2, [bool]$
     }
 
     Write-Step '7. ESP32'
-    if ($simulated) {
+    if ($usb) {
+        $simPort = [int](Get-Value $values 'ESP32_SIM_PORT' "$SimulatedPortDefault")
+        $python = Get-PythonExe
+        $serialPort = Get-Esp32SerialPort $values
+        $hasSerial = $false
+        if ($python) { & $python -c 'import serial' 2>$null; $hasSerial = ($LASTEXITCODE -eq 0) }
+        if (-not $python) {
+            Write-Bad 'Modo USB: no se encontró Python' 'Instala Python 3 (python.org) y abre una consola nueva.'
+            $failed++
+        } elseif (-not $hasSerial) {
+            Write-Bad 'Modo USB: falta pyserial' "Instálalo con: `"$python`" -m pip install pyserial"
+            $failed++
+        } elseif (-not $serialPort) {
+            Write-Bad 'Modo USB: no se encontró el ESP32 en ningún puerto COM' 'Conecta la placa por USB (instala el driver CH340 o CP210x si Windows no la reconoce) o pon ESP32_SERIAL_PORT=COMn en el archivo de variables.'
+            $failed++
+        } elseif (-not (Test-PortFree $simPort)) {
+            Write-Bad "Modo USB: el puerto $simPort del puente está en uso" 'Corre stop-demo.ps1 o pon otro ESP32_SIM_PORT en el archivo de variables.'
+            $failed++
+        } else {
+            Write-Ok "Modo USB: el ESP32 real por $serialPort, servido en $($SimulatedHost):$simPort (cierra PuTTY y el monitor serie de Arduino)"
+        }
+    } elseif ($simulated) {
         $simPort = [int](Get-Value $values 'ESP32_SIM_PORT' "$SimulatedPortDefault")
         $python = Get-PythonExe
         if (-not $python) {
@@ -404,16 +441,18 @@ if ($BaseLocal) {
 }
 $isH2 = [bool]$override
 if ($Simulado -and $SinEsp32) { Stop-Demo 'Usa -Simulado o -SinEsp32, no los dos.' }
-$useEsp32 = $Simulado -or ((-not $SinEsp32) -and ((Get-Value $values 'ESP32_TCP_ENABLED' 'true') -eq 'true'))
+if ($Usb -and ($Simulado -or $SinEsp32)) { Stop-Demo 'Usa -Usb solo: lee la placa real, no se combina con -Simulado ni con -SinEsp32.' }
+$useEsp32 = $Simulado -or $Usb -or ((-not $SinEsp32) -and ((Get-Value $values 'ESP32_TCP_ENABLED' 'true') -eq 'true'))
 $simPort = [int](Get-Value $values 'ESP32_SIM_PORT' "$SimulatedPortDefault")
 if ($Simulado) { Write-Host 'Modo -Simulado: un ESP32 falso en este PC; los datos NO son de la placa.' -ForegroundColor Magenta }
+if ($Usb) { Write-Host 'Modo -Usb: el ESP32 real por el cable USB; no hace falta la red PLANTICAS.' -ForegroundColor Magenta }
 
 $alive = @(Get-Running)
 if ($alive.Count -gt 0 -and -not $Verificar) {
     Stop-Demo "Ya hay una demo en marcha ($($alive -join ', ')). Detenla con tools\esp32\stop-demo.ps1."
 }
 
-$failed = Invoke-Checks $values $useEsp32 $isH2 ([bool]$Simulado)
+$failed = Invoke-Checks $values $useEsp32 $isH2 ([bool]$Simulado) ([bool]$Usb)
 Write-Host ''
 if ($failed -gt 0) {
     Write-Host "$failed comprobación(es) fallaron. Corrígelas y vuelve a intentarlo." -ForegroundColor Red
@@ -455,8 +494,8 @@ $backendVars = @{
 }
 foreach ($key in $BackendPassThrough) { $value = Get-Value $values $key; if ($value) { $backendVars[$key] = $value } }
 foreach ($entry in $common.GetEnumerator()) { $backendVars[$entry.Key] = $entry.Value }
-if ($Simulado) {
-    # The fake ESP32 listens on loopback, which the backend refuses unless told: only here, only for its process.
+if ($Simulado -or $Usb) {
+    # The fake ESP32 and the USB bridge listen on loopback, which the backend refuses unless told: only here, only for its process.
     $backendVars['ESP32_TCP_ENABLED'] = 'true'
     $backendVars['ESP32_TCP_HOST'] = $SimulatedHost
     $backendVars['ESP32_TCP_PORT'] = "$simPort"
@@ -517,6 +556,20 @@ if ($Simulado) {
     Write-Ok "ESP32 falso escuchando en $($SimulatedHost):$simPort"
 }
 
+if ($Usb) {
+    Write-Step 'ESP32 por USB'
+    $python = Get-PythonExe
+    $serialPort = Get-Esp32SerialPort $values
+    $bridgeScript = Join-Path $Tools 'esp32_usb.py'
+    $bridge = Start-Logged 'esp32-usb' $Tools "`"$python`" -u `"$bridgeScript`" --serial $serialPort --port $simPort" @{}
+    $deadline = (Get-Date).AddSeconds(15)
+    while (-not (Test-TcpPort $SimulatedHost $simPort 1000)) {
+        if ($bridge.HasExited -or (Get-Date) -gt $deadline) { Show-Failure 'esp32-usb' 'el puente USB no abrió su puerto' }
+        Start-Sleep -Milliseconds 500
+    }
+    Write-Ok "Puente USB: el ESP32 de $serialPort servido en $($SimulatedHost):$simPort"
+}
+
 Write-Step 'Backend'
 $backend = Start-App 'backend' (Join-Path $Workspace 'backend\agrosense') $backendVars $backendArgs
 Wait-Http 'backend' $backend "http://localhost:$backendPort/api/health" 180
@@ -539,6 +592,8 @@ if ($useEsp32) {
     } else {
         if ($Simulado) {
             Write-Bad 'El backend no se conectó al ESP32 falso en 30 s' 'Revisa tools\esp32\.run\esp32-simulado.log y backend.log.'
+        } elseif ($Usb) {
+            Write-Bad 'El backend no se conectó al puente USB en 30 s' 'Revisa tools\esp32\.run\esp32-usb.log y backend.log; cierra PuTTY y el monitor serie.'
         } else {
             Write-Bad 'El backend no se conectó al ESP32 en 30 s' 'Sigue reintentando solo. Revisa que el PC siga en PLANTICAS y que no haya otro cliente (PuTTY) conectado.'
         }
@@ -580,6 +635,9 @@ $url = "http://localhost:$frontendPort"
 Write-Host ''
 if ($Simulado) {
     Write-Host '*** DATOS SIMULADOS: las lecturas vienen de esp32_simulado.py, no de la placa ***' -ForegroundColor Magenta
+}
+if ($Usb) {
+    Write-Host '*** ESP32 REAL POR USB: las lecturas vienen de la placa a través de esp32_usb.py ***' -ForegroundColor Magenta
 }
 if ($BaseLocal) {
     Write-Host '*** BASE LOCAL: H2 en tools\esp32\.run\h2, no Neon ***' -ForegroundColor Magenta

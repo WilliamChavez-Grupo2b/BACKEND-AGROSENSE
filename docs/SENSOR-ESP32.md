@@ -38,6 +38,11 @@ enlaza al formulario del cultivo.
 
 El frontend y el backend deben usar el mismo `ESP32_DEVICE_ID`.
 
+## Sin la red PLANTICAS: por USB
+
+`run-demo.ps1 -Usb` lee la misma placa por el cable USB con `tools/esp32/esp32_usb.py` (ver [DEMO.md](DEMO.md)). Las lecturas
+son las reales y llegan a esta sección igual que por Wi-Fi.
+
 ## Modo demo
 
 Con el perfil `demo` (o `seed`) la sección funciona sin la placa con los datos de `database/seed_demo.sql`: el dispositivo

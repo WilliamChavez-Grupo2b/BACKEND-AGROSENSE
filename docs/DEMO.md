@@ -57,6 +57,19 @@ cada 30 s ([SENSOR-ESP32.md](SENSOR-ESP32.md)).
 - Para detener todo: `powershell -ExecutionPolicy Bypass -File tools\esp32\stop-demo.ps1`. Solo detiene lo que arrancó
   `run-demo.ps1` (guarda sus PID en `tools\esp32\.run\`), no otros programas Java.
 
+### Plan A bis: la placa por el cable USB
+
+Si el PC no logra unirse a la red PLANTICAS pero el ESP32 está conectado por USB, usa los datos reales por el cable:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File tools\esp32un-demo.ps1 -Usb -BaseLocal
+```
+
+`tools\esp32\esp32_usb.py` lee el puerto serie (el primer adaptador CH340 o CP210x, o `ESP32_SERIAL_PORT=COMn` en el
+archivo de variables) y le entrega al backend el mismo bloque que enviaría el Wi-Fi, en `127.0.0.1`. Necesita
+`python -m pip install pyserial`. Cierra PuTTY y el monitor serie de Arduino: el puerto lo usa un solo programa. Si la placa
+deja de medir, el puente deja de enviar y el backend muestra que no hay datos.
+
 ### Plan B sin la placa: datos simulados
 
 ```powershell
