@@ -138,7 +138,8 @@ class ReadingJsonBuilder {
     append("\":");
     long tenths = static_cast<long>(reading.value * 10.0f + (reading.value < 0 ? -0.5f : 0.5f));
     unsigned long magnitude = static_cast<unsigned long>(tenths < 0 ? -tenths : tenths);
-    char digits[20];
+    // Sign + up to 20 digits of a 64-bit unsigned long (Linux) + '.' + one digit + '\0'.
+    char digits[24];
     snprintf(digits, sizeof digits, "%s%lu.%lu", tenths < 0 ? "-" : "", magnitude / 10, magnitude % 10);
     append(digits);
   }
