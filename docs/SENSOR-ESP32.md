@@ -1,17 +1,17 @@
 # Humedad del ESP32 en la página Sensores
 
-La página **Sensores** termina con la sección **«Sensor ESP32 conectado»**. El botón **Humedad del ESP32** de la barra
-lleva directo a ella. Muestra solo lo que el ESP32 real mide del agua y todo lo que el sistema sabe de la planta que mide.
+La página **Sensores** termina con la sección **«Humedad de tu cultivo en vivo»**. El botón **Humedad del ESP32** de la
+barra lleva directo a ella. Se ve como la lista de sensores y muestra solo resultados en palabras del agricultor: ningún
+código de dispositivo, de sensor ni de configuración, y ninguna tabla técnica.
 
 ## Qué muestra
 
 | Bloque | Contenido |
 |---|---|
-| La planta | Cultivo, variedad, etapa, fecha de siembra, finca, lugar y área |
-| Rangos del cultivo | Humedad del suelo, humedad del aire (opcional) y temperatura |
-| Sensores de humedad | Los sensores de humedad del suelo y humedad relativa de ese cultivo, su última lectura y su conexión |
-| Humedad en las últimas 24 horas | Una gráfica con una línea por sensor (suelo y aire), promediada cada 15 minutos, y el mínimo y el máximo de cada rango como líneas punteadas |
-| Niveles de humedad | Las 50 lecturas más recientes de esos sensores, de la más nueva a la más antigua, con su nivel |
+| Tarjetas de resultado | Una por medida (humedad del suelo y humedad relativa), como las tarjetas de sensores: el valor en grande, si está **Baja**, **Normal** o **Alta**, qué significa para la planta («La tierra está seca: conviene regar»), cuándo llegó y la humedad ideal |
+| Las últimas 24 horas | Una gráfica con una línea por medida, promediada cada 15 minutos, y la humedad ideal de cada una como líneas punteadas |
+| Tu cultivo | Cultivo, variedad, etapa, siembra, finca, lugar, área y temperatura ideal |
+| Últimas lecturas | Las 20 lecturas más recientes, de la más nueva a la más antigua: hora, medida, valor y nivel |
 
 Cada lectura se califica contra el rango que le corresponde:
 
@@ -69,7 +69,7 @@ migración `database/migrations/005_air_humidity_alerts.sql`.
 2. El backend los lee, promedia cada 60 s y guarda las lecturas como el dispositivo `ESP32_DEVICE_ID`
    (por defecto `ESP32-PLANTICAS`), que pertenece al cultivo Café de la demo.
 3. El frontend busca el cultivo de ese dispositivo (tabla `devices`) **solo si es del usuario que inició sesión**; si no,
-   muestra «Sin sensor conectado». Nadie ve la planta de otro adivinando un código.
+   muestra «Aún no hay un ESP32 en tus cultivos». Nadie ve la planta de otro adivinando un código.
 4. La gráfica pide `/api/ui/esp32/humidity/day` al abrir la página y otra vez cada vez que llega una lectura nueva. Si el
    ESP32 estuvo apagado un rato, la línea queda cortada en ese tramo en vez de unir los puntos.
 5. La página consulta `/api/ui/esp32/humidity` cada 30 s (`src/main/ts/esp32-humidity.ts`) y repinta la lista cuando hay
