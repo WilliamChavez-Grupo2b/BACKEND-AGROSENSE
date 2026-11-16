@@ -45,7 +45,8 @@ En **Parcelas**, en el detalle de cada parcela y en **Cultivos**, cada cultivo m
 **activados**: humedad del suelo, temperatura del aire y humedad relativa, con su último valor. Una medida sin sensor
 activado no aparece, y un cultivo sin ninguno dice «Sin sensores activados». Un sensor desactivado no muestra datos (ni
 en la página ni en la actualización cada 30 segundos) y dice «Desactivado: no muestra datos». Ninguna de estas páginas
-muestra el código del sensor.
+muestra el código del sensor; tampoco Inicio (el selector y la leyenda de «Lecturas por sensor» y la lista en
+vivo dicen, por ejemplo, «Humedad del suelo · Café · Lote norte») ni la tabla de Reportes.
 
 ## Humedad del día en Riego
 
@@ -131,6 +132,7 @@ humedad del aire a `crops` y renombra el dispositivo `RPI-DEMO-01` a `ESP32-PLAN
 | La página no hace más consultas de las previstas | `QueryBudgetTests` (`/parcelas`: 4, `/sensores`: 5, `/riego`: 6) |
 | Solo se ofrecen y se muestran los tres valores del ESP32 | `WebFlowTests.theApplicationOnlyOffersAndShowsWhatTheEsp32Measures` |
 | El aviso «Sin datos del ESP32»: cuándo sale y qué dice | `Esp32SilencePolicyTests`, `WebFlowTests.anEsp32ThatStoppedSendingIsSaidOnThePageAndInTheFeed` |
+| Inicio y Reportes nombran cada sensor por lo que mide y su cultivo, sin códigos | `WebFlowTests.theHomeAndReportsNameEachSensorByWhatItMeasuresAndItsCropNeverByItsCode` |
 | Parcelas y Cultivos muestran solo los datos de los sensores activados, sin códigos | `WebFlowTests.estatesAndCropsShowWhatEachCropsActivatedSensorsMeasureAndADeactivatedSensorShowsNoData` |
 | La humedad del día en Riego: cifras, tiempo fuera de lo ideal y solo para el dueño | `HumidityDaySummaryTests`, `WebFlowTests.theIrrigationPageShowsTheDaysHumidityOfTheEsp32sCropOnlyToItsOwner` |
 | Alerta de aire baja o alta, solo con su propio rango | `DesignPatternTests.theAirsHumidityIsJudgedOnlyAgainstItsOwnOptionalRange`, `DeviceIntegrationTests` |
