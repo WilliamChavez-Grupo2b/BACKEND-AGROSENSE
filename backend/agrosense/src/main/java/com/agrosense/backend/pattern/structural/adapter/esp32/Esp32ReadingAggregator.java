@@ -1,7 +1,9 @@
 package com.agrosense.backend.pattern.structural.adapter.esp32;
 
-import java.math.BigDecimal;
-import java.math.RoundingMode;
+import com.agrosense.backend.pattern.behavioral.iterator.BlockWindow;
+import com.agrosense.backend.pattern.behavioral.strategy.AggregationStrategy;
+import com.agrosense.backend.pattern.behavioral.strategy.MeanAggregation;
+
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -9,28 +11,39 @@ import java.util.Optional;
 
 /**
  * The ESP32 sends a block every second; storing each would fill the database and pass DEVICE_MAX_EVENTS_PER_MINUTE.
- * Each field is averaged over a window (ESP32_AGGREGATE_SECONDS, 60 by default) that starts with its first block, and
- * the window gives one reading stamped with its end. A field missing from some blocks is averaged over the others.
+ * Each field is combined over a window (ESP32_AGGREGATE_SECONDS, 60 by default) that starts with its first block, and
+ * the window gives one reading stamped with its end. A field missing from some blocks is combined over the others.
+ *
+ * <p>The blocks are kept in a {@link BlockWindow} and walked with its iterator; how they are combined is an
+ * {@link AggregationStrategy}: the mean by default, or the median (ESP32_AGGREGATE_STRATEGY).
  */
 public class Esp32ReadingAggregator {
 
-    /** The average of a window, the moment it ended and how many blocks it held. */
+    /** The combined reading of a window, the moment it ended and how many blocks it held. */
     public record Window(Esp32Reading average, Instant endsAt, int blocks) {
     }
 
     private final Duration window;
     private final Clock clock;
+    private final AggregationStrategy strategy;
+    private final BlockWindow blocks = new BlockWindow();
     private Instant startedAt;
-    private int blocks;
-    private final double[] sums = new double[3];
-    private final int[] counts = new int[3];
 
     public Esp32ReadingAggregator(Duration window, Clock clock) {
+        this(window, clock, new MeanAggregation());
+    }
+
+    public Esp32ReadingAggregator(Duration window, Clock clock, AggregationStrategy strategy) {
         if (window.isNegative() || window.isZero()) {
             throw new IllegalArgumentException("The aggregation window must be positive");
         }
         this.window = window;
         this.clock = clock;
+        this.strategy = strategy;
+    }
+
+    public AggregationStrategy strategy() {
+        return strategy;
     }
 
     /** Adds a block; when the window it arrives in follows a finished one, that one comes back. */
@@ -39,10 +52,7 @@ public class Esp32ReadingAggregator {
         if (startedAt == null) {
             startedAt = clock.instant();
         }
-        blocks++;
-        take(0, reading.airTemperature());
-        take(1, reading.relativeHumidity());
-        take(2, reading.soilMoisture());
+        blocks.add(reading);
         return closed;
     }
 
@@ -64,29 +74,14 @@ public class Esp32ReadingAggregator {
         return close(now.isBefore(end) ? now : end);
     }
 
-    private void take(int field, Double value) {
-        if (value != null) {
-            sums[field] += value;
-            counts[field]++;
-        }
-    }
-
     private Optional<Window> close(Instant end) {
-        Esp32Reading average = new Esp32Reading(mean(0), mean(1), mean(2));
-        int held = blocks;
+        Esp32Reading combined = new Esp32Reading(
+                strategy.combine(blocks.values(Esp32Reading::airTemperature)),
+                strategy.combine(blocks.values(Esp32Reading::relativeHumidity)),
+                strategy.combine(blocks.values(Esp32Reading::soilMoisture)));
+        int held = blocks.size();
         startedAt = null;
-        blocks = 0;
-        for (int field = 0; field < sums.length; field++) {
-            sums[field] = 0;
-            counts[field] = 0;
-        }
-        return average.isEmpty() ? Optional.empty() : Optional.of(new Window(average, end, held));
-    }
-
-    private Double mean(int field) {
-        if (counts[field] == 0) {
-            return null;
-        }
-        return BigDecimal.valueOf(sums[field] / counts[field]).setScale(2, RoundingMode.HALF_UP).doubleValue();
+        blocks.clear();
+        return combined.isEmpty() ? Optional.empty() : Optional.of(new Window(combined, end, held));
     }
 }

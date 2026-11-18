@@ -2,11 +2,20 @@ package com.agrosense.backend.pattern.structural.adapter.esp32;
 
 import com.agrosense.backend.dto.request.DeviceEventRequest;
 import com.agrosense.backend.exception.ApiException;
+import com.agrosense.backend.pattern.behavioral.mediator.Esp32Mediator;
+import com.agrosense.backend.pattern.behavioral.observer.Esp32Counters;
+import com.agrosense.backend.pattern.behavioral.observer.Esp32Feed;
+import com.agrosense.backend.pattern.behavioral.observer.Esp32FeedObserver;
+import com.agrosense.backend.pattern.behavioral.state.Esp32Link;
+import com.agrosense.backend.pattern.behavioral.strategy.AggregationStrategy;
+import com.agrosense.backend.pattern.behavioral.visitor.EventDataWriter;
+import com.agrosense.backend.pattern.behavioral.visitor.MeasureDescriber;
 import com.agrosense.backend.pattern.structural.adapter.esp32.Esp32ReadingAggregator.Window;
 import com.agrosense.backend.pattern.structural.facade.DeviceIngestionFacade;
 import com.agrosense.backend.service.DeviceEventService;
 import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
@@ -19,7 +28,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
-import java.util.concurrent.atomic.AtomicLong;
+import java.util.stream.Collectors;
 import java.util.regex.Pattern;
 
 /**
@@ -31,10 +40,15 @@ import java.util.regex.Pattern;
  * receives. Off unless ESP32_TCP_ENABLED=true; it starts once the application is ready, on a thread of its own, so a
  * missing ESP32 never delays or stops the backend. The connection carries no X-Device-Key: the device is trusted
  * because it is configured (ESP32_DEVICE_ID) and reached on a private address. See docs/ARQUITECTURA.md, decision 40.
+ *
+ * <p>Behavioural patterns on this road (docs/PATRONES.md): it is the {@link Esp32Mediator} of the client, the parser
+ * (a Chain of Responsibility), the aggregator (an Iterator and a Strategy) and the ingestion; it tells an
+ * {@link Esp32Feed} what happened, and its observers count ({@link Esp32Counters}) and follow the link's State
+ * ({@link Esp32Link}); the event's data is written by a Visitor ({@link EventDataWriter}).
  */
 @Slf4j
 @Service
-public class Esp32TcpIngestionService {
+public class Esp32TcpIngestionService implements Esp32Mediator {
 
     /** The field's zone, for the time each averaged reading is stamped with. */
     public static final ZoneOffset FIELD_ZONE = ZoneOffset.ofHours(-5);
@@ -50,11 +64,9 @@ public class Esp32TcpIngestionService {
     private final Esp32ReadingAggregator aggregator;
     private final Esp32TcpClient client;
     private final JsonMapper json = JsonMapper.builder().build();
-    private final AtomicLong receivedBlocks = new AtomicLong();
-    private final AtomicLong storedReadings = new AtomicLong();
-    private final AtomicLong refusedReadings = new AtomicLong();
-    private volatile Instant lastBlockAt;
-    private volatile Instant lastStoredAt;
+    private final Esp32Feed feed = new Esp32Feed();
+    private final Esp32Counters counters = new Esp32Counters();
+    private final Esp32Link link;
 
     public Esp32TcpIngestionService(DeviceIngestionFacade ingestion,
             @Value("${esp32.tcp.enabled:false}") boolean enabled,
@@ -67,6 +79,23 @@ public class Esp32TcpIngestionService {
             @Value("${esp32.tcp.first-retry-ms:2000}") long firstRetryMs,
             @Value("${esp32.tcp.longest-retry-ms:30000}") long longestRetryMs,
             @Value("${esp32.tcp.allow-loopback:false}") boolean allowLoopback) {
+        this(ingestion, enabled, host, port, deviceId, aggregateSeconds, connectTimeoutMs, readTimeoutMs, firstRetryMs,
+                longestRetryMs, allowLoopback, "mean");
+    }
+
+    @Autowired
+    public Esp32TcpIngestionService(DeviceIngestionFacade ingestion,
+            @Value("${esp32.tcp.enabled:false}") boolean enabled,
+            @Value("${esp32.tcp.host:192.168.4.1}") String host,
+            @Value("${esp32.tcp.port:8080}") int port,
+            @Value("${esp32.device-id:ESP32-PLANTICAS}") String deviceId,
+            @Value("${esp32.aggregate-seconds:60}") int aggregateSeconds,
+            @Value("${esp32.tcp.connect-timeout-ms:5000}") long connectTimeoutMs,
+            @Value("${esp32.tcp.read-timeout-ms:30000}") long readTimeoutMs,
+            @Value("${esp32.tcp.first-retry-ms:2000}") long firstRetryMs,
+            @Value("${esp32.tcp.longest-retry-ms:30000}") long longestRetryMs,
+            @Value("${esp32.tcp.allow-loopback:false}") boolean allowLoopback,
+            @Value("${esp32.aggregate-strategy:mean}") String aggregateStrategy) {
         if (enabled && !isPrivate(host, allowLoopback)) {
             throw new IllegalStateException("ESP32_TCP_HOST must be a private IPv4 address (10.x, 172.16-31.x or "
                     + "192.168.x), not '" + host + "'");
@@ -79,10 +108,20 @@ public class Esp32TcpIngestionService {
         this.deviceId = deviceId;
         this.aggregateSeconds = aggregateSeconds;
         this.clock = Clock.systemUTC();
-        this.aggregator = new Esp32ReadingAggregator(Duration.ofSeconds(aggregateSeconds), clock);
+        this.aggregator = new Esp32ReadingAggregator(Duration.ofSeconds(aggregateSeconds), clock,
+                AggregationStrategy.named(aggregateStrategy));
         this.client = new Esp32TcpClient(host, port, Duration.ofMillis(connectTimeoutMs),
                 Duration.ofMillis(readTimeoutMs), Duration.ofMillis(firstRetryMs), Duration.ofMillis(longestRetryMs),
-                this::receive, this::disconnected);
+                this);
+        // The ESP32 writes a block every second: five without one means it stopped sending.
+        this.link = new Esp32Link(clock, Duration.ofSeconds(5));
+        feed.subscribe(counters);
+        feed.subscribe(link);
+    }
+
+    /** For whoever else wants to follow the feed. */
+    public void subscribe(Esp32FeedObserver observer) {
+        feed.subscribe(observer);
     }
 
     @EventListener(ApplicationReadyEvent.class)
@@ -105,10 +144,10 @@ public class Esp32TcpIngestionService {
 
     /** What GET /api/devices/esp32/status shows: no address, no key, nothing sensitive. */
     public Esp32ReceiverStatus status() {
-        return new Esp32ReceiverStatus(enabled, client.connected(), deviceId, aggregateSeconds, inField(lastBlockAt),
-                inField(lastStoredAt), receivedBlocks.get(), storedReadings.get(), refusedReadings.get(),
-                parser.discardedBlocks(),
-                client.skippedLines(), client.connections());
+        return new Esp32ReceiverStatus(enabled, client.connected(), deviceId, aggregateSeconds,
+                inField(counters.lastBlockAt()), inField(counters.lastStoredAt()), counters.receivedBlocks(),
+                counters.storedReadings(), counters.refusedReadings(), parser.discardedBlocks(), client.skippedLines(),
+                client.connections(), aggregator.strategy().name(), link.state().name(), link.label());
     }
 
     public boolean connected() {
@@ -119,49 +158,49 @@ public class Esp32TcpIngestionService {
         return client.connections();
     }
 
-    void receive(String line) {
+    @Override
+    public void connectionOpened() {
+        feed.connectionOpened(clock.instant());
+    }
+
+    @Override
+    public void lineArrived(String line) {
         parser.accept(line).ifPresent(this::collect);
         aggregator.closeIfDue().ifPresent(this::store);
     }
 
-    void disconnected() {
+    @Override
+    public void connectionLost() {
         parser.finish().ifPresent(this::collect);
         aggregator.flush().ifPresent(this::store);
+        feed.connectionLost(clock.instant());
     }
 
     private void collect(Esp32Reading reading) {
-        lastBlockAt = clock.instant();
-        receivedBlocks.incrementAndGet();
+        feed.blockReceived(reading, clock.instant());
         aggregator.add(reading).ifPresent(this::store);
     }
 
     private void store(Window window) {
         try {
             ingestion.ingestFromConfiguredDevice(eventOf(window));
-            storedReadings.incrementAndGet();
-            lastStoredAt = window.endsAt();
-            log.debug("ESP32: stored the average of {} block(s)", window.blocks());
+            feed.windowStored(window);
+            log.debug("ESP32: stored the {} of {} block(s): {}", aggregator.strategy().name(), window.blocks(),
+                    window.average().measures().stream().map(measure -> measure.accept(new MeasureDescriber()))
+                            .collect(Collectors.joining(", ")));
         } catch (ApiException refused) {
-            refusedReadings.incrementAndGet();
+            feed.windowRefused(window, refused.getMessage());
             log.warn("ESP32: averaged reading refused ({}): {}", refused.getStatus().value(), refused.getMessage());
         } catch (RuntimeException failure) {
-            refusedReadings.incrementAndGet();
+            feed.windowRefused(window, failure.getMessage());
             log.warn("ESP32: averaged reading not stored: {}", failure.getMessage());
         }
     }
 
     DeviceEventRequest eventOf(Window window) {
         ObjectNode data = json.createObjectNode();
-        Esp32Reading average = window.average();
-        if (average.airTemperature() != null) {
-            data.put("air_temperature", average.airTemperature());
-        }
-        if (average.relativeHumidity() != null) {
-            data.put("relative_humidity", average.relativeHumidity());
-        }
-        if (average.soilMoisture() != null) {
-            data.put("soil_moisture", average.soilMoisture());
-        }
+        EventDataWriter writer = new EventDataWriter(data);
+        window.average().measures().forEach(measure -> measure.accept(writer));
         DeviceEventRequest event = new DeviceEventRequest();
         event.setDeviceId(deviceId);
         event.setType(DeviceEventService.READING);

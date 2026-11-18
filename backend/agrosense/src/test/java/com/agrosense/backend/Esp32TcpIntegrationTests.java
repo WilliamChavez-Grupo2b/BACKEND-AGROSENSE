@@ -136,6 +136,14 @@ class Esp32TcpIntegrationTests {
         assertThat(status.lastStoredAt()).isNotNull();
         assertThat(status.lastStoredAt().getOffset().getTotalSeconds()).isEqualTo(-5 * 3600);
         assertThat(status.discardedBlocks()).isZero();
+        assertThat(status.aggregation()).isEqualTo("mean");
+        assertThat(status.link()).as("the State once the fake closed").isEqualTo("DISCONNECTED");
+        // The default watering rule (an Interpreter), «suelo < 40 y aire < 60», holds for 12.50 % and 52 % once corrected.
+        assertThat(alertRepository.findAll().stream()
+                .filter(alert -> alert.getCrop().getIdCrop().equals(cropId) && !alert.getAcknowledged())
+                .filter(alert -> alert.getAlertType() == AlertType.RECOMMENDED_WATERING)
+                .map(alert -> alert.getMessage()).toList())
+                .singleElement().asString().contains("«suelo < 40 y aire < 60»", "suelo 12,5 %", "aire 52,0 %");
         assertThat(status.receivedBlocks()).isEqualTo(sent);  // every block the fake sent, before averaging
         assertThat(lowMoistureAlerts(cropId)).isGreaterThan(lowMoistureBefore);
         // The ESP32 sent 23.40 °C and 58.00 % raw: stored once corrected (-8.5, -6), not twice (6.40, 46.00).

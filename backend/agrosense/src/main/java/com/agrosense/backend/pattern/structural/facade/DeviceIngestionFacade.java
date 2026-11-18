@@ -11,6 +11,7 @@ import com.agrosense.backend.security.DeviceRateLimiter;
 import com.agrosense.backend.service.DeviceEventService;
 import com.agrosense.backend.service.DeviceService;
 import com.agrosense.backend.service.PredictionService;
+import com.agrosense.backend.service.WateringRuleService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -29,7 +30,8 @@ import java.util.concurrent.ConcurrentHashMap;
  * The one call that receives a device event. DeviceEventService authenticates it and stores it inside a transaction;
  * SensorFacade evaluates the alerts and SensorWebSocketHandler publishes both once that transaction commits. Then,
  * outside the transaction so a slow AI never holds it open, the crop gets a new irrigation prediction if it is due,
- * and the answer carries any irrigation order waiting for this device.
+ * and the answer carries any irrigation order waiting for this device. Last, the watering rule (an Interpreter, see
+ * WateringRuleService) is checked against the stored values.
  */
 @Slf4j
 @Component
@@ -43,19 +45,27 @@ public class DeviceIngestionFacade {
     private final DeviceService deviceService;
     private final Duration predictionInterval;
     private final Clock clock;
+    private final WateringRuleService watering;
     private final Map<Integer, Instant> lastPrediction = new ConcurrentHashMap<>();
 
     @Autowired
     public DeviceIngestionFacade(DeviceEventService events, PredictionService predictions, AiConfigManager aiConfig,
             PendingIrrigationCommands commands, DeviceRateLimiter rateLimiter, DeviceService deviceService,
-            @Value("${ai.ingestion.prediction-minutes:30}") int predictionMinutes) {
+            @Value("${ai.ingestion.prediction-minutes:30}") int predictionMinutes, WateringRuleService watering) {
         this(events, predictions, aiConfig, commands, rateLimiter, deviceService,
-                Duration.ofMinutes(predictionMinutes), Clock.systemUTC());
+                Duration.ofMinutes(predictionMinutes), Clock.systemUTC(), watering);
     }
 
     public DeviceIngestionFacade(DeviceEventService events, PredictionService predictions, AiConfigManager aiConfig,
             PendingIrrigationCommands commands, DeviceRateLimiter rateLimiter, DeviceService deviceService,
             Duration predictionInterval, Clock clock) {
+        this(events, predictions, aiConfig, commands, rateLimiter, deviceService, predictionInterval, clock,
+                WateringRuleService.off());
+    }
+
+    public DeviceIngestionFacade(DeviceEventService events, PredictionService predictions, AiConfigManager aiConfig,
+            PendingIrrigationCommands commands, DeviceRateLimiter rateLimiter, DeviceService deviceService,
+            Duration predictionInterval, Clock clock, WateringRuleService watering) {
         this.events = events;
         this.predictions = predictions;
         this.aiConfig = aiConfig;
@@ -64,11 +74,13 @@ public class DeviceIngestionFacade {
         this.deviceService = deviceService;
         this.predictionInterval = predictionInterval;
         this.clock = clock;
+        this.watering = watering;
     }
 
     public Map<String, Object> ingest(String deviceKey, DeviceEventRequest request) {
         Map<String, Object> answer = received(deviceKey, request);
         predictIfDue(answer);
+        checkWateringRule(answer);
         Integer cropId = (Integer) ((Map<?, ?>) answer.get("event")).get("cropId");
         try {
             confirm(cropId, request.getAck());
@@ -88,6 +100,7 @@ public class DeviceIngestionFacade {
         Map<String, Object> answer = events.receiveFromConfiguredDevice(request.getDeviceId(), request.getType(),
                 request.getTs(), request.getData());
         predictIfDue(answer);
+        checkWateringRule(answer);
         // TODO(esp32-tcp): no irrigation order is taken here: the ESP32 read over TCP accepts none and has no pump, and
         // nothing is ever written to its socket. Esp32ReadOnlyActuatorDriver records its crop's irrigations without
         // offering them, so none waits for it. Send them once the ESP32 has an order protocol.
@@ -99,6 +112,14 @@ public class DeviceIngestionFacade {
             requestPredictionIfDue(answer);
         } catch (RuntimeException failure) {
             log.warn("The event was stored but its prediction could not be requested: {}", failure.getMessage());
+        }
+    }
+
+    private void checkWateringRule(Map<String, Object> answer) {
+        try {
+            watering.check(answer);
+        } catch (RuntimeException failure) {
+            log.warn("The event was stored but the watering rule could not be checked: {}", failure.getMessage());
         }
     }
 

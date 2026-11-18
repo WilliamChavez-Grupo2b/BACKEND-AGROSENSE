@@ -1,5 +1,7 @@
 package com.agrosense.backend.pattern.structural.adapter.esp32;
 
+import com.agrosense.backend.pattern.behavioral.mediator.Esp32Mediator;
+
 import lombok.extern.slf4j.Slf4j;
 
 import java.io.IOException;
@@ -18,13 +20,15 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
-import java.util.function.Consumer;
 
 /**
  * The connection to the ESP32's TCP server, read line by line. It runs on a thread of its own, so the backend starts
  * and keeps working whether or not the ESP32 is there. A dropped connection, or one silent for the read timeout (the
  * ESP32 writes every second), is opened again after a wait that doubles from {@code firstWait} to {@code longestWait}.
  * It only reads: nothing is ever written to the socket, since the ESP32 takes no orders.
+ *
+ * <p>A colleague of the {@link Esp32Mediator}: it tells the mediator that a connection opened, that a line arrived
+ * and that the connection was lost, and knows nothing of what is done with them.
  */
 @Slf4j
 public class Esp32TcpClient {
@@ -35,8 +39,7 @@ public class Esp32TcpClient {
     private final Duration readTimeout;
     private final Duration firstWait;
     private final Duration longestWait;
-    private final Consumer<String> onLine;
-    private final Runnable onDisconnect;
+    private final Esp32Mediator mediator;
 
     private final ExecutorService thread = Executors.newSingleThreadExecutor(runnable -> {
         Thread worker = new Thread(runnable, "esp32-tcp");
@@ -51,15 +54,14 @@ public class Esp32TcpClient {
     private volatile boolean connected;
 
     public Esp32TcpClient(String host, int port, Duration connectTimeout, Duration readTimeout, Duration firstWait,
-            Duration longestWait, Consumer<String> onLine, Runnable onDisconnect) {
+            Duration longestWait, Esp32Mediator mediator) {
         this.host = host;
         this.port = port;
         this.connectTimeout = connectTimeout;
         this.readTimeout = readTimeout;
         this.firstWait = firstWait;
         this.longestWait = longestWait;
-        this.onLine = onLine;
-        this.onDisconnect = onDisconnect;
+        this.mediator = mediator;
     }
 
     public void start() {
@@ -103,6 +105,7 @@ public class Esp32TcpClient {
                 connected = true;
                 connections.incrementAndGet();
                 log.info("ESP32: connected to {}:{}", host, port);
+                opened();
                 wait = firstWait;
                 readLines(opened.getInputStream());
                 log.warn("ESP32: {}:{} closed the connection", host, port);
@@ -156,15 +159,23 @@ public class Esp32TcpClient {
 
     private void deliver(String line) {
         try {
-            onLine.accept(line);
+            mediator.lineArrived(line);
         } catch (RuntimeException failure) {
             log.warn("ESP32: a line could not be handled: {}", failure.getMessage());
         }
     }
 
+    private void opened() {
+        try {
+            mediator.connectionOpened();
+        } catch (RuntimeException failure) {
+            log.warn("ESP32: the new connection could not be handled: {}", failure.getMessage());
+        }
+    }
+
     private void disconnected() {
         try {
-            onDisconnect.run();
+            mediator.connectionLost();
         } catch (RuntimeException failure) {
             log.warn("ESP32: the end of the connection could not be handled: {}", failure.getMessage());
         }

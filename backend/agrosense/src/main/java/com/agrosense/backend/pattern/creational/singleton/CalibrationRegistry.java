@@ -1,16 +1,24 @@
 package com.agrosense.backend.pattern.creational.singleton;
 
 import com.agrosense.backend.domain.enums.SensorType;
+import com.agrosense.backend.pattern.behavioral.memento.CalibrationCheckpoint;
 
 import java.math.BigDecimal;
 import java.util.Arrays;
+import java.util.EnumMap;
 import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
-/** One correction per sensor type for the whole application; the enum guarantees a single instance. */
+/**
+ * One correction per sensor type for the whole application; the enum guarantees a single instance.
+ *
+ * <p>Also the originator of a Memento: {@link #save()} gives a {@link Snapshot} only this registry can read, and
+ * {@link #restore} puts it back. {@link #load} runs inside a CalibrationCheckpoint, so a setting with a bad entry
+ * leaves the previous calibration whole instead of half replaced.
+ */
 public enum CalibrationRegistry {
 
     INSTANCE;
@@ -35,6 +43,24 @@ public enum CalibrationRegistry {
 
     private final Map<SensorType, Calibration> calibrations = new ConcurrentHashMap<>(defaults());
 
+    /** Memento: the calibrations at one moment. Opaque: only CalibrationRegistry reads what it holds. */
+    public static final class Snapshot {
+
+        private final Map<SensorType, Calibration> state;
+
+        private Snapshot(Map<SensorType, Calibration> state) {
+            this.state = state;
+        }
+    }
+
+    public Snapshot save() {
+        return new Snapshot(new EnumMap<>(calibrations));
+    }
+
+    public void restore(Snapshot snapshot) {
+        calibrations.putAll(snapshot.state);
+    }
+
     public Calibration of(SensorType type) {
         return calibrations.get(type);
     }
@@ -52,6 +78,10 @@ public enum CalibrationRegistry {
 
     /** Reads "PH=0.1:1.02,SOIL_MOISTURE=-1.5:1", that is, TYPE=offset:gain. A bad entry stops the start-up. */
     public void load(String settings) {
+        CalibrationCheckpoint.guard(this, () -> replaceWith(settings));
+    }
+
+    private void replaceWith(String settings) {
         clear();
         if (settings == null || settings.isBlank()) {
             return;

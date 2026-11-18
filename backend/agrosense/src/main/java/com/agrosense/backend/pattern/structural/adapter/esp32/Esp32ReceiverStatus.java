@@ -18,5 +18,8 @@ public record Esp32ReceiverStatus(
         long refusedReadings,
         long discardedBlocks,
         long skippedLines,
-        int connections) {
+        int connections,
+        String aggregation,
+        String link,
+        String linkLabel) {
 }

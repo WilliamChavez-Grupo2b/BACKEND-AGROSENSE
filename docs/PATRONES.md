@@ -1,7 +1,9 @@
 # Patrones de diseño de AgroSense
 
-Estado al 1 de noviembre de 2026. Cada patrón está conectado al flujo real del sistema, salvo donde se indica lo
-contrario. La tabla final resume patrón, repositorio, clase y archivo.
+Estado al 18 de noviembre de 2026. Hay 21 de los 23 patrones del libro de Gamma y otros: 5 creacionales
+(secciones 1 a 5), 5 de los 7 estructurales (6 a 10; faltan Composite y Flyweight) y los 11 de comportamiento (11 a
+21). Cada patrón está conectado al flujo real del sistema, salvo donde se indica lo contrario. La tabla final resume
+patrón, repositorio, clase y archivo.
 
 Rutas abreviadas:
 
@@ -18,7 +20,7 @@ placa, `tools/e2e/run_e2e.py` recorre el sistema con el mismo contrato.
 
 | Parte | Comando | Resultado del 1 de noviembre de 2026 |
 |---|---|---|
-| Backend | `cd backend/agrosense && ./mvnw test` | 185 pruebas, 0 fallos, 3 omitidas (PostgreSQL); 10 de noviembre |
+| Backend | `cd backend/agrosense && ./mvnw test` | 197 pruebas, 0 fallos, 3 omitidas (PostgreSQL); 18 de noviembre |
 | Frontend, Java | `cd frontend && ./mvnw test` | 117 pruebas, 0 fallos, 2 omitidas (PostgreSQL); 10 de noviembre |
 | Frontend, TypeScript | `cd frontend && npm run build && npm test` | 19 pruebas, 0 fallos; 10 de noviembre |
 | IA, patrones y reglas | `cd IA && python -m unittest tests.test_patterns tests.test_rules` | 31 pruebas, 0 fallos |
@@ -556,6 +558,236 @@ distingue un backend dormido de una caída; `CachingApiProxy` evita repetir lect
 
 Una predicción de `agrosense-reglas-locales` tiene confianza 0,5 y nunca puede ordenar un riego.
 
+## Patrones de comportamiento
+
+Los once patrones de comportamiento están en el backend, en `B/pattern/behavioral/`, y casi todos sobre el camino real de
+las lecturas del ESP32: la placa escribe un bloque de texto cada segundo, el backend lo lee por TCP, lo convierte en una
+lectura, junta las de un minuto y la guarda.
+
+```mermaid
+flowchart LR
+    C[Esp32TcpClient] -->|Mediator| S[Esp32TcpIngestionService]
+    S -->|Chain of Responsibility| P[Esp32BlockParser]
+    S -->|Iterator + Strategy| A[Esp32ReadingAggregator]
+    S -->|Observer| F[Esp32Feed]
+    F --> K[Esp32Counters]
+    F --> L[Esp32Link, State]
+    S -->|Visitor| E[EventDataWriter]
+    S --> D[DeviceIngestionFacade]
+    D -->|Interpreter| W[WateringRuleService]
+```
+
+Las pruebas están en `BT/BehavioralPatternTests.java`, `BT/CalibrationMementoTests.java` y
+`BT/Esp32TcpIntegrationTests.java`, que recorre el camino completo con un ESP32 falso.
+
+## 11. Chain of Responsibility
+
+**Problema.** El analizador de bloques decidía con un `switch` qué hacer con cada línea: encabezado, línea en blanco,
+cada medida y las líneas desconocidas. Una línea nueva obligaba a tocar ese `switch`.
+
+| Clase | Lenguaje | Archivo | Prueba |
+|---|---|---|---|
+| `LineHandler`, abstracta | Java | `B/pattern/behavioral/chain/LineHandler.java` | `eachLineIsTakenByTheFirstHandlerThatRecognisesItAndNoOtherSeesIt` |
+| `TooLong`, `Header`, `OutsideBlock`, `Blank`, `Measure` (una por medida), `Ignored` | Java | `B/pattern/behavioral/chain/Esp32LineHandlers.java` | La misma, y las 10 de `Esp32BlockParserTests` |
+| `BlockInProgress`, `Line` | Java | `B/pattern/behavioral/chain/` | Las mismas |
+| `Esp32BlockParser`, cliente | Java | `B/pattern/structural/adapter/esp32/Esp32BlockParser.java` | `Esp32BlockParserTests` |
+
+```mermaid
+classDiagram
+    class LineHandler {
+        <<abstract>>
+        -next LineHandler
+        +handle(line, block) Optional~Esp32Reading~
+        #handles(line, block)* bool
+        #process(line, block)* Optional~Esp32Reading~
+    }
+    LineHandler <|-- TooLong
+    LineHandler <|-- Header
+    LineHandler <|-- OutsideBlock
+    LineHandler <|-- Blank
+    LineHandler <|-- Measure
+    LineHandler <|-- Ignored
+    LineHandler --> LineHandler : next
+    Esp32BlockParser --> LineHandler
+```
+
+**Justificación.** Cada línea baja por la cadena hasta el primer eslabón que la reconoce, y los demás no la ven. Una
+etiqueta nueva del firmware es un eslabón más en `Esp32LineHandlers.chain`, no otra rama.
+
+## 12. Command
+
+**Problema.** Las tres vigilancias programadas del campo (dispositivos callados, helada y resultado de los riegos) eran
+métodos sueltos con su propio `try`. No había forma de saber cuáles corrieron ni cuándo.
+
+| Clase | Lenguaje | Archivo | Prueba |
+|---|---|---|---|
+| `FieldWatchCommand`, interfaz | Java | `B/pattern/behavioral/command/FieldWatchCommand.java` | `theInvokerRunsAnyWatchAndRemembersTheLastRunsNewestFirst` |
+| `FieldWatchInvoker` | Java | `B/pattern/behavioral/command/FieldWatchInvoker.java` | La misma |
+| `SilentDevicesWatch`, `FrostWatch`, `IrrigationResultsWatch` | Java | `B/service/FieldWatchService.java` | Las 16 de `FieldWatchIntegrationTests` |
+
+**Justificación.** Cada vigilancia es un objeto con `execute()`. El programador de Spring solo decide cuándo; el invocador
+la ejecuta y guarda las últimas 20 corridas (`FieldWatchService.history()`) sin saber qué hace cada una.
+
+## 13. Interpreter
+
+**Problema.** Cuándo recomendar riego dependía de reglas fijas en el código. El agricultor no podía escribir la suya.
+
+| Clase | Lenguaje | Archivo | Prueba |
+|---|---|---|---|
+| `RuleExpression` y sus nodos `Comparison`, `And`, `Or` | Java | `B/pattern/behavioral/interpreter/RuleExpression.java` | `aWateringRuleIsReadIntoATreeThatJudgesTheFieldsConditions` |
+| `RuleParser` | Java | `B/pattern/behavioral/interpreter/RuleParser.java` | La misma |
+| `WateringRuleService`, cliente | Java | `B/service/WateringRuleService.java` | `Esp32TcpIntegrationTests` |
+
+La regla va en `ALERTS_WATERING_RULE`, en español: `suelo`, `temperatura` y `aire`; `<`, `<=`, `>` y `>=`; `y`, `o` y
+paréntesis. `y` pesa más que `o`. Por defecto es `suelo < 40 y aire < 60`. En blanco se apaga, y una regla mal escrita
+detiene el arranque con el motivo.
+
+```mermaid
+classDiagram
+    class RuleExpression {
+        <<interface>>
+        +interpret(conditions) bool
+        +text() String
+    }
+    RuleExpression <|.. Comparison
+    RuleExpression <|.. And
+    RuleExpression <|.. Or
+    And --> RuleExpression : left, right
+    Or --> RuleExpression : left, right
+    RuleParser ..> RuleExpression : construye
+    WateringRuleService --> RuleExpression
+```
+
+**Justificación.** `RuleParser` convierte el texto en un árbol y cada nodo se interpreta a sí mismo con los valores ya
+calibrados de cada lectura. Cuando la regla se cumple, el cultivo recibe la alerta «Riego recomendado», que nombra la
+regla y los valores; si ya hay una abierta, no se repite.
+
+## 14. Iterator
+
+**Problema.** El agregador guardaba sumas en arreglos por índice (0 temperatura, 1 aire, 2 suelo). Con eso solo podía
+sacar promedios, y quien quisiera otra cuenta tenía que conocer los índices.
+
+| Clase | Lenguaje | Archivo | Prueba |
+|---|---|---|---|
+| `BlockWindow`, la colección, y su `BlockIterator` | Java | `B/pattern/behavioral/iterator/BlockWindow.java` | `theWindowIsWalkedOneFieldAtATimeSkippingTheBlocksThatDidNotMeasureIt` |
+| `FieldIterator` | Java | `B/pattern/behavioral/iterator/FieldIterator.java` | La misma |
+
+**Justificación.** La ventana guarda los bloques del minuto y los entrega con un iterador, sin mostrar cómo los guarda.
+`FieldIterator` recorre un solo campo y se salta los bloques donde faltó (un «nan» del DHT11), así quien combina los
+valores nunca revisa nulos.
+
+## 15. Mediator
+
+**Problema.** El cliente TCP recibía dos funciones sueltas y no había un lugar que dijera quién coordina el cliente, el
+analizador, el agregador, los observadores y la fachada de ingreso.
+
+| Clase | Lenguaje | Archivo | Prueba |
+|---|---|---|---|
+| `Esp32Mediator`, interfaz | Java | `B/pattern/behavioral/mediator/Esp32Mediator.java` | `theServiceMediatesBetweenTheLinesTheWindowAndTheIngestion` |
+| `Esp32TcpIngestionService`, el mediador | Java | `B/pattern/structural/adapter/esp32/Esp32TcpIngestionService.java` | La misma y `Esp32TcpIntegrationTests` |
+| `Esp32TcpClient`, colega | Java | `B/pattern/structural/adapter/esp32/Esp32TcpClient.java` | `Esp32TcpIntegrationTests` |
+
+**Justificación.** El cliente solo avisa al mediador que se abrió la conexión, que llegó una línea o que se perdió. Los
+colegas no se llaman entre sí: el cliente no sabe que existe un analizador, ni el analizador un agregador.
+
+## 16. Memento
+
+**Problema.** `CalibrationRegistry.load` borraba la calibración y cargaba la nueva entrada por entrada. Si una entrada
+venía mal, la calibración quedaba a medias: las correcciones anteriores se perdían y las primeras nuevas quedaban puestas.
+Era un error real; `CalibrationMementoTests` falla con el código anterior.
+
+| Clase | Lenguaje | Archivo | Prueba |
+|---|---|---|---|
+| `CalibrationRegistry`, el originador, y su `Snapshot`, el memento | Java | `B/pattern/creational/singleton/CalibrationRegistry.java` | `aCalibrationWithABadEntryLeavesThePreviousOneUntouched` |
+| `CalibrationCheckpoint`, el cuidador | Java | `B/pattern/behavioral/memento/CalibrationCheckpoint.java` | La misma |
+
+**Justificación.** Antes de cargar, el cuidador guarda una foto del registro; si algo falla, la devuelve. El `Snapshot`
+es opaco: solo el registro lee lo que contiene.
+
+## 17. Observer
+
+**Problema.** El servicio del ESP32 llevaba sus contadores a mano, mezclados con la lectura y el guardado, y nadie más
+podía enterarse de lo que pasaba en la conexión.
+
+| Clase | Lenguaje | Archivo | Prueba |
+|---|---|---|---|
+| `Esp32FeedObserver`, interfaz | Java | `B/pattern/behavioral/observer/Esp32FeedObserver.java` | `theFeedTellsEveryObserverEvenWhenOneOfThemFails` |
+| `Esp32Feed`, el sujeto | Java | `B/pattern/behavioral/observer/Esp32Feed.java` | La misma |
+| `Esp32Counters` y `Esp32Link`, observadores | Java | `B/pattern/behavioral/observer/`, `B/pattern/behavioral/state/` | `theServiceMediatesBetweenTheLinesTheWindowAndTheIngestion` |
+
+**Justificación.** El servicio le cuenta al `Esp32Feed` cada bloque, lectura guardada o rechazada y conexión abierta o
+perdida, y el feed avisa a todos los suscritos. Un observador que falla no impide avisar a los demás. Además, el backend
+ya usaba los eventos de Spring (`SensorReadingRecordedEvent`, `AlertRaisedEvent`) para publicar en vivo, que es este
+mismo patrón dado por el framework.
+
+## 18. State
+
+**Problema.** `GET /api/devices/esp32/status` solo decía «conectado: sí o no». Una conexión abierta por la que no llega
+nada se veía igual que una que funciona.
+
+| Clase | Lenguaje | Archivo | Prueba |
+|---|---|---|---|
+| `Esp32LinkState`: `WAITING`, `RECEIVING`, `SILENT`, `DISCONNECTED` | Java | `B/pattern/behavioral/state/Esp32LinkState.java` | `theLinkMovesBetweenItsStatesAsTheFeedAndTheTimeSay` |
+| `Esp32Link`, el contexto | Java | `B/pattern/behavioral/state/Esp32Link.java` | La misma y `Esp32TcpIntegrationTests` |
+
+```mermaid
+stateDiagram-v2
+    [*] --> DISCONNECTED
+    DISCONNECTED --> WAITING : conexión abierta
+    WAITING --> RECEIVING : bloque
+    RECEIVING --> SILENT : 5 s sin bloques
+    SILENT --> RECEIVING : bloque
+    DISCONNECTED --> RECEIVING : bloque
+    WAITING --> DISCONNECTED : conexión perdida
+    RECEIVING --> DISCONNECTED : conexión perdida
+    SILENT --> DISCONNECTED : conexión perdida
+```
+
+**Justificación.** Cada estado decide cuál sigue ante cada evento y se describe a sí mismo, así `Esp32Link` no tiene un
+`if` sobre el estado actual. El estado y su texto («Recibiendo datos del ESP32», «Conectado, pero el ESP32 no envía datos
+desde hace 8 s»…) salen en los campos `link` y `linkLabel` del estado del receptor.
+
+## 19. Strategy
+
+**Problema.** El agregador solo sabía promediar. Un pico del DHT11 en un solo bloque movía el promedio de todo el minuto.
+
+| Clase | Lenguaje | Archivo | Prueba |
+|---|---|---|---|
+| `AggregationStrategy`, interfaz | Java | `B/pattern/behavioral/strategy/AggregationStrategy.java` | `theAggregatorCombinesTheWindowWithTheStrategyItIsGiven` |
+| `MeanAggregation`, `MedianAggregation` | Java | `B/pattern/behavioral/strategy/` | La misma y `Esp32ReadingAggregatorTests` |
+| `Esp32ReadingAggregator`, el contexto | Java | `B/pattern/structural/adapter/esp32/Esp32ReadingAggregator.java` | `Esp32ReadingAggregatorTests` |
+
+**Justificación.** El agregador no sabe qué estrategia tiene. `ESP32_AGGREGATE_STRATEGY` la elige: `mean` (por defecto, el
+comportamiento de siempre) o `median`, que ignora un pico aislado. El estado del receptor la muestra en `aggregation`.
+
+## 20. Template Method
+
+**Problema.** Las tres vigilancias del campo repetían los mismos pasos: revisar si están encendidas, correr y atrapar el
+error para que el programador no se detenga.
+
+| Clase | Lenguaje | Archivo | Prueba |
+|---|---|---|---|
+| `ScheduledWatch`, abstracta | Java | `B/pattern/behavioral/templatemethod/ScheduledWatch.java` | `everyWatchFollowsTheSameStepsAndAFailureNeverReachesTheScheduler` |
+| `SilentDevicesWatch`, `FrostWatch`, `IrrigationResultsWatch` | Java | `B/service/FieldWatchService.java` | `FieldWatchIntegrationTests` |
+
+**Justificación.** `execute()` es `final` y fija los pasos; cada vigilancia rellena solo `watch()` y, si se puede apagar,
+`isEnabled()`. `AlertCreator.evaluate` (sección 5) también es un método plantilla: el Factory Method suele vivir dentro
+de uno.
+
+## 21. Visitor
+
+**Problema.** Para escribir el evento de una lectura había un `if` por cada medida, y otra operación sobre las medidas
+(describirlas para el registro) habría repetido esos `if`.
+
+| Clase | Lenguaje | Archivo | Prueba |
+|---|---|---|---|
+| `Esp32Measure` y sus elementos `AirTemperature`, `RelativeHumidity`, `SoilMoisture` | Java | `B/pattern/behavioral/visitor/Esp32Measure.java` | `visitorsWriteTheEventAndDescribeTheReadingWithoutAskingWhichMeasureEachOneIs` |
+| `Esp32MeasureVisitor`, interfaz | Java | `B/pattern/behavioral/visitor/Esp32MeasureVisitor.java` | La misma |
+| `EventDataWriter`, `MeasureDescriber` | Java | `B/pattern/behavioral/visitor/` | La misma y `Esp32TcpIntegrationTests` |
+
+**Justificación.** Cada medida manda al visitante a su propio método (doble despacho). Una operación nueva sobre las
+medidas es un visitante nuevo, sin tocar las medidas ni preguntar de qué tipo es cada una.
+
 ## Tabla final
 
 Los repositorios siguen la sección 1 de `ARQUITECTURA.md`. `firmware/` todavía no tiene repositorio propio.
@@ -593,6 +825,17 @@ Los repositorios siguen la sección 1 de `ARQUITECTURA.md`. `firmware/` todavía
 | Proxy (existente, ampliado) | BACKEND-AGROSENSE | `AiServiceProxy` | `B/pattern/structural/proxy/AiServiceProxy.java` |
 | Proxy | firmware | `BackendProxy` | `firmware/agrosense/src/BackendProxy.h` |
 | Proxy | FRONTEND-AGROSENSE | `CachingApiProxy` | `frontend/src/main/ts/api/cache-proxy.ts` |
+| Chain of Responsibility | BACKEND-AGROSENSE | `LineHandler` y `Esp32LineHandlers` | `B/pattern/behavioral/chain/` |
+| Command | BACKEND-AGROSENSE | `FieldWatchCommand`, `FieldWatchInvoker` | `B/pattern/behavioral/command/`, `B/service/FieldWatchService.java` |
+| Interpreter | BACKEND-AGROSENSE | `RuleExpression`, `RuleParser` | `B/pattern/behavioral/interpreter/`, `B/service/WateringRuleService.java` |
+| Iterator | BACKEND-AGROSENSE | `BlockWindow`, `FieldIterator` | `B/pattern/behavioral/iterator/` |
+| Mediator | BACKEND-AGROSENSE | `Esp32Mediator`, `Esp32TcpIngestionService` | `B/pattern/behavioral/mediator/Esp32Mediator.java` |
+| Memento | BACKEND-AGROSENSE | `CalibrationRegistry.Snapshot`, `CalibrationCheckpoint` | `B/pattern/behavioral/memento/CalibrationCheckpoint.java` |
+| Observer | BACKEND-AGROSENSE | `Esp32Feed`, `Esp32FeedObserver`, `Esp32Counters` | `B/pattern/behavioral/observer/` |
+| State | BACKEND-AGROSENSE | `Esp32LinkState`, `Esp32Link` | `B/pattern/behavioral/state/` |
+| Strategy | BACKEND-AGROSENSE | `AggregationStrategy`, `MeanAggregation`, `MedianAggregation` | `B/pattern/behavioral/strategy/` |
+| Template Method | BACKEND-AGROSENSE | `ScheduledWatch` | `B/pattern/behavioral/templatemethod/ScheduledWatch.java` |
+| Visitor | BACKEND-AGROSENSE | `Esp32Measure`, `EventDataWriter`, `MeasureDescriber` | `B/pattern/behavioral/visitor/` |
 
 ## Justificación breve para la sustentación
 
@@ -608,3 +851,14 @@ Los repositorios siguen la sección 1 de `ARQUITECTURA.md`. `firmware/` todavía
 | Decorator | Filtrar, calibrar y validar, o registrar, limitar y cachear, son capas independientes.<br>Se encadenan sin cambiar la interfaz y se prueban una a una. |
 | Facade | Una sola llamada oculta autenticar, guardar, alertar, predecir y publicar.<br>Quien la usa no depende del orden ni de los subsistemas. |
 | Proxy | El proxy tiene la interfaz del objeto real y añade reintentos, búfer, caché y respaldo.<br>Así la red poco fiable no se filtra al resto del código. |
+| Chain of Responsibility | Cada línea del ESP32 baja por la cadena hasta el eslabón que la reconoce.<br>Una línea nueva es un eslabón más, no otra rama de un `switch`. |
+| Command | Cada vigilancia del campo es un objeto con `execute()`.<br>El programador decide cuándo y el invocador la corre y recuerda sus corridas. |
+| Interpreter | La regla de riego se escribe en español y se convierte en un árbol.<br>Cada nodo se evalúa con las lecturas y, si se cumple, recomienda regar. |
+| Iterator | La ventana entrega sus bloques sin mostrar cómo los guarda.<br>Recorrer un campo se salta solo los bloques donde faltó. |
+| Mediator | El cliente TCP solo habla con el mediador.<br>Analizador, agregador, observadores y fachada no se conocen entre sí. |
+| Memento | Antes de cargar una calibración se guarda una foto del registro.<br>Si una entrada falla, se devuelve la foto y nada queda a medias. |
+| Observer | El feed del ESP32 avisa a quien se suscriba.<br>Los contadores y el estado de la conexión se enteran sin que el servicio los llame. |
+| State | Cada estado de la conexión decide el siguiente y se describe a sí mismo.<br>Así se distingue «recibiendo» de «conectado pero callado». |
+| Strategy | Promedio o mediana se eligen en la configuración.<br>El agregador combina igual sin saber cuál tiene. |
+| Template Method | `execute()` fija los pasos de toda vigilancia.<br>Cada una rellena solo lo suyo y un fallo nunca detiene al programador. |
+| Visitor | Cada medida manda al visitante a su propio método.<br>Escribir el evento o describir la lectura son visitantes, sin `if` por tipo. |
