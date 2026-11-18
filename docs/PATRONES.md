@@ -1,7 +1,7 @@
 # Patrones de diseño de AgroSense
 
-Estado al 18 de noviembre de 2026. Hay 21 de los 23 patrones del libro de Gamma y otros: 5 creacionales
-(secciones 1 a 5), 5 de los 7 estructurales (6 a 10; faltan Composite y Flyweight) y los 11 de comportamiento (11 a
+Estado al 18 de noviembre de 2026. Están los 23 patrones del libro de Gamma y otros: los 5 creacionales
+(secciones 1 a 5), los 7 estructurales (6 a 10, y Composite y Flyweight en 22 y 23) y los 11 de comportamiento (11 a
 21). Cada patrón está conectado al flujo real del sistema, salvo donde se indica lo contrario. La tabla final resume
 patrón, repositorio, clase y archivo.
 
@@ -20,7 +20,7 @@ placa, `tools/e2e/run_e2e.py` recorre el sistema con el mismo contrato.
 
 | Parte | Comando | Resultado del 1 de noviembre de 2026 |
 |---|---|---|
-| Backend | `cd backend/agrosense && ./mvnw test` | 197 pruebas, 0 fallos, 3 omitidas (PostgreSQL); 18 de noviembre |
+| Backend | `cd backend/agrosense && ./mvnw test` | 201 pruebas, 0 fallos, 3 omitidas (PostgreSQL); 18 de noviembre |
 | Frontend, Java | `cd frontend && ./mvnw test` | 117 pruebas, 0 fallos, 2 omitidas (PostgreSQL); 10 de noviembre |
 | Frontend, TypeScript | `cd frontend && npm run build && npm test` | 19 pruebas, 0 fallos; 10 de noviembre |
 | IA, patrones y reglas | `cd IA && python -m unittest tests.test_patterns tests.test_rules` | 31 pruebas, 0 fallos |
@@ -788,6 +788,64 @@ de uno.
 **Justificación.** Cada medida manda al visitante a su propio método (doble despacho). Una operación nueva sobre las
 medidas es un visitante nuevo, sin tocar las medidas ni preguntar de qué tipo es cada una.
 
+## Los dos estructurales que faltaban
+
+## 22. Composite
+
+**Problema.** Las reglas de alerta de una lectura eran una lista plana de ocho creadores. No se veía qué reglas van juntas
+(las tres de temperatura, las dos del suelo, las dos del aire) ni se podía tratar un grupo como una sola regla.
+
+| Clase | Lenguaje | Archivo | Prueba |
+|---|---|---|---|
+| `AlertRule`, el componente | Java | `B/pattern/structural/composite/AlertRule.java` | `aGroupIsEvaluatedLikeASingleRuleAndStopsAtTheFirstAlert` |
+| `AlertRuleGroup`, el compuesto | Java | `B/pattern/structural/composite/AlertRuleGroup.java` | La misma y `theReadingsRulesAreOneTreeOfOneGroupPerMeasure` |
+| `AlertCreator` y sus subclases, las hojas | Java | `B/pattern/creational/factory/alert/` | `DesignPatternTests` (las alertas de cada regla y la helada primero) |
+
+```mermaid
+classDiagram
+    class AlertRule {
+        <<interface>>
+        +evaluate(context) Optional~Alert~
+        +name() String
+        +size() int
+    }
+    AlertRule <|.. AlertCreator
+    AlertRule <|.. AlertRuleGroup
+    AlertRuleGroup o--> AlertRule : rules
+    AlertCreator <|-- FrostRiskAlertCreator
+    AlertCreator <|-- LowMoistureAlertCreator
+```
+
+El árbol de las lecturas, en el mismo orden de antes:
+
+```text
+lecturas
+├── temperatura del aire: helada, temperatura baja, temperatura alta
+├── humedad del suelo: humedad baja, humedad alta
+├── humedad del aire: aire seco, aire muy húmedo
+└── pH fuera de rango
+```
+
+**Justificación.** Un creador suelto y un grupo de reglas tienen la misma interfaz, así `SensorFacade` evalúa el árbol
+entero como una regla. Un grupo pregunta a sus reglas en orden y se queda con la primera alerta, y puede contener otros
+grupos. El orden es el mismo de antes, así que la helada sigue ganando a la temperatura baja.
+
+## 23. Flyweight
+
+**Problema.** El ESP32 manda un bloque por segundo y sus valores casi no cambian: el DHT11 mide en porcentajes enteros.
+La ventana de un minuto guardaba 60 objetos de lectura, casi todos iguales.
+
+| Clase | Lenguaje | Archivo | Prueba |
+|---|---|---|---|
+| `Esp32ReadingPool`, la fábrica de pesos ligeros | Java | `B/pattern/structural/flyweight/Esp32ReadingPool.java` | `equalBlocksFromTheEsp32AreOneSharedReading`, `thePoolKeepsOnlyTheValuesUsedLast` |
+| `Esp32Reading`, el peso ligero (inmutable) | Java | `B/pattern/structural/adapter/esp32/Esp32Reading.java` | Las mismas |
+| `BlockInProgress`, cliente | Java | `B/pattern/behavioral/chain/BlockInProgress.java` | Las 10 de `Esp32BlockParserTests` |
+
+**Justificación.** El pool entrega una sola lectura compartida por cada combinación de valores, y la ventana guarda 60
+referencias a unos pocos objetos. Los valores son el estado intrínseco, compartido. El momento en que llegó cada bloque es
+el extrínseco y viaja aparte (`Esp32Feed.blockReceived(block, at)`). Se guardan solo las 256 combinaciones usadas por
+última vez, así la memoria no crece aunque los valores cambien.
+
 ## Tabla final
 
 Los repositorios siguen la sección 1 de `ARQUITECTURA.md`. `firmware/` todavía no tiene repositorio propio.
@@ -836,6 +894,8 @@ Los repositorios siguen la sección 1 de `ARQUITECTURA.md`. `firmware/` todavía
 | Strategy | BACKEND-AGROSENSE | `AggregationStrategy`, `MeanAggregation`, `MedianAggregation` | `B/pattern/behavioral/strategy/` |
 | Template Method | BACKEND-AGROSENSE | `ScheduledWatch` | `B/pattern/behavioral/templatemethod/ScheduledWatch.java` |
 | Visitor | BACKEND-AGROSENSE | `Esp32Measure`, `EventDataWriter`, `MeasureDescriber` | `B/pattern/behavioral/visitor/` |
+| Composite | BACKEND-AGROSENSE | `AlertRule`, `AlertRuleGroup` y los `AlertCreator` como hojas | `B/pattern/structural/composite/` |
+| Flyweight | BACKEND-AGROSENSE | `Esp32ReadingPool` | `B/pattern/structural/flyweight/Esp32ReadingPool.java` |
 
 ## Justificación breve para la sustentación
 
@@ -862,3 +922,5 @@ Los repositorios siguen la sección 1 de `ARQUITECTURA.md`. `firmware/` todavía
 | Strategy | Promedio o mediana se eligen en la configuración.<br>El agregador combina igual sin saber cuál tiene. |
 | Template Method | `execute()` fija los pasos de toda vigilancia.<br>Cada una rellena solo lo suyo y un fallo nunca detiene al programador. |
 | Visitor | Cada medida manda al visitante a su propio método.<br>Escribir el evento o describir la lectura son visitantes, sin `if` por tipo. |
+| Composite | Una regla de alerta y un grupo de reglas tienen la misma interfaz.<br>Las reglas de una lectura son un árbol que se evalúa como una sola. |
+| Flyweight | Los bloques iguales del ESP32 son un solo objeto compartido.<br>La ventana guarda referencias, y la hora de cada bloque va aparte. |

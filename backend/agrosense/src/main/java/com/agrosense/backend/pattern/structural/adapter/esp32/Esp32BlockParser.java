@@ -4,6 +4,7 @@ import com.agrosense.backend.pattern.behavioral.chain.BlockInProgress;
 import com.agrosense.backend.pattern.behavioral.chain.Esp32LineHandlers;
 import com.agrosense.backend.pattern.behavioral.chain.Line;
 import com.agrosense.backend.pattern.behavioral.chain.LineHandler;
+import com.agrosense.backend.pattern.structural.flyweight.Esp32ReadingPool;
 
 import java.util.Optional;
 
@@ -49,6 +50,11 @@ public class Esp32BlockParser {
 
     public long discardedBlocks() {
         return block.discarded();
+    }
+
+    /** The Flyweight pool its readings come from. */
+    public Esp32ReadingPool pool() {
+        return block.pool();
     }
 
     static String normalize(String line) {
