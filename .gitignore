@@ -13,3 +13,7 @@ ws-verify.log
 tools/esp32/.env.local
 tools/esp32/.run/
 !tools/esp32/.env.local.example
+
+# Local assistant configuration: kept on each PC, not in the repository
+CLAUDE.md
+.claude/
