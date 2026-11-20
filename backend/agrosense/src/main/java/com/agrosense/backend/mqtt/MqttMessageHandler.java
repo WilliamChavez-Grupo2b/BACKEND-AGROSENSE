@@ -1,5 +1,6 @@
 package com.agrosense.backend.mqtt;
 
+import com.agrosense.backend.domain.enums.ReadingSource;
 import com.agrosense.backend.exception.BusinessRuleException;
 import com.agrosense.backend.exception.ResourceNotFoundException;
 import com.agrosense.backend.pattern.structural.adapter.MessageMqtt;
@@ -51,6 +52,7 @@ public class MqttMessageHandler {
                         reading.getSensorCode(), topic);
                 return;
             }
+            reading.setSource(ReadingSource.DEVICE);
             sensorFacade.recordReading(reading);
         } catch (ResourceNotFoundException exception) {
             log.warn("MQTT message from an unregistered sensor on {}", topic);
