@@ -30,8 +30,10 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.ZoneId;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
@@ -47,6 +49,10 @@ public class FarmContextService {
     public static final int MAX_ATTENDED_ALERTS = 3;
     public static final int MAX_IRRIGATIONS = 5;
     public static final int MAX_SOURCES = 16;
+
+    /** What the field device (the ESP32) measures: soil moisture, air temperature and air humidity. */
+    static final Set<SensorType> DEVICE_MEASURES = EnumSet.of(SensorType.SOIL_MOISTURE, SensorType.AIR_TEMPERATURE,
+            SensorType.RELATIVE_HUMIDITY);
 
     private final CropRepository cropRepository;
     private final SensorRepository sensorRepository;
@@ -145,9 +151,11 @@ public class FarmContextService {
         SensorReading newest = readingRepository
                 .findBySensorIdSensorOrderByRecordedAtDesc(sensor.getIdSensor(), PageRequest.of(0, 1))
                 .stream().findFirst().orElse(null);
+        // The ESP32 measures only these three; a pH or conductivity sensor of the same crop is sample data.
+        String device = DEVICE_MEASURES.contains(sensor.getSensorType()) ? devices.get(sensor.getCrop().getIdCrop())
+                : null;
         return new SensorSource(sensor.getCrop().getName(),
-                sensor.getSensorType() == null ? null : sensor.getSensorType().name(), sensor.getLocation(),
-                devices.get(sensor.getCrop().getIdCrop()),
+                sensor.getSensorType() == null ? null : sensor.getSensorType().name(), sensor.getLocation(), device,
                 newest == null ? null : newest.getValue(), newest == null ? null : newest.getRecordedAt());
     }
 

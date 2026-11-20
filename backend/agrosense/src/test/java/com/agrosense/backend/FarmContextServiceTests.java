@@ -199,12 +199,14 @@ class FarmContextServiceTests {
 				.thenReturn(Optional.empty());
 		Sensor air = sensor(10, coffee, SensorType.RELATIVE_HUMIDITY, "Lote norte");
 		Sensor ph = sensor(11, banana, SensorType.PH, null);
+		Sensor coffeePh = sensor(12, coffee, SensorType.PH, "Lote sur");
 		when(sensors.findByCropEstateUserEmailAndActiveTrueAndCropActiveTrueOrderByCropNameAscSensorTypeAsc(EMAIL))
-				.thenReturn(List.of(air, ph));
+				.thenReturn(List.of(air, ph, coffeePh));
 		SensorReading newest = reading("76.5000");
 		newest.setRecordedAt(LocalDateTime.of(2026, 11, 19, 20, 28));
 		when(readings.findBySensorIdSensorOrderByRecordedAtDesc(eq(10), any())).thenReturn(List.of(newest));
 		when(readings.findBySensorIdSensorOrderByRecordedAtDesc(eq(11), any())).thenReturn(List.of());
+		when(readings.findBySensorIdSensorOrderByRecordedAtDesc(eq(12), any())).thenReturn(List.of());
 		Device esp32 = new Device();
 		esp32.setCrop(coffee);
 		esp32.setDeviceCode("ESP32-PLANTICAS");
@@ -225,6 +227,7 @@ class FarmContextServiceTests {
 				"Regla de riego activa: «suelo < 40 y aire < 60»",
 				"- humedad del aire de Café (Lote norte, dispositivo ESP32-PLANTICAS): 76.5 % el 2026-11-19 20:28.",
 				"- pH de Plátano (dispositivo ninguno, lecturas cargadas en la base): todavía sin lecturas.",
+				"- pH de Café (Lote sur, dispositivo ninguno, lecturas cargadas en la base): todavía sin lecturas.",
 				"lecturas en la tabla sensor_readings", "alertas en alerts", "riegos en irrigations",
 				"red PLANTICAS");
 	}
