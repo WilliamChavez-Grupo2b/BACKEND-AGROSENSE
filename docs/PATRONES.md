@@ -96,14 +96,23 @@ ordena el riego de cómo se acciona. Las vigilancias programadas son **Command**
 
 ## Cómo correr las pruebas
 
-| Parte | Comando | Resultado del 1 de noviembre de 2026 |
+| Parte | Comando | Resultado |
 |---|---|---|
-| Backend | `cd backend/agrosense && ./mvnw test` | 201 pruebas, 0 fallos, 3 omitidas (PostgreSQL); 18 de noviembre |
-| Frontend, Java | `cd frontend && ./mvnw test` | 117 pruebas, 0 fallos, 2 omitidas (PostgreSQL); 10 de noviembre |
-| Frontend, TypeScript | `cd frontend && npm run build && npm test` | 19 pruebas, 0 fallos; 10 de noviembre |
+| Backend | `cd backend/agrosense && ./mvnw test` | 205 pruebas, 0 fallos, 3 omitidas (PostgreSQL); 20 de noviembre |
+| Frontend, Java | `cd frontend && ./mvnw test` | 149 pruebas, 0 fallos, 2 omitidas (PostgreSQL); 20 de noviembre |
+| Frontend, TypeScript | `cd frontend && npm run build && npm test` | 30 pruebas, 0 fallos; 20 de noviembre |
 | IA, patrones y reglas | `cd IA && python -m unittest tests.test_patterns tests.test_rules` | 31 pruebas, 0 fallos |
 | Firmware en el PC | `sh firmware/test/run-tests.sh` | 221 comprobaciones, 0 fallos (10 de noviembre, ESP32) |
 | Firmware con el compilador real | `sh firmware/test/compile.sh` | Compila; 33 % de flash y 46 % de RAM. No ejecutado en una placa |
+
+**Cobertura del backend** (JaCoCo; `./mvnw test` deja el informe en `target/site/jacoco/index.html`), 20 de noviembre:
+
+| Medida | Cobertura |
+|---|---|
+| Líneas | 94,6 % (3352 de 3544) |
+| Ramas | 82,0 % (1254 de 1530) |
+| Métodos | 95,4 % (919 de 963) |
+| Líneas de los paquetes `pattern/` (los 23 patrones) | 95,5 % (1405 de 1471) |
 
 Las suites FastAPI de `IA/` y `event-service/` no pueden correr en este equipo: quedan para CI (`.github/workflows/agrosense.yml`).
 
