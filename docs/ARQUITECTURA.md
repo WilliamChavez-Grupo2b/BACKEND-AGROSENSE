@@ -745,9 +745,9 @@ Render»).
   valor; si se cambia uno hay que cambiar el otro y volver a desplegar.
 - **Acceso.** Vercel Authentication está activa en el proyecto del frontend: quien no tenga sesión en
   el equipo de Vercel ve la pantalla de acceso de Vercel en lugar de AgroSense.
-- **Otro despliegue del backend.** El proyecto `agrosense-backend` de Vercel
-  (`https://agrosense-backend.vercel.app`) corre el mismo backend con `backend/Dockerfile.vercel` contra
-  la misma base. Funciona, pero el frontend no lo usa.
+- **Otro despliegue del backend (borrado).** El proyecto `agrosense-backend` de Vercel
+  (`https://agrosense-backend.vercel.app`) corría el mismo backend con `backend/Dockerfile.vercel`. Respondía
+  error 500 y el frontend no lo usaba, así que se borró el 20 de noviembre de 2026. El único backend es el de Render.
 
 ## 9. Pendiente
 
