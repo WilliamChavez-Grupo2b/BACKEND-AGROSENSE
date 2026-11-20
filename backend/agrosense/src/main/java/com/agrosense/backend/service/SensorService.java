@@ -1,5 +1,6 @@
 package com.agrosense.backend.service;
 
+import com.agrosense.backend.domain.enums.ReadingSource;
 import com.agrosense.backend.domain.enums.SensorType;
 import com.agrosense.backend.dto.request.SensorReadingRequest;
 import com.agrosense.backend.dto.response.SensorReadingResponse;
@@ -44,6 +45,7 @@ public class SensorService {
                 .sensorCode(sensorCode)
                 .value(request.getValue())
                 .unit(request.getUnit() == null || request.getUnit().isBlank() ? null : request.getUnit().trim())
+                .source(ReadingSource.MANUAL)
                 .build()));
     }
 
