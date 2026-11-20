@@ -1,0 +1,45 @@
+# Render blueprint for the AgroSense backend (Spring Boot). New > Blueprint > this repository; Render reads
+# render.yaml from the repository root. The image is built from the workspace root because it needs database/.
+# Secrets use sync:false: Render asks for them on the first deploy and never stores them here.
+services:
+  - type: web
+    name: backend-agrosense
+    runtime: docker
+    plan: free
+    dockerfilePath: ./backend/agrosense/Dockerfile
+    dockerContext: .
+    healthCheckPath: /api/health
+    envVars:
+      # Vercel origin of the frontend, without trailing slash; comma-separated if there are several.
+      - key: CORS_ALLOWED_ORIGINS
+        value: https://agrosense-frontend-iota.vercel.app
+      # Creates the tables on an empty database (schema.sql is idempotent); ddl-auto=validate needs them.
+      - key: SQL_INIT_MODE
+        value: always
+      - key: ESP32_TCP_ENABLED
+        value: "false"
+      # Render cannot reach the ESP32 (192.168.4.1): the virtual sensor keeps readings coming, marked SIMULATED,
+      # and stops for any sensor that receives real readings. Needs migration 006 (sensor_readings.source).
+      - key: SIMULATOR_ENABLED
+        value: "true"
+      # jdbc:postgresql://<host>/<db>?sslmode=require (Neon)
+      - key: DATABASE_URL
+        sync: false
+      - key: DATABASE_USERNAME
+        sync: false
+      - key: DATABASE_PASSWORD
+        sync: false
+      # >= 64 bytes; the same value goes to BACKEND_JWT_SECRET in Vercel.
+      - key: JWT_SECRET
+        sync: false
+      # Same values as in event-service/render.yaml.
+      - key: EVENTS_INTERNAL_KEY
+        sync: false
+      - key: EVENTS_STREAM_SECRET
+        sync: false
+      - key: AI_SERVICE_URL
+        value: https://ia-agrosense.onrender.com
+      - key: AI_SERVICE_KEY
+        sync: false
+      - key: AI_SERVICE_TIMEOUT_MS
+        value: "30000"
