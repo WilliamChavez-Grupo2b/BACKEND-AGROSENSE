@@ -18,7 +18,7 @@
             <p class="monitoring-state"><span th:replace="~{fragments/status-pill :: status-pill(${monitoring.linkTone}, ${monitoring.linkIcon}, ${monitoring.linkLabel})}"></span></p>
             <dl class="definition-list">
                 <dt>Dispositivo</dt>
-                <dd th:text="${monitoring.deviceId ?: 'Sin configurar'}">ESP32-PLANTICAS</dd>
+                <dd class="device-code" th:text="${monitoring.deviceId ?: 'Sin configurar'}">ESP32-PLANTICAS</dd>
                 <dt>Último bloque</dt>
                 <dd th:text="${monitoring.lastBlockAt != null} ? ${#temporals.format(monitoring.lastBlockAt, 'd MMM, HH:mm:ss')} : 'Todavía ninguno'">19 nov, 20:30:01</dd>
                 <dt>Bloques recibidos</dt>
