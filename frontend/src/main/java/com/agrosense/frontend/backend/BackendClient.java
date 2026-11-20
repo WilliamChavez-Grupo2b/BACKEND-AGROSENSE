@@ -443,7 +443,12 @@ public class BackendClient {
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
-    public record MonitoringResponse(Esp32Status esp32, String wateringRule, List<WatchRun> watches) {
+    public record MonitoringResponse(Esp32Status esp32, String wateringRule, List<WatchRun> watches,
+            List<NextWatch> nextWatches) {
+    }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public record NextWatch(String command, Instant at) {
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)

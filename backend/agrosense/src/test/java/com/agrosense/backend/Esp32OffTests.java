@@ -102,6 +102,10 @@ class Esp32OffTests {
         assertThat(monitoring.wateringRule()).as("the default rule, read back by the interpreter")
                 .isEqualTo("suelo < 40 y aire < 60");
         assertThat(monitoring.watches()).as("no watch has run in the first minutes").isEmpty();
+        assertThat(monitoring.nextWatches()).extracting(MonitoringResponse.NextWatch::command)
+                .as("soonest first: 5 min, 10 min, 1 h after start-up")
+                .containsExactly("silent devices", "irrigation results", "frost");
+        assertThat(monitoring.nextWatches().get(0).at()).isAfter(java.time.Instant.now());
 
         HttpResponse<String> anonymous = HttpClient.newHttpClient().send(HttpRequest.newBuilder(URI.create(
                 "http://127.0.0.1:" + port + "/api/devices/monitoring")).build(), HttpResponse.BodyHandlers.ofString());

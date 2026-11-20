@@ -2,6 +2,7 @@ package com.agrosense.frontend.dto;
 
 import com.agrosense.frontend.backend.BackendClient.Esp32Status;
 import com.agrosense.frontend.backend.BackendClient.MonitoringResponse;
+import com.agrosense.frontend.backend.BackendClient.NextWatch;
 import com.agrosense.frontend.backend.BackendClient.WatchRun;
 
 import java.time.LocalDateTime;
@@ -26,7 +27,12 @@ public record MonitoringView(
         long storedReadings,
         long discardedBlocks,
         String wateringRule,
-        List<Watch> watches) {
+        List<Watch> watches,
+        List<Upcoming> upcoming) {
+
+    /** A watch that has not run yet in this round, and when it will. */
+    public record Upcoming(String name, LocalDateTime at) {
+    }
 
     public record Watch(String name, String purpose, LocalDateTime startedAt, long tookMillis) {
     }
@@ -53,7 +59,14 @@ public record MonitoringView(
                 esp32.enabled() ? ICONS.getOrDefault(link, "bi-question-circle") : "bi-power",
                 AGGREGATIONS.getOrDefault(esp32.aggregation(), esp32.aggregation()), esp32.aggregateSeconds(),
                 local(esp32.lastBlockAt(), zone), local(esp32.lastStoredAt(), zone), esp32.receivedBlocks(),
-                esp32.storedReadings(), esp32.discardedBlocks(), response.wateringRule(), watches);
+                esp32.storedReadings(), esp32.discardedBlocks(), response.wateringRule(), watches,
+                response.nextWatches() == null ? List.of() : response.nextWatches().stream()
+                        .map(next -> upcoming(next, zone)).toList());
+    }
+
+    private static Upcoming upcoming(NextWatch next, ZoneId zone) {
+        String[] known = WATCHES.getOrDefault(next.command(), new String[] {next.command(), ""});
+        return new Upcoming(known[0], LocalDateTime.ofInstant(next.at(), zone));
     }
 
     private static Watch watch(WatchRun run, ZoneId zone) {

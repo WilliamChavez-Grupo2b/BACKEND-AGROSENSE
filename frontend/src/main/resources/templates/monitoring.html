@@ -51,7 +51,13 @@
 
         <section class="card" aria-labelledby="watchesTitle">
             <h2 id="watchesTitle">Vigilancias del campo</h2>
-            <p class="text-muted" th:if="${monitoring.watches.isEmpty()}">Todavía no ha corrido ninguna. La primera corre a los 5 minutos de arrancar el servidor.</p>
+            <p class="text-muted" th:if="${monitoring.watches.isEmpty() and monitoring.upcoming.isEmpty()}">Todavía no ha corrido ninguna. La primera corre a los 5 minutos de arrancar el servidor.</p>
+            <ul class="compact-list" th:unless="${monitoring.upcoming.isEmpty()}" aria-label="Próximas vigilancias">
+                <li th:each="next : ${monitoring.upcoming}">
+                    <i class="bi bi-clock" aria-hidden="true"></i>
+                    <span th:text="|${next.name}: la próxima corre a las ${#temporals.format(next.at, 'HH:mm')}|">Dispositivos sin reportar: la próxima corre a las 11:10</span>
+                </li>
+            </ul>
             <div class="table-scroll" th:if="${!monitoring.watches.isEmpty()}">
                 <table class="table">
                     <thead>

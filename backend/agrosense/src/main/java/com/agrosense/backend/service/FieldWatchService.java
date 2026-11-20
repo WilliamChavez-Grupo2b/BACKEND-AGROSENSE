@@ -18,10 +18,13 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
 import java.time.Clock;
+import java.time.Instant;
 import java.time.LocalDateTime;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 /**
  * What no reading can raise: a device that stopped reporting and a frost that has not arrived yet. Both last longer
@@ -37,7 +40,17 @@ public class FieldWatchService {
 
     private static final int FROST_REPEAT_HOURS = 24;
 
-    private final FieldWatchInvoker invoker = new FieldWatchInvoker(Clock.systemUTC());
+    static final long SILENT_DEVICES_MS = 300_000;
+    static final long FROST_MS = 3_600_000;
+    static final long IRRIGATION_RESULTS_MS = 600_000;
+
+    /** When a watch runs next: the scheduler waits its delay after start-up, then the same delay after each run. */
+    public record NextRun(String command, Instant at) {
+    }
+
+    private final Clock clock = Clock.systemUTC();
+    private final Instant startedAt = clock.instant();
+    private final FieldWatchInvoker invoker = new FieldWatchInvoker(clock);
     private final FieldWatchCommand silentDevices;
     private final FieldWatchCommand frost;
     private final FieldWatchCommand irrigationResults;
@@ -51,17 +64,17 @@ public class FieldWatchService {
         this.irrigationResults = new IrrigationResultsWatch(irrigationService);
     }
 
-    @Scheduled(initialDelay = 300_000, fixedDelay = 300_000)
+    @Scheduled(initialDelay = SILENT_DEVICES_MS, fixedDelay = SILENT_DEVICES_MS)
     public void watchSilentDevices() {
         invoker.run(silentDevices);
     }
 
-    @Scheduled(initialDelay = 3_600_000, fixedDelay = 3_600_000)
+    @Scheduled(initialDelay = FROST_MS, fixedDelay = FROST_MS)
     public void watchFrost() {
         invoker.run(frost);
     }
 
-    @Scheduled(initialDelay = 600_000, fixedDelay = 600_000)
+    @Scheduled(initialDelay = IRRIGATION_RESULTS_MS, fixedDelay = IRRIGATION_RESULTS_MS)
     public void recordIrrigationResults() {
         invoker.run(irrigationResults);
     }
@@ -69,6 +82,27 @@ public class FieldWatchService {
     /** The last watches run, newest first. */
     public List<FieldWatchInvoker.Run> history() {
         return invoker.history();
+    }
+
+    /** When each watch runs next, soonest first. */
+    public List<NextRun> nextRuns() {
+        return nextRuns(startedAt, history());
+    }
+
+    static List<NextRun> nextRuns(Instant startedAt, List<FieldWatchInvoker.Run> history) {
+        return Stream.of(
+                        next("silent devices", SILENT_DEVICES_MS, startedAt, history),
+                        next("frost", FROST_MS, startedAt, history),
+                        next("irrigation results", IRRIGATION_RESULTS_MS, startedAt, history))
+                .sorted(Comparator.comparing(NextRun::at))
+                .toList();
+    }
+
+    private static NextRun next(String command, long delayMs, Instant startedAt, List<FieldWatchInvoker.Run> history) {
+        Instant from = history.stream().filter(run -> run.command().equals(command)).findFirst()
+                .map(run -> run.startedAt().plus(run.took()))
+                .orElse(startedAt);
+        return new NextRun(command, from.plusMillis(delayMs));
     }
 
     /** A device that has not reported for ALERTS_DEVICE_SILENT_MINUTES gets a SENSOR_OFFLINE alert. */

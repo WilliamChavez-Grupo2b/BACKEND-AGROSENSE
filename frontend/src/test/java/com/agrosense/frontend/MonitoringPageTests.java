@@ -3,6 +3,7 @@ package com.agrosense.frontend;
 import com.agrosense.frontend.backend.BackendClient;
 import com.agrosense.frontend.backend.BackendClient.Esp32Status;
 import com.agrosense.frontend.backend.BackendClient.MonitoringResponse;
+import com.agrosense.frontend.backend.BackendClient.NextWatch;
 import com.agrosense.frontend.backend.BackendClient.WatchRun;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -61,11 +62,14 @@ class MonitoringPageTests {
                 new Esp32Status(true, true, "ESP32-PLANTICAS", 60, now, now, 304, 5, 0, "mean", "RECEIVING",
                         "Recibiendo datos del ESP32"),
                 "suelo < 40 y aire < 60",
-                List.of(new WatchRun("frost", Instant.now(), 12), new WatchRun("silent devices", Instant.now(), 3)))));
+                List.of(new WatchRun("frost", Instant.now(), 12), new WatchRun("silent devices", Instant.now(), 3)),
+                List.of(new NextWatch("silent devices", java.time.LocalDate.of(2026, 11, 20)
+                        .atTime(11, 10).atZone(java.time.ZoneId.systemDefault()).toInstant())))));
 
         assertThat(page).contains("Recibiendo datos del ESP32", "status-pill--success", "ESP32-PLANTICAS",
                 "Promedio de los bloques de cada 60 s", "suelo &lt; 40 y aire &lt; 60", "Conviene regar",
-                "Riesgo de helada", "Dispositivos sin reportar", "12 ms", "data-monitoring")
+                "Riesgo de helada", "Dispositivos sin reportar", "12 ms", "data-monitoring",
+                "Dispositivos sin reportar: la próxima corre a las 11:10")
                 .doesNotContain("El servidor no responde", ">frost<", ">mean<");
         assertThat(page).as("the page is in the menu and marked as the current one")
                 .contains("title=\"Monitoreo\" aria-current=\"page\"");
@@ -76,7 +80,7 @@ class MonitoringPageTests {
         String page = pageWith(Optional.of(new MonitoringResponse(
                 new Esp32Status(true, true, "ESP32-PLANTICAS", 60, null, null, 0, 0, 0, "median", "SILENT",
                         "El ESP32 está conectado pero no envía datos"),
-                null, List.of())));
+                null, List.of(), List.of())));
 
         assertThat(page).contains("status-pill--warning", "Mediana de los bloques", "Todavía ninguno",
                 "Apagada: no hay regla de riego", "Todavía no ha corrido ninguna");
