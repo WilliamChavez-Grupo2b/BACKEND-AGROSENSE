@@ -1,5 +1,7 @@
 package com.agrosense.backend;
 
+import com.agrosense.backend.controller.DeviceController;
+import com.agrosense.backend.dto.response.MonitoringResponse;
 import com.agrosense.backend.models.Crop;
 import com.agrosense.backend.models.Device;
 import com.agrosense.backend.pattern.structural.adapter.esp32.Esp32ReadOnlyActuatorDriver;
@@ -55,6 +57,8 @@ class Esp32OffTests {
 
     @Autowired
     private Esp32TcpIngestionService esp32;
+    @Autowired
+    private DeviceController devices;
     @Value("${local.server.port}")
     private int port;
 
@@ -84,6 +88,23 @@ class Esp32OffTests {
 
         HttpResponse<String> anonymous = http.send(HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + port
                 + "/api/devices/esp32/status")).build(), HttpResponse.BodyHandlers.ofString());
+        assertThat(anonymous.statusCode()).isEqualTo(401);
+    }
+
+    @Test
+    void theMonitoringPageGetsTheReceiverTheWateringRuleAndTheWatchesAndNeedsASignedInUser() throws Exception {
+        MonitoringResponse monitoring = devices.monitoring().getBody();
+        assertThat(monitoring).isNotNull();
+        assertThat(monitoring.esp32().enabled()).isTrue();
+        assertThat(monitoring.esp32().connected()).isFalse();
+        assertThat(monitoring.esp32().link()).isEqualTo("DISCONNECTED");
+        assertThat(monitoring.esp32().aggregation()).isEqualTo("mean");
+        assertThat(monitoring.wateringRule()).as("the default rule, read back by the interpreter")
+                .isEqualTo("suelo < 40 y aire < 60");
+        assertThat(monitoring.watches()).as("no watch has run in the first minutes").isEmpty();
+
+        HttpResponse<String> anonymous = HttpClient.newHttpClient().send(HttpRequest.newBuilder(URI.create(
+                "http://127.0.0.1:" + port + "/api/devices/monitoring")).build(), HttpResponse.BodyHandlers.ofString());
         assertThat(anonymous.statusCode()).isEqualTo(401);
     }
 
