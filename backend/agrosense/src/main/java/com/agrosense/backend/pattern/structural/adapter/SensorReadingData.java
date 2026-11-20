@@ -1,5 +1,6 @@
 package com.agrosense.backend.pattern.structural.adapter;
 
+import com.agrosense.backend.domain.enums.ReadingSource;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -18,4 +19,6 @@ public class SensorReadingData {
     private BigDecimal value;
     private String unit;
     private LocalDateTime recordedAt;
+    /** Where the reading came from; null is DEVICE. */
+    private ReadingSource source;
 }
