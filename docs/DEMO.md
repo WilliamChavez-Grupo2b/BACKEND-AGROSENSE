@@ -24,9 +24,14 @@
 
 4. Para comprobar que es en vivo: toca el sensor de suelo o pon la mano cerca del DHT11 y espera el minuto siguiente.
    En **Monitoreo** suben los bloques recibidos cada 15 segundos aunque todavía no cambie la lectura guardada.
-5. Pregúntale al asistente (botón del chat) «¿de dónde salen los datos?» o «¿dónde se guardan?»: responde con cada
+5. **Alertas que se cierran solas:** cuando una lectura vuelve al rango del cultivo, su alerta abierta se marca como
+   atendida con la nota «Se cerró sola: la lectura volvió al rango (61 %)»; la de «dispositivo sin reportar» se cierra
+   cuando la placa vuelve a enviar datos. Para mostrarlo: con el sensor de suelo fuera de la tierra aparece «Humedad baja»
+   al minuto; al volver a meterlo, al minuto siguiente la alerta pasa a «Atendida» sola (Alertas › Todas). El riesgo de
+   helada no se cierra solo: depende del pronóstico, no de la lectura de ahora.
+6. Pregúntale al asistente (botón del chat) «¿de dónde salen los datos?» o «¿dónde se guardan?»: responde con cada
    sensor, su cultivo, su dispositivo, la hora de la última lectura y la tabla de la base donde queda.
-6. Para detener todo: `tools\esp32\stop-demo.ps1`.
+7. Para detener todo: `tools\esp32\stop-demo.ps1`.
 
 Si la humedad del suelo marca 0 % fijo, la sonda está fuera de la tierra o su cable al GPIO34 está suelto: el firmware
 da 0 % cuando el valor crudo llega a 2900 o más (`ADC_SECO`, seco o al aire).

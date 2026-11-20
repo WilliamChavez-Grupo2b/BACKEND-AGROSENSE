@@ -8,6 +8,7 @@ import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 import java.time.LocalDateTime;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
@@ -20,6 +21,9 @@ public interface AlertRepository extends JpaRepository<Alert, Integer> {
     List<Alert> findBySeverityAndAcknowledgedFalse(Severity severity);
 
     boolean existsByCropIdCropAndAlertTypeAndAcknowledgedFalse(Integer idCrop, AlertType alertType);
+
+    /** The open alerts of a crop among these types: the ones a reading back in range closes. */
+    List<Alert> findByCropIdCropAndAlertTypeInAndAcknowledgedFalse(Integer idCrop, Collection<AlertType> alertTypes);
 
     boolean existsByCropIdCropAndAlertTypeAndCreatedAtAfter(Integer idCrop, AlertType alertType, LocalDateTime since);
 

@@ -3,11 +3,13 @@ package com.agrosense.backend;
 import com.agrosense.backend.domain.enums.AlertType;
 import com.agrosense.backend.domain.enums.DispatchStatus;
 import com.agrosense.backend.domain.enums.SensorType;
+import com.agrosense.backend.domain.enums.Severity;
 import com.agrosense.backend.dto.request.CropRequest;
 import com.agrosense.backend.dto.request.DeviceEventRequest;
 import com.agrosense.backend.dto.request.IrrigationRequest;
 import com.agrosense.backend.dto.response.CropResponse;
 import com.agrosense.backend.exception.ApiException;
+import com.agrosense.backend.models.Alert;
 import com.agrosense.backend.models.Crop;
 import com.agrosense.backend.models.Device;
 import com.agrosense.backend.models.Irrigation;
@@ -445,5 +447,46 @@ class FieldWatchIntegrationTests {
 		assertThat(Files.readString(database.resolve("migrations/002_alert_types.sql"))).contains(types);
 		assertThat(Files.readString(database.resolve("migrations/005_air_humidity_alerts.sql"))).contains(types);
 		assertThat(Duration.ofMinutes(5)).isEqualTo(PendingIrrigationCommands.EXPIRES_AFTER);
+	}
+	@Test
+	void anAlertClosesItselfWhenItsReadingIsBackInRangeAndOneStillMetStaysOpen() {
+		Sensor moisture = firstSensor(SensorType.SOIL_MOISTURE);
+		Crop crop = cropRepository.findById(cropOfTheDevice()).orElseThrow();
+		BigDecimal minimum = crop.getHumidityMin();
+		BigDecimal inRange = minimum.add(crop.getHumidityMax()).divide(new BigDecimal("2"));
+		LocalDateTime at = LocalDateTime.now().plusHours(5);
+
+		sensorFacade.record(SensorReadingData.builder().sensorCode(moisture.getSensorCode())
+				.value(minimum.subtract(new BigDecimal("10"))).recordedAt(at).build());
+		sensorFacade.record(SensorReadingData.builder().sensorCode(moisture.getSensorCode())
+				.value(minimum.subtract(new BigDecimal("5"))).recordedAt(at.plusMinutes(1)).build());
+		assertThat(openOf(AlertType.LOW_HUMIDITY)).as("still below its minimum: it stays open").hasSize(1);
+
+		Alert silent = new Alert();
+		silent.setCrop(crop);
+		silent.setAlertType(AlertType.SENSOR_OFFLINE);
+		silent.setSeverity(Severity.HIGH);
+		silent.setMessage("El dispositivo no reporta.");
+		silent.setCreatedAt(LocalDateTime.now());
+		alerts.save(silent);
+		sensorFacade.record(SensorReadingData.builder().sensorCode(moisture.getSensorCode())
+				.value(inRange).recordedAt(at.plusMinutes(2)).build());
+
+		assertThat(openOf(AlertType.LOW_HUMIDITY)).as("back in range: it closed itself").isEmpty();
+		assertThat(openOf(AlertType.SENSOR_OFFLINE)).as("the crop reports again").isEmpty();
+		assertThat(alerts.findAll().stream().filter(alert -> alert.getAlertType() == AlertType.LOW_HUMIDITY)
+				.map(Alert::getMessage)).anyMatch(message -> message.endsWith(
+						"Se cerró sola: la lectura volvió al rango (" + inRange.stripTrailingZeros().toPlainString() + " %)."));
+
+		sensorFacade.record(SensorReadingData.builder().sensorCode(moisture.getSensorCode())
+				.value(minimum.subtract(new BigDecimal("10"))).recordedAt(at.plusMinutes(3)).build());
+		assertThat(openOf(AlertType.LOW_HUMIDITY)).as("dry again: a new alert, shown live").hasSize(1);
+	}
+
+	private List<Alert> openOf(AlertType type) {
+		return alerts.findAll().stream()
+				.filter(alert -> alert.getAlertType() == type && !Boolean.TRUE.equals(alert.getAcknowledged()))
+				.filter(alert -> alert.getCrop().getIdCrop().equals(cropOfTheDevice()))
+				.toList();
 	}
 }
