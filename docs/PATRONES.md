@@ -16,6 +16,84 @@ Rutas abreviadas:
 `F/ArduinoPorts.h` y los sketches tocan la placa; el resto del firmware compila igual en el PC para las pruebas. Sin
 placa, `tools/e2e/run_e2e.py` recorre el sistema con el mismo contrato.
 
+## Mapa: los 23 patrones en el recorrido de una lectura
+
+Una lectura del ESP32 recorre el sistema de arriba abajo. Cada caja nombra el patrón y la clase donde vive; el
+número es su sección en este documento. Creacionales en verde, estructurales en azul, de comportamiento en ámbar.
+
+```mermaid
+flowchart TB
+    subgraph CAMPO["1 · Campo"]
+        ESP["ESP32 PLANTICAS<br/>un bloque de texto por segundo"]
+    end
+
+    subgraph RECEPTOR["2 · Receptor del ESP32 (backend)"]
+        MED["Mediator · 15<br/>Esp32TcpClient ↔ Esp32TcpIngestionService"]
+        CHAIN["Chain of Responsibility · 11<br/>LineHandler: una línea, un manejador"]
+        FLY["Flyweight · 23<br/>Esp32ReadingPool: bloques iguales, un objeto"]
+        ITER["Iterator · 14<br/>BlockWindow: los bloques del minuto"]
+        STRAT["Strategy · 19<br/>promedio o mediana"]
+        OBS["Observer · 17<br/>Esp32Feed avisa a sus oyentes"]
+        STATE["State · 18<br/>Esp32Link: recibiendo, en silencio…"]
+        VIS["Visitor · 21<br/>EventDataWriter: cada medida al evento"]
+        ADA["Adapter · 6<br/>el bloque del ESP32 como evento del webhook"]
+    end
+
+    subgraph NUCLEO["3 · Guardar y decidir (backend)"]
+        FAC["Facade · 9<br/>DeviceIngestionFacade y SensorFacade"]
+        PROTO["Prototype · 2<br/>SensorReadingPrototype, CropTemplate"]
+        DEC["Decorator · 8<br/>normalizar, calibrar, validar"]
+        SING["Singleton · 1<br/>CalibrationRegistry, AiConfigManager"]
+        MEM["Memento · 16<br/>CalibrationCheckpoint"]
+        COMP["Composite · 22<br/>árbol de reglas de alerta"]
+        FM["Factory Method · 5<br/>un AlertCreator por regla"]
+        BUI["Builder · 3<br/>AlertBuilder, PredictionRequest"]
+        INT["Interpreter · 13<br/>regla «suelo &lt; 40 y aire &lt; 60»"]
+    end
+
+    subgraph ACCION["4 · Actuar y vigilar"]
+        PROXY["Proxy · 10<br/>AiServiceProxy: reintentos y respaldo"]
+        AF["Abstract Factory · 4<br/>IA: chat y transcripción por proveedor"]
+        BRI["Bridge · 7<br/>orden de riego × actuador"]
+        CMD["Command · 12<br/>cada vigilancia del campo"]
+        TM["Template Method · 20<br/>ScheduledWatch: pasos fijos"]
+    end
+
+    subgraph PANTALLA["5 · Pantalla (frontend)"]
+        UI["Facade y Proxy (TypeScript)<br/>api/facade.ts, api/cache-proxy.ts"]
+    end
+
+    ESP --> MED --> CHAIN --> FLY --> ITER --> STRAT --> VIS --> ADA --> FAC
+    CHAIN -.-> OBS --> STATE
+    FAC --> PROTO --> DEC --> COMP --> FM --> BUI
+    DEC -.-> SING -.-> MEM
+    FAC --> INT
+    FAC --> PROXY --> AF
+    INT --> BRI
+    CMD --> TM
+    TM -.-> FAC
+    BUI --> UI
+    STATE --> UI
+
+    classDef creational fill:#dff3e4,stroke:#2e7d4f,color:#123;
+    classDef structural fill:#dce9f7,stroke:#2f5e8e,color:#123;
+    classDef behavioral fill:#fbecd0,stroke:#a0681c,color:#123;
+    class SING,PROTO,BUI,AF,FM creational;
+    class ADA,BRI,DEC,FAC,PROXY,COMP,FLY,UI structural;
+    class CHAIN,CMD,INT,ITER,MED,MEM,OBS,STATE,STRAT,TM,VIS behavioral;
+```
+
+**Cómo contarlo en un minuto.** El ESP32 manda texto; el **Mediator** conecta el cliente TCP con el servicio sin que se
+conozcan. Cada línea pasa por una **Chain of Responsibility**, los bloques iguales se comparten (**Flyweight**) y la
+ventana del minuto se recorre con un **Iterator** para promediarla con una **Strategy**. Un **Observer** avisa de cada
+bloque y el **State** del enlace dice si la placa está recibiendo o en silencio. Un **Visitor** escribe cada medida en
+el evento, que el **Adapter** entrega a la **Facade**. Ahí la lectura sale de un **Prototype**, pasa por los
+**Decorator** de calibración (la tabla es un **Singleton** protegida por un **Memento**) y se evalúa contra un
+**Composite** de reglas, cada una un **Factory Method** que arma su alerta con un **Builder**. El **Interpreter** lee la
+regla de riego, el **Proxy** habla con la IA (una **Abstract Factory** por proveedor) y el **Bridge** separa quién
+ordena el riego de cómo se acciona. Las vigilancias programadas son **Command** con los pasos fijos de un
+**Template Method**.
+
 ## Cómo correr las pruebas
 
 | Parte | Comando | Resultado del 1 de noviembre de 2026 |
