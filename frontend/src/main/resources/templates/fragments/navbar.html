@@ -48,9 +48,9 @@
     <div th:replace="~{fragments/brand :: theme-toggle}"></div>
 
     <a class="icon-button topbar-alerts" id="topbarAlerts" th:href="@{/alertas}"
-       th:attr="aria-label=${openAlertCount != null and openAlertCount > 0} ? |${openAlertCount} alertas sin atender| : 'Sin alertas pendientes'">
+       th:attr="aria-label=${openAlertCount != null and openAlertCount > 0} ? |${openAlertCount} alertas sin atender| : 'Sin alertas pendientes',data-count-url=@{/api/ui/alerts/open-count}">
         <i class="bi bi-bell" aria-hidden="true"></i>
-        <span class="topbar-dot" th:if="${openAlertCount != null and openAlertCount > 0}" aria-hidden="true"></span>
+        <span class="topbar-dot" th:hidden="${openAlertCount == null or openAlertCount == 0}" aria-hidden="true"></span>
     </a>
 
     <div class="topbar-user">

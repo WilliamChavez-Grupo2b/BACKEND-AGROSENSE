@@ -1,3 +1,4 @@
+import { paintAlertCount } from '../alert-count.js';
 import { showToast } from '../app.js';
 import { ApiError, isArrayOf, isRecord, requestJson } from '../api/client.js';
 import { all, find } from '../core/dom.js';
@@ -211,20 +212,8 @@ function markOnline(pill: HTMLElement): void {
 
 function showAlert(alert: LiveAlert): void {
   showToast(`Nueva alerta${alert.cropName ? ` en ${alert.cropName}` : ''}: ${alert.message}`, 'error');
-  const badge = document.querySelector<HTMLElement>('.sidebar-badge');
-  if (badge) {
-    const count = (Number(badge.textContent) || 0) + 1;
-    badge.textContent = String(count);
-    badge.setAttribute('aria-label', `${count} alertas sin atender`);
-  }
-  const bell = find('topbarAlerts', HTMLAnchorElement);
-  if (bell && !bell.querySelector('.topbar-dot')) {
-    const dot = document.createElement('span');
-    dot.className = 'topbar-dot';
-    dot.setAttribute('aria-hidden', 'true');
-    bell.append(dot);
-    bell.setAttribute('aria-label', 'Hay alertas sin atender');
-  }
+  const badge = document.querySelector<HTMLElement>('[data-alert-count]');
+  paintAlertCount((Number(badge?.textContent) || 0) + 1);
 }
 
 function start(): void {

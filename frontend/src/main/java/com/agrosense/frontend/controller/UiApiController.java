@@ -15,6 +15,7 @@ import com.agrosense.frontend.dto.Views.IrrigationView;
 import com.agrosense.frontend.dto.Views.LatestReading;
 import com.agrosense.frontend.dto.Views.SensorView;
 import com.agrosense.frontend.dto.Views.ReadingSeries;
+import com.agrosense.frontend.service.AlertService;
 import com.agrosense.frontend.service.CropService;
 import com.agrosense.frontend.service.DashboardService;
 import com.agrosense.frontend.service.Esp32SilencePolicy;
@@ -39,6 +40,7 @@ import org.springframework.web.bind.annotation.RestController;
 import java.security.Principal;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 @RestController
@@ -47,6 +49,7 @@ import java.util.Optional;
 public class UiApiController {
 
     private final SensorService sensorService;
+    private final AlertService alertService;
     private final EstateService estateService;
     private final IrrigationService irrigationService;
     private final DashboardService dashboardService;
@@ -112,6 +115,15 @@ public class UiApiController {
                 .map(sensor -> new LatestReading(sensor.code(), sensor.lastValue(), sensor.unit(),
                         sensor.lastReadingAt()))
                 .toList();
+    }
+
+    /**
+     * Polled by every page (alert-count.ts): the user's open alerts, so the bell and the menu badge go up when an alert
+     * appears and down when one closes by itself, without reloading.
+     */
+    @GetMapping("/alerts/open-count")
+    public Map<String, Long> openAlertCount(Principal principal) {
+        return Map.of("count", alertService.countOpen(principal.getName()));
     }
 
     @GetMapping("/backend-status")
