@@ -13,3 +13,11 @@
 /temp_agrosense
 /api
 /IA
+# Nothing else the frontend does not need: the demo tools keep a local database and logs that may hold secrets.
+/tools
+/firmware
+/event-service
+/agrosense-entrega
+/.claude
+/CLAUDE.md
+*.log

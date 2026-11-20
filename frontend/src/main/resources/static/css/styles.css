@@ -1635,6 +1635,18 @@ code {
   overflow-wrap: anywhere;
 }
 
+/* A long state wraps between words inside its card instead of running past it. */
+.definition-list dd .status-pill {
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: normal;
+}
+
+/* «Monitoreo»: the ESP32's state stands on its own line under the card's title, where it is read first. */
+.monitoring-state {
+  margin-bottom: var(--space-3);
+}
+
 .state {
   display: flex;
   flex-direction: column;
@@ -5598,6 +5610,11 @@ kbd {
 .range-list .bi {
   color: var(--accent);
   font-size: var(--icon-md);
+}
+
+/* A range reads as one value: «15 – 35 °C» never breaks between its numbers and its unit. */
+.range-list li strong {
+  white-space: nowrap;
 }
 
 .reading-list,

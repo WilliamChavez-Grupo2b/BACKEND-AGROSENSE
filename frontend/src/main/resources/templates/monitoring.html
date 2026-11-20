@@ -15,9 +15,8 @@
     <div class="detail-grid" th:if="${monitoring != null}">
         <section class="card" aria-labelledby="esp32Title" data-monitoring-link>
             <h2 id="esp32Title">Conexión con el ESP32</h2>
+            <p class="monitoring-state"><span th:replace="~{fragments/status-pill :: status-pill(${monitoring.linkTone}, ${monitoring.linkIcon}, ${monitoring.linkLabel})}"></span></p>
             <dl class="definition-list">
-                <dt>Estado</dt>
-                <dd><span th:replace="~{fragments/status-pill :: status-pill(${monitoring.linkTone}, ${monitoring.linkIcon}, ${monitoring.linkLabel})}"></span></dd>
                 <dt>Dispositivo</dt>
                 <dd th:text="${monitoring.deviceId ?: 'Sin configurar'}">ESP32-PLANTICAS</dd>
                 <dt>Último bloque</dt>

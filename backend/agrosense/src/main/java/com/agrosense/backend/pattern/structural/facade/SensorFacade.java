@@ -37,8 +37,11 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.EnumSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 
 @Component
 @RequiredArgsConstructor
@@ -48,6 +51,19 @@ public class SensorFacade {
     private static final int SUMMARY_ALERTS = 5;
     private static final BigDecimal FULL_SCALE = new BigDecimal("100");
     private static final AlertCreator FAULTS = new SensorFaultAlertCreator();
+
+    /**
+     * The alerts a valid reading of each sensor type closes when it is back in range. Frost is not here: it warns about
+     * the night ahead from the forecast, so a mild reading now does not answer it.
+     */
+    static final Map<SensorType, Set<AlertType>> CLOSED_BY_A_READING = Map.of(
+            SensorType.SOIL_MOISTURE, EnumSet.of(AlertType.LOW_HUMIDITY, AlertType.HIGH_HUMIDITY),
+            SensorType.AIR_TEMPERATURE, EnumSet.of(AlertType.LOW_TEMPERATURE, AlertType.HIGH_TEMPERATURE),
+            SensorType.RELATIVE_HUMIDITY, EnumSet.of(AlertType.LOW_AIR_HUMIDITY, AlertType.HIGH_AIR_HUMIDITY),
+            SensorType.PH, EnumSet.of(AlertType.PH_OUT_OF_RANGE));
+
+    /** Room left in alerts.message (VARCHAR 255) for the note that says why an alert closed itself. */
+    private static final int MESSAGE_LENGTH = 255;
 
     private final SensorRepository sensorRepository;
     private final SensorReadingRepository readingRepository;
@@ -96,10 +112,14 @@ public class SensorFacade {
         String ownerEmail = sensor.getCrop().getEstate().getUser().getEmail();
         events.publishEvent(new SensorReadingRecordedEvent(ownerEmail, SensorReadingResponse.from(reading)));
 
-        Optional<Alert> alert = ValidationDecorator.QUALITY_OK.equals(reading.getQuality())
+        boolean valid = ValidationDecorator.QUALITY_OK.equals(reading.getQuality());
+        Optional<Alert> detected = valid
                 ? AlertCreator.firstFor(AlertContext.ofReading(sensor, reading.getValue(), reading.getUnit()))
-                        .flatMap(raised -> saveIfNoneOpen(raised, ownerEmail))
                 : Optional.empty();
+        Optional<Alert> alert = detected.flatMap(raised -> saveIfNoneOpen(raised, ownerEmail));
+        if (valid) {
+            closeWhatIsBackInRange(sensor, reading, detected.map(Alert::getAlertType).orElse(null));
+        }
         raiseIfFaulty(sensor, reading, ownerEmail);
         return new Recorded(reading, alert);
     }
@@ -125,6 +145,38 @@ public class SensorFacade {
                 .filter(alert -> !alertRepository.existsByCropIdCropAndAlertTypeAndCreatedAtAfter(
                         context.crop().getIdCrop(), alert.getAlertType(), since))
                 .flatMap(alert -> saveIfNoneOpen(alert, context.crop().getEstate().getUser().getEmail()));
+    }
+
+    /**
+     * A valid reading answers the open alerts of its kind it no longer meets: a soil back in range closes «humedad
+     * baja», and any reading of the crop closes «dispositivo sin reportar». The alert keeps what it said and gains why
+     * it closed; one the reading still meets ({@code stillMet}) stays open.
+     */
+    private void closeWhatIsBackInRange(Sensor sensor, SensorReading reading, AlertType stillMet) {
+        Set<AlertType> answered = EnumSet.of(AlertType.SENSOR_OFFLINE);
+        answered.addAll(CLOSED_BY_A_READING.getOrDefault(sensor.getSensorType(), Set.of()));
+        if (stillMet != null) {
+            answered.remove(stillMet);
+        }
+        List<Alert> open = alertRepository.findByCropIdCropAndAlertTypeInAndAcknowledgedFalse(
+                sensor.getCrop().getIdCrop(), answered);
+        for (Alert alert : open) {
+            alert.setAcknowledged(true);
+            alert.setMessage(withClosingNote(alert, reading));
+        }
+        if (!open.isEmpty()) {
+            alertRepository.saveAll(open);
+        }
+    }
+
+    static String withClosingNote(Alert alert, SensorReading reading) {
+        String value = reading.getValue().stripTrailingZeros().toPlainString()
+                + (reading.getUnit() == null || reading.getUnit().isBlank() ? "" : " " + reading.getUnit().trim());
+        String note = alert.getAlertType() == AlertType.SENSOR_OFFLINE
+                ? " Se cerró sola: el dispositivo volvió a enviar datos."
+                : " Se cerró sola: la lectura volvió al rango (" + value + ").";
+        String message = alert.getMessage() == null ? "" : alert.getMessage().trim();
+        return message.length() + note.length() <= MESSAGE_LENGTH ? message + note : message;
     }
 
     private void raiseIfFaulty(Sensor sensor, SensorReading reading, String ownerEmail) {
