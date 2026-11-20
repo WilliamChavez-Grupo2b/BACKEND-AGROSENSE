@@ -1,6 +1,7 @@
 package com.agrosense.backend.service;
 
 import com.agrosense.backend.domain.enums.AlertType;
+import com.agrosense.backend.domain.enums.ReadingSource;
 import com.agrosense.backend.domain.enums.SensorType;
 import com.agrosense.backend.domain.enums.Severity;
 import com.agrosense.backend.dto.response.AlertResponse;
@@ -64,16 +65,16 @@ public class DeviceEventService {
 
     @Transactional
     public Map<String, Object> receive(String deviceCode, String deviceKey, String type, JsonNode ts, JsonNode data) {
-        return store(deviceService.require(deviceCode, deviceKey), type, ts, data);
+        return store(deviceService.require(deviceCode, deviceKey), type, ts, data, ReadingSource.DEVICE);
     }
 
     /** The same event from a device trusted by configuration, without a key: the ESP32 read over TCP. */
     @Transactional
     public Map<String, Object> receiveFromConfiguredDevice(String deviceCode, String type, JsonNode ts, JsonNode data) {
-        return store(deviceService.requireConfigured(deviceCode), type, ts, data);
+        return store(deviceService.requireConfigured(deviceCode), type, ts, data, ReadingSource.ESP32_TCP);
     }
 
-    private Map<String, Object> store(Device device, String type, JsonNode ts, JsonNode data) {
+    private Map<String, Object> store(Device device, String type, JsonNode ts, JsonNode data, ReadingSource source) {
         Crop crop = device.getCrop();
         LocalDateTime when = timeOf(ts);
         if (data == null || !data.isObject()) {
@@ -83,7 +84,7 @@ public class DeviceEventService {
         List<AlertResponse> alerts = new ArrayList<>();
         String kind = type == null ? "" : type.trim().toLowerCase(Locale.ROOT);
         switch (kind) {
-            case READING -> readings(crop, when, ts != null && !ts.isNull(), data, readings, alerts);
+            case READING -> readings(crop, when, ts != null && !ts.isNull(), data, readings, alerts, source);
             case ALERT -> alert(crop, data).map(AlertResponse::from).ifPresent(alerts::add);
             default -> throw invalid("El tipo de evento debe ser 'reading' o 'alert'.");
         }
@@ -103,7 +104,7 @@ public class DeviceEventService {
     }
 
     private void readings(Crop crop, LocalDateTime when, boolean stamped, JsonNode data,
-            List<SensorReadingResponse> readings, List<AlertResponse> alerts) {
+            List<SensorReadingResponse> readings, List<AlertResponse> alerts, ReadingSource source) {
         if (data.isEmpty()) {
             throw invalid("Una lectura necesita al menos una medida en 'data', por ejemplo {\"soil_moisture\": 31.5}.");
         }
@@ -128,7 +129,7 @@ public class DeviceEventService {
                 continue;
             }
             SensorFacade.Recorded recorded = sensorFacade.record(SensorReadingData.builder()
-                    .sensorCode(sensor.getSensorCode()).value(value).recordedAt(when).build());
+                    .sensorCode(sensor.getSensorCode()).value(value).recordedAt(when).source(source).build());
             readings.add(SensorReadingResponse.from(recorded.reading()));
             recorded.alert().map(AlertResponse::from).ifPresent(alerts::add);
         }
