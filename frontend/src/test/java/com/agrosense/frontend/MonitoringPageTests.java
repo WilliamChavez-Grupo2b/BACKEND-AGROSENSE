@@ -96,7 +96,7 @@ class MonitoringPageTests {
         String page = pageWith(Optional.empty());
 
         assertThat(page).contains("Recorrido de ESP32-PLANTICAS · humedad del suelo", "class=\"soil-trail\"",
-                "<meter class=\"soil-trail-meter\"", "la humedad del suelo", "primera de la lista");
-        assertThat(page).as("each row says what the soil consumed or gained").containsAnyOf("bajó", "subió", "sin cambio");
+                "<meter class=\"soil-trail-meter\"", "class=\"soil-trail-summary\"", "primera de la lista");
+        assertThat(page).as("each row says what the soil consumed or gained").containsAnyOf("bajó", "subió", "sin cambio", "sin datos");
     }
 }

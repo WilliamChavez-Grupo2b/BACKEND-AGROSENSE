@@ -1648,6 +1648,7 @@ code {
 
 /* A device code («ESP32-PLANTICAS») is one name: it never breaks at its hyphen. */
 .definition-list dd.device-code {
+  font-size: var(--text-small);
   white-space: nowrap;
   overflow-wrap: normal;
 }
