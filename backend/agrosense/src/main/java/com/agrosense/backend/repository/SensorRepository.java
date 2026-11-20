@@ -26,4 +26,7 @@ public interface SensorRepository extends JpaRepository<Sensor, Integer> {
     List<Sensor> findBySensorType(SensorType sensorType);
 
     long countByCropEstateUserEmailAndActiveTrue(String email);
+
+    /** Sensors that may record: active, on an active crop of an active account (VirtualSensorSimulator). */
+    List<Sensor> findByActiveTrueAndCropActiveTrueAndCropEstateUserActiveTrue();
 }
