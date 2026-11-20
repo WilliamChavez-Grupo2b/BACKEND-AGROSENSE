@@ -74,6 +74,28 @@
             </div>
         </section>
     </div>
+    <section class="card soil-trail-card" th:if="${soilTrail != null}" aria-labelledby="soilTrailTitle">
+        <div class="card-header">
+            <h2 id="soilTrailTitle" th:text="|Recorrido de ${soilTrail.deviceCode} · humedad del suelo|">Recorrido de ESP32-PLANTICAS · humedad del suelo</h2>
+            <span class="text-muted" th:if="${soilTrail.rangeText() != null}"
+                  th:text="|${soilTrail.cropName} · rango ${soilTrail.rangeText()}|">Café · rango 40 – 80 %</span>
+        </div>
+        <p class="soil-trail-summary" th:if="${soilTrail.summary != null}" th:text="${soilTrail.summary}">En 19 min la humedad del suelo bajó 1,20 %: consume 3,79 % por hora.</p>
+        <p class="text-muted" th:unless="${soilTrail.hasSteps()}">Todavía no hay lecturas de humedad del suelo. La primera llega al minuto de conectar la placa.</p>
+        <ol class="soil-trail" th:if="${soilTrail.hasSteps()}" aria-label="Lecturas de humedad del suelo, de la más reciente a la más antigua">
+            <li th:each="step : ${soilTrail.steps}">
+                <time class="soil-trail-time" th:datetime="${step.at}" th:text="${#temporals.format(step.at, 'HH:mm')}">11:30</time>
+                <meter class="soil-trail-meter" min="0" max="100" th:value="${step.value}"
+                       th:attr="low=${soilTrail.min},high=${soilTrail.max},optimum=${soilTrail.optimum()},aria-label=|Humedad del suelo ${step.valueText()}|"></meter>
+                <strong class="soil-trail-value" th:classappend="${step.inRange} ? '' : 'soil-trail-value--out'" th:text="${step.valueText()}">35,1 %</strong>
+                <span class="status-pill" th:classappend="|status-pill--${step.tone()}|">
+                    <i class="bi" th:classappend="${step.icon()}" aria-hidden="true"></i>
+                    <span th:text="${step.changeText()}">bajó 0,32 %</span>
+                </span>
+            </li>
+        </ol>
+    </section>
+
     <p class="text-muted" th:if="${monitoring != null}">La página se actualiza sola cada 15 segundos.</p>
 </main>
 </body>

@@ -2,6 +2,7 @@ package com.agrosense.frontend.service;
 
 import com.agrosense.frontend.backend.BackendClient;
 import com.agrosense.frontend.backend.BackendClient.ReadingResponse;
+import com.agrosense.frontend.dto.SoilTrail;
 import com.agrosense.frontend.dto.Views.ConnectedSensor;
 import com.agrosense.frontend.dto.Views.HumidityCard;
 import com.agrosense.frontend.dto.Views.HumidityDayReport;
@@ -71,6 +72,27 @@ public class SensorService {
     public Optional<ConnectedSensor> findConnected(String email, String deviceCode, List<SensorView> userSensors) {
         return cropRepository.findMeasuredByDevice(deviceCode, email).stream().findFirst()
                 .map(crop -> connected(deviceCode, crop, userSensors));
+    }
+
+    /**
+     * The soil moisture of the configured ESP32, its newest 20 readings first, each with what the soil consumed since the
+     * one before. Empty when the device does not exist or its crop belongs to someone else.
+     */
+    public Optional<SoilTrail> findSoilTrail(String email, String deviceCode) {
+        return cropRepository.findMeasuredByDevice(deviceCode, email).stream().findFirst().map(crop -> {
+            List<Integer> soil = sensorRepository
+                    .findByCropEstateUserEmailAndSensorTypeInOrderBySensorCode(email, List.of(SensorType.SOIL_MOISTURE))
+                    .stream()
+                    .filter(sensor -> crop.getIdCrop().equals(sensor.getCrop().getIdCrop())
+                            && Boolean.TRUE.equals(sensor.getActive()))
+                    .map(Sensor::getIdSensor)
+                    .toList();
+            List<SoilTrail.Reading> readings = soil.isEmpty() ? List.of() : readingRepository
+                    .findTop20BySensorIdSensorInOrderByRecordedAtDesc(soil).stream()
+                    .map(reading -> new SoilTrail.Reading(reading.getRecordedAt(), reading.getValue()))
+                    .toList();
+            return SoilTrail.of(deviceCode, crop.getName(), crop.getHumidityMin(), crop.getHumidityMax(), readings);
+        });
     }
 
     /** Reuses the sensors the page already loaded, so the section costs two statements: the crop and its readings. */

@@ -90,4 +90,13 @@ class MonitoringPageTests {
     void withoutTheBackendThePageSaysSoInsteadOfFailing() throws Exception {
         assertThat(pageWith(Optional.empty())).contains("El servidor no responde").doesNotContain("Regla de riego");
     }
+
+    @Test
+    void theRouteOfTheEsp32sSoilMoistureIsListedWithWhatEachReadingConsumedEvenWithoutTheBackend() throws Exception {
+        String page = pageWith(Optional.empty());
+
+        assertThat(page).contains("Recorrido de ESP32-PLANTICAS · humedad del suelo", "class=\"soil-trail\"",
+                "<meter class=\"soil-trail-meter\"", "la humedad del suelo", "primera de la lista");
+        assertThat(page).as("each row says what the soil consumed or gained").containsAnyOf("bajó", "subió", "sin cambio");
+    }
 }

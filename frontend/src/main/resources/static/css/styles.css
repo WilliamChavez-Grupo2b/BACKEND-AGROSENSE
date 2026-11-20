@@ -1659,6 +1659,68 @@ code {
   overflow-wrap: normal;
 }
 
+/* «Monitoreo»: the route of the ESP32's soil moisture, one reading per row with what it consumed. */
+.soil-trail-card {
+  margin-top: var(--space-5);
+}
+
+.soil-trail-summary {
+  margin-bottom: var(--space-3);
+  font-weight: 550;
+}
+
+.soil-trail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.soil-trail li {
+  display: grid;
+  grid-template-columns: 3.5rem minmax(0, 1fr) 4.5rem 9.5rem;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.soil-trail li:last-child {
+  border-bottom: 0;
+}
+
+.soil-trail-time {
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.soil-trail-meter {
+  width: 100%;
+  height: 0.75rem;
+}
+
+.soil-trail-value {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.soil-trail-value--out {
+  color: var(--status-warning-text);
+}
+
+@media (max-width: 640px) {
+  .soil-trail li {
+    grid-template-columns: 3rem minmax(0, 1fr) 4rem;
+  }
+
+  .soil-trail li .status-pill {
+    grid-column: 2 / -1;
+    justify-self: start;
+  }
+}
+
 /* «Monitoreo»: the ESP32's state stands on its own line under the card's title, where it is read first. */
 .monitoring-state {
   margin-bottom: var(--space-3);
