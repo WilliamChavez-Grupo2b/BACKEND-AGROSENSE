@@ -19,6 +19,8 @@ public class SensorReadingResponse {
     private String unit;
     private String quality;
     private LocalDateTime recordedAt;
+    /** DEVICE, ESP32_TCP, SIMULATED, SEED or MANUAL (sensor_readings.source). */
+    private String source;
 
     public static SensorReadingResponse from(SensorReading reading) {
         return SensorReadingResponse.builder()
@@ -30,6 +32,7 @@ public class SensorReadingResponse {
                 .unit(reading.getUnit())
                 .quality(reading.getQuality())
                 .recordedAt(reading.getRecordedAt())
+                .source(reading.getSource() == null ? null : reading.getSource().name())
                 .build();
     }
 }
