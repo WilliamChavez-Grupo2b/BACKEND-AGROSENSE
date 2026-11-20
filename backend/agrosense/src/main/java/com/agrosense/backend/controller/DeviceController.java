@@ -2,10 +2,13 @@ package com.agrosense.backend.controller;
 
 import com.agrosense.backend.dto.request.DeviceRequest;
 import com.agrosense.backend.dto.response.DeviceResponse;
+import com.agrosense.backend.dto.response.MonitoringResponse;
 import com.agrosense.backend.pattern.structural.adapter.esp32.Esp32ReceiverStatus;
 import com.agrosense.backend.pattern.structural.adapter.esp32.Esp32TcpIngestionService;
 import com.agrosense.backend.security.Roles;
 import com.agrosense.backend.service.DeviceService;
+import com.agrosense.backend.service.FieldWatchService;
+import com.agrosense.backend.service.WateringRuleService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.CacheControl;
@@ -27,6 +30,8 @@ public class DeviceController {
 
     private final DeviceService deviceService;
     private final Esp32TcpIngestionService esp32;
+    private final WateringRuleService wateringRule;
+    private final FieldWatchService fieldWatch;
 
     @PostMapping
     @PreAuthorize(Roles.MANAGER)
@@ -40,5 +45,13 @@ public class DeviceController {
     @GetMapping("/esp32/status")
     public ResponseEntity<Esp32ReceiverStatus> esp32Status() {
         return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(esp32.status());
+    }
+
+    /** The receiver, the watering rule and the last field watches, for the «Monitoreo» page. Any signed-in user. */
+    @GetMapping("/monitoring")
+    public ResponseEntity<MonitoringResponse> monitoring() {
+        return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(new MonitoringResponse(esp32.status(),
+                wateringRule.rule().orElse(null),
+                fieldWatch.history().stream().map(MonitoringResponse.WatchRun::of).toList()));
     }
 }

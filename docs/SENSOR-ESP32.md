@@ -119,6 +119,22 @@ Ejecuta `database/migrations/004_esp32_air_humidity.sql` antes de desplegar este
 humedad del aire a `crops` y renombra el dispositivo `RPI-DEMO-01` a `ESP32-PLANTICAS`. Después, cambia
 `ESP32_DEVICE_ID` donde todavía diga `RPI-DEMO-01` (o quítalo para usar el valor por defecto).
 
+## Página «Monitoreo»
+
+En el menú, entre Sensores y Riego. Muestra lo que el backend hace con el ESP32 sin que nadie lo mire, leído de
+`GET /api/devices/monitoring` (cualquier usuario con sesión), y se actualiza sola cada 15 segundos:
+
+| Tarjeta | Qué muestra | Patrón |
+|---|---|---|
+| Conexión con el ESP32 | Estado (recibiendo, esperando, en silencio o desconectado), último bloque, bloques recibidos y descartados | State |
+| Lecturas guardadas | Cómo se juntan los bloques de cada minuto (promedio o mediana) y la última lectura guardada | Strategy |
+| Regla de riego | La regla `ALERTS_WATERING_RULE`, o «Apagada» si está vacía | Interpreter |
+| Vigilancias del campo | Las últimas vigilancias que corrieron (dispositivos sin reportar, helada, resultado de los riegos) y cuánto tardaron | Command |
+
+Si el backend no responde, la página lo dice y las demás siguen funcionando con la base de datos. Pruebas:
+`MonitoringPageTests` en el frontend y `theMonitoringPageGetsTheReceiverTheWateringRuleAndTheWatchesAndNeedsASignedInUser`
+en `Esp32OffTests` del backend.
+
 ## Pruebas
 
 | Qué | Dónde |
