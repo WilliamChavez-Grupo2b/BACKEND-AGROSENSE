@@ -1,6 +1,7 @@
 package com.agrosense.backend.pattern.structural.facade;
 
 import com.agrosense.backend.domain.enums.AlertType;
+import com.agrosense.backend.domain.enums.ReadingSource;
 import com.agrosense.backend.domain.enums.SensorType;
 import com.agrosense.backend.domain.enums.Severity;
 import com.agrosense.backend.dto.response.AlertResponse;
@@ -88,6 +89,7 @@ public class SensorFacade {
         if (data.getRecordedAt() != null) {
             reading.setRecordedAt(data.getRecordedAt());
         }
+        reading.setSource(data.getSource() == null ? ReadingSource.DEVICE : data.getSource());
         reading = readingRepository.save(readingProcessor.process(reading));
         if (sensor.getLastReadingAt() == null || reading.getRecordedAt().isAfter(sensor.getLastReadingAt())) {
             sensor.setLastReadingAt(reading.getRecordedAt());
