@@ -1,7 +1,7 @@
 # AgroSense: contexto completo para una IA
 
 > Documento para entregar a un asistente de IA que va a trabajar en este proyecto. Resume qué es, cómo está
-> armado, cómo se conecta cada parte, qué está hecho, qué falta y qué reglas seguir. Estado al 10 de noviembre de
+> armado, cómo se conecta cada parte, qué está hecho, qué falta y qué reglas seguir. Estado al 20 de noviembre de
 > 2026 (dispositivo de campo: ESP32). Los documentos detallados son la fuente de verdad y se citan en cada sección; si algo aquí contradice el
 > código, manda el código.
 
@@ -23,7 +23,8 @@ cultivos:
    voz) y permite **ordenar riegos**. El ESP32 real no tiene bomba ni acepta órdenes: su riego solo se registra.
 
 El objetivo académico es **aplicar patrones de diseño creacionales y estructurales** en código real y conectado al flujo
-del sistema, y sustentarlo. Hay 10 patrones implementados en 4 lenguajes (Java, Python, C++, TypeScript); ver la sección 7
+del sistema, y sustentarlo. Están los 23 patrones del libro de Gamma y otros (5 creacionales, 7 estructurales y 11 de comportamiento), en 4
+lenguajes (Java, Python, C++, TypeScript); ver la sección 7
 y `docs/PATRONES.md`.
 
 > Aviso: este repositorio no contiene el enunciado ni la rúbrica oficial de la materia. Si la tarea depende de ellos,
@@ -170,6 +171,33 @@ Tipos de alerta incluyen los de rango (humedad baja/alta, temperatura baja/alta,
 
 ---
 
+## 4b. De dónde sale cada dato y dónde se guarda
+
+| Dato | De dónde sale | Dónde se guarda (tabla) | Dónde se ve |
+|---|---|---|---|
+| Humedad del suelo | Sensor capacitivo del ESP32, GPIO34 (`SENSORTIERRA.h`) | `sensor_readings` (sensor `SOIL_MOISTURE`) | Inicio, Cultivos, Sensores, Reportes |
+| Temperatura del aire | Termocupla MAX6675 del ESP32, GPIO5/17/16 (`TEMPERATURA.h`) | `sensor_readings` (`AIR_TEMPERATURE`) | Inicio, Cultivos, Sensores, Reportes |
+| Humedad del aire | DHT11 del ESP32, GPIO4 (`HUMEDAD.h`) | `sensor_readings` (`RELATIVE_HUMIDITY`) | Inicio, Cultivos, Sensores, Reportes |
+| pH y otras medidas | Datos de ejemplo (`database/seed_demo.sql`) o eventos HTTP; la placa no las mide | `sensor_readings` | Cultivos, Sensores |
+| Sensores y dispositivos | Se registran en la app (Sensores › Nuevo sensor) o en `seed_demo.sql` | `sensors`, `devices` | Sensores |
+| Cultivos, rangos y fincas | Se registran en la app (Parcelas, Cultivos) | `crops`, `estates` | Parcelas, Cultivos |
+| Alertas | Las crea el backend al comparar cada lectura con el rango del cultivo, la regla de riego y las vigilancias | `alerts` | Alertas |
+| Riegos | Orden manual en Riego o la recomendación de la IA | `irrigations`, `irrigation_dispatches` | Riego |
+| Recomendaciones de la IA | Servicio `IA/` o respaldo local | `ai_predictions` | Cultivos |
+| Estado del ESP32 | Receptor TCP del backend, en memoria (no se guarda) | — | Monitoreo |
+
+Recorrido de una lectura: el ESP32 envía un bloque de texto por segundo, por Wi-Fi (red `PLANTICAS`, TCP 8080) o por el
+cable USB (`tools/esp32/esp32_usb.py`). El backend junta los bloques de cada minuto (promedio o mediana,
+`ESP32_AGGREGATE_STRATEGY`) y guarda una lectura por sensor. La base es PostgreSQL en Neon; en la demo local
+(`run-demo.ps1 -BaseLocal`) es H2 en `tools/esp32/.run/h2`.
+
+El asistente de la app recibe esta misma información con los datos del usuario: cada sensor activo con su cultivo, lugar,
+dispositivo y última lectura, el estado del receptor, la regla de riego y la tabla donde se guarda cada cosa
+(`FarmSnapshot`, `FarmContextService`). Sin llave de IA responde el asistente local (`LocalAdvisor`) a preguntas como
+«¿de dónde salen los datos?» o «¿dónde se guardan?».
+
+---
+
 ## 5. Variables de entorno clave
 
 Todas están en `.env.example`. Ninguna llave tiene valor por defecto ni se escribe en el repositorio.
@@ -229,18 +257,31 @@ Rutas: `B/` = `backend/agrosense/src/main/java/com/agrosense/backend/`, `F/` = `
 | **Decorator** | `F/SensorChain.h`, `F/Irrigation.h` (`PumpGuard`), `IA/agrosense_ia/ai_decorators.py`, `B/.../decorator/` | Filtrar/calibrar/validar; registrar/limitar/cachear, en capas |
 | **Facade** | `B/.../facade/DeviceIngestionFacade.java`, `SensorFacade.java`, `F/AgroSenseDevice.h`, `TS/facade.ts` | Una llamada oculta autenticar, guardar, alertar, predecir y publicar |
 | **Proxy** | `B/.../proxy/AiServiceProxy.java`, `F/BackendProxy.h`, `TS/cache-proxy.ts` | Reintentos, búfer, caché y respaldo detrás de la misma interfaz |
+| **Composite** | `B/pattern/structural/composite/` (`AlertRule`, `AlertRuleGroup`) | Las reglas de alerta de una lectura son un árbol que se evalúa como una sola |
+| **Flyweight** | `B/pattern/structural/flyweight/Esp32ReadingPool.java` | Los bloques iguales del ESP32 son un solo objeto compartido |
+| **Chain of Responsibility** | `B/pattern/behavioral/chain/` | Cada línea del bloque del ESP32 la atiende el primer manejador que la reconoce |
+| **Command** | `B/pattern/behavioral/command/` | Cada vigilancia del campo es una orden que el invocador ejecuta y recuerda |
+| **Interpreter** | `B/pattern/behavioral/interpreter/` | Lee la regla de riego `suelo < 40 y aire < 60` |
+| **Iterator** | `B/pattern/behavioral/iterator/` | Recorre la ventana de bloques de un minuto |
+| **Mediator** | `B/pattern/behavioral/mediator/Esp32Mediator.java` | El cliente TCP avisa al servicio sin conocer el parser ni la base |
+| **Memento** | `B/pattern/behavioral/memento/CalibrationCheckpoint.java` | Guarda y restaura la calibración si una carga falla |
+| **Observer** | `B/pattern/behavioral/observer/` | Contadores y estado del enlace escuchan cada bloque |
+| **State** | `B/pattern/behavioral/state/` | Esperando, recibiendo, en silencio o desconectado (página Monitoreo) |
+| **Strategy** | `B/pattern/behavioral/strategy/` | Promedio o mediana del minuto |
+| **Template Method** | `B/pattern/behavioral/templatemethod/ScheduledWatch.java` | Los pasos fijos de cada vigilancia programada |
+| **Visitor** | `B/pattern/behavioral/visitor/` | Cada medida del ESP32 se escribe o describe sin un `switch` |
 
 Las marcadas en `docs/PATRONES.md` como «ya existía» venían del backend original; el resto se añadió después.
 
 ---
 
-## 8. Estado de las pruebas (1 de noviembre de 2026)
+## 8. Estado de las pruebas (20 de noviembre de 2026)
 
 | Parte | Resultado |
 |---|---|
-| Backend | 151 pruebas, 0 fallos, 3 omitidas (PostgreSQL) |
-| Frontend Java | 115 pruebas, 0 fallos, 2 omitidas (PostgreSQL) |
-| Frontend TypeScript | 12 pruebas, 0 fallos |
+| Backend | 204 pruebas, 0 fallos, 3 omitidas (PostgreSQL) |
+| Frontend Java | 148 pruebas, 0 fallos, 2 omitidas (PostgreSQL) |
+| Frontend TypeScript | 29 pruebas, 0 fallos |
 | IA (patrones y reglas) | 31 pruebas, 0 fallos |
 | Firmware en PC | 221 comprobaciones, 0 fallos (10 de noviembre, tras pasar al ESP32) |
 | Firmware con compilador real | Compila (33 % flash, 46 % RAM). **No probado en una placa** |

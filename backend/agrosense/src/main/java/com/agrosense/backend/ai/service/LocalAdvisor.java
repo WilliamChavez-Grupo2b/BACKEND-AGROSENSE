@@ -2,6 +2,7 @@ package com.agrosense.backend.ai.service;
 
 import com.agrosense.backend.ai.service.FarmSnapshot.CropStatus;
 import com.agrosense.backend.ai.service.FarmSnapshot.OpenAlert;
+import com.agrosense.backend.ai.service.FarmSnapshot.SensorSource;
 
 import java.math.BigDecimal;
 import java.text.Normalizer;
@@ -16,6 +17,9 @@ final class LocalAdvisor {
 
     private static final BigDecimal HOT_C = new BigDecimal("30");
 
+    private static final Pattern SOURCES = words("(?:de )?donde (?:sale\\w*|viene\\w*|esta\\w*|queda\\w*|se guarda\\w*)"
+            + "|origen\\w*|fuente\\w*|proviene\\w*|guarda\\w*|almacen\\w*|tabla\\w*|base de datos|esp32"
+            + "|dispositivo\\w*|placa|receptor|monitoreo|tiempo real|en vivo|aire");
     private static final Pattern ALERTS = words("alert\\w*|aviso\\w*|problema\\w*|plaga\\w*|riesgo\\w*");
     private static final Pattern IRRIGATION = words(
             "rieg\\w*|regar\\w*|regando|regue|agua|humedad|humed[oa]s?|sec[oa]s?|sequia");
@@ -27,8 +31,8 @@ final class LocalAdvisor {
     private static final Pattern GREETING = words("hola|buenas|buenos|gracias|ayuda\\w*|puedes|sabes");
 
     private static final String TOPICS = "Puedo decirte, con las lecturas de tus sensores, si conviene **regar**, "
-            + "qué **alertas** tienes sin atender, y cómo van la **temperatura**, el **pH** y el estado de "
-            + "cada cultivo.";
+            + "qué **alertas** tienes sin atender, cómo van la **temperatura**, el **pH** y el estado de "
+            + "cada cultivo, y **de dónde sale** cada dato y **dónde se guarda**.";
 
     private LocalAdvisor() {
     }
@@ -47,6 +51,9 @@ final class LocalAdvisor {
                 .toList();
         List<CropStatus> crops = named.isEmpty() ? farm.crops() : named;
 
+        if (SOURCES.matcher(text).find()) {
+            return sources(farm, named);
+        }
         if (ALERTS.matcher(text).find()) {
             return alerts(farm);
         }
@@ -69,6 +76,34 @@ final class LocalAdvisor {
             return "Hola. " + TOPICS;
         }
         return "Ahora mismo solo puedo responder con los datos de tu finca. " + TOPICS;
+    }
+
+    /** Where each figure comes from (sensor, crop, place, device, time), how it arrives and where it is kept. */
+    private static String sources(FarmSnapshot farm, List<CropStatus> named) {
+        StringBuilder answer = new StringBuilder("**De dónde salen tus datos**\n");
+        if (farm.receiver() != null) {
+            answer.append('\n').append(farm.receiver().describe()).append('\n');
+        }
+        List<String> cropNames = named.stream().map(CropStatus::name).toList();
+        List<SensorSource> sources = farm.sources().stream()
+                .filter(source -> cropNames.isEmpty() || cropNames.contains(source.cropName()))
+                .toList();
+        if (sources.isEmpty()) {
+            answer.append("\nNo tengo sensores activos con lecturas para mostrarte.");
+        } else {
+            answer.append("\nCada sensor, con su cultivo, lugar, dispositivo y última lectura:\n");
+            for (SensorSource source : sources) {
+                answer.append("\n- ").append(source.describe()).append('.');
+            }
+        }
+        if (farm.wateringRule() != null && !farm.wateringRule().isBlank()) {
+            answer.append("\n\nRegla de riego activa: **").append(farm.wateringRule().trim()).append("**.");
+        }
+        return answer.append("\n\n").append(FarmSnapshot.JOURNEY)
+                .append("\n\n").append(FarmSnapshot.STORAGE)
+                .append("\n\nPara verlo en vivo: **Monitoreo** muestra la conexión con el ESP32 y **Sensores** "
+                        + "cada lectura con su gráfica.")
+                .toString();
     }
 
     private static String irrigation(List<CropStatus> crops) {

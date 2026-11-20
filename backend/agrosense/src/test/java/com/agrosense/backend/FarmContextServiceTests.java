@@ -4,6 +4,7 @@ import com.agrosense.backend.ai.service.FarmContextService;
 import com.agrosense.backend.ai.service.FarmSnapshot;
 import com.agrosense.backend.ai.service.FarmSnapshot.CropStatus;
 import com.agrosense.backend.ai.service.FarmSnapshot.OpenAlert;
+import com.agrosense.backend.ai.service.FarmSnapshot.Receiver;
 import com.agrosense.backend.domain.enums.AlertType;
 import com.agrosense.backend.domain.enums.CropStage;
 import com.agrosense.backend.domain.enums.IrrigationType;
@@ -12,11 +13,14 @@ import com.agrosense.backend.domain.enums.Severity;
 import com.agrosense.backend.dto.response.AlertResponse;
 import com.agrosense.backend.models.Alert;
 import com.agrosense.backend.models.Crop;
+import com.agrosense.backend.models.Device;
 import com.agrosense.backend.models.Estate;
 import com.agrosense.backend.models.Irrigation;
+import com.agrosense.backend.models.Sensor;
 import com.agrosense.backend.models.SensorReading;
 import com.agrosense.backend.repository.AlertRepository;
 import com.agrosense.backend.repository.CropRepository;
+import com.agrosense.backend.repository.DeviceRepository;
 import com.agrosense.backend.repository.IrrigationRepository;
 import com.agrosense.backend.repository.SensorReadingRepository;
 import com.agrosense.backend.repository.SensorRepository;
@@ -184,5 +188,53 @@ class FarmContextServiceTests {
 		SensorReading reading = new SensorReading();
 		reading.setValue(new BigDecimal(value));
 		return reading;
+	}
+
+	@Test
+	void theAssistantIsToldWhereEveryFigureComesFromAndWhereItIsKept() {
+		Crop coffee = crop(1, "Café");
+		Crop banana = crop(2, "Plátano");
+		when(crops.findByEstateUserEmailAndActiveTrueOrderByNameAsc(EMAIL)).thenReturn(List.of(coffee, banana));
+		when(readings.findFirstBySensorCropIdCropAndSensorSensorTypeAndQualityOrderByRecordedAtDesc(any(), any(), any()))
+				.thenReturn(Optional.empty());
+		Sensor air = sensor(10, coffee, SensorType.RELATIVE_HUMIDITY, "Lote norte");
+		Sensor ph = sensor(11, banana, SensorType.PH, null);
+		when(sensors.findByCropEstateUserEmailAndActiveTrueAndCropActiveTrueOrderByCropNameAscSensorTypeAsc(EMAIL))
+				.thenReturn(List.of(air, ph));
+		SensorReading newest = reading("76.5000");
+		newest.setRecordedAt(LocalDateTime.of(2026, 11, 19, 20, 28));
+		when(readings.findBySensorIdSensorOrderByRecordedAtDesc(eq(10), any())).thenReturn(List.of(newest));
+		when(readings.findBySensorIdSensorOrderByRecordedAtDesc(eq(11), any())).thenReturn(List.of());
+		Device esp32 = new Device();
+		esp32.setCrop(coffee);
+		esp32.setDeviceCode("ESP32-PLANTICAS");
+		DeviceRepository devices = mock(DeviceRepository.class);
+		when(devices.findByCropEstateUserEmailAndActiveTrue(EMAIL)).thenReturn(List.of(esp32));
+		FarmContextService withSources = new FarmContextService(crops, sensors, readings, alerts, alertService,
+				irrigations, devices,
+				() -> new Receiver(true, "ESP32-PLANTICAS", "Recibiendo datos del ESP32", "mean", 60,
+						LocalDateTime.of(2026, 11, 19, 20, 28)),
+				() -> "suelo < 40 y aire < 60");
+
+		FarmSnapshot farm = withSources.snapshot(EMAIL);
+		String described = farm.describe();
+
+		assertThat(described).contains(
+				"Receptor del ESP32 ESP32-PLANTICAS: Recibiendo datos del ESP32; guarda el promedio de los bloques de "
+						+ "cada 60 s; última lectura guardada el 2026-11-19 20:28.",
+				"Regla de riego activa: «suelo < 40 y aire < 60»",
+				"- humedad del aire de Café (Lote norte, dispositivo ESP32-PLANTICAS): 76.5 % el 2026-11-19 20:28.",
+				"- pH de Plátano (dispositivo ninguno, lecturas cargadas en la base): todavía sin lecturas.",
+				"lecturas en la tabla sensor_readings", "alertas en alerts", "riegos en irrigations",
+				"red PLANTICAS");
+	}
+
+	private static Sensor sensor(int id, Crop crop, SensorType type, String location) {
+		Sensor sensor = new Sensor();
+		sensor.setIdSensor(id);
+		sensor.setCrop(crop);
+		sensor.setSensorType(type);
+		sensor.setLocation(location);
+		return sensor;
 	}
 }

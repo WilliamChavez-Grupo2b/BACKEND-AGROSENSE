@@ -2,9 +2,12 @@ package com.agrosense.backend.ai.service;
 
 import com.agrosense.backend.ai.service.FarmSnapshot.CropStatus;
 import com.agrosense.backend.ai.service.FarmSnapshot.OpenAlert;
+import com.agrosense.backend.ai.service.FarmSnapshot.Receiver;
+import com.agrosense.backend.ai.service.FarmSnapshot.SensorSource;
 import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -114,5 +117,29 @@ class LocalAdvisorTests {
 
 	private static BigDecimal decimal(String value) {
 		return value == null ? null : new BigDecimal(value);
+	}
+
+	@Test
+	void askedWhereTheDataComesFromItNamesEachSensorItsDeviceHowItArrivesAndItsTable() {
+		FarmSnapshot farm = new FarmSnapshot(2, 2, 0, List.of(COFFEE, BANANA), List.of(), List.of(), List.of(),
+				List.of(new SensorSource("Café", "SOIL_MOISTURE", "Lote norte", "ESP32-PLANTICAS",
+								new BigDecimal("32.5"), LocalDateTime.of(2026, 11, 19, 20, 28)),
+						new SensorSource("Plátano", "PH", null, null, new BigDecimal("6.15"), null)),
+				new Receiver(true, "ESP32-PLANTICAS", "Recibiendo datos del ESP32", "median", 60, null),
+				"suelo < 40 y aire < 60");
+
+		String all = LocalAdvisor.answer("¿De dónde salen los datos y dónde se guardan?", farm);
+		assertThat(all).startsWith("**De dónde salen tus datos**").contains(
+				"guarda la mediana de los bloques de cada 60 s",
+				"- humedad del suelo de Café (Lote norte, dispositivo ESP32-PLANTICAS): 32.5 % el 2026-11-19 20:28.",
+				"- pH de Plátano (dispositivo ninguno, lecturas cargadas en la base): 6.15.",
+				"Regla de riego activa: **suelo < 40 y aire < 60**", "sensor_readings", "Monitoreo");
+
+		assertThat(LocalAdvisor.answer("¿De dónde viene la humedad del café?", farm))
+				.as("a named crop keeps only its own sensors, even when the question says humedad")
+				.contains("humedad del suelo de Café").doesNotContain("pH de Plátano");
+		assertThat(LocalAdvisor.answer("¿Cómo está la humedad del aire?", farm)).contains("De dónde salen tus datos");
+		assertThat(LocalAdvisor.answer("¿Cuándo conviene regar?", farm)).as("plain questions keep their answer")
+				.doesNotContain("De dónde salen");
 	}
 }

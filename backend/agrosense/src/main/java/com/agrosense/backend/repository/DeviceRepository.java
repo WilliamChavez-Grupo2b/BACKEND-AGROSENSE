@@ -10,6 +10,10 @@ import java.util.Optional;
 
 public interface DeviceRepository extends JpaRepository<Device, Integer> {
 
+    /** The field devices that send the user's readings, by crop. */
+    @EntityGraph(attributePaths = {"crop"})
+    List<Device> findByCropEstateUserEmailAndActiveTrue(String email);
+
     @EntityGraph(attributePaths = {"crop", "crop.estate", "crop.estate.user"})
     Optional<Device> findByDeviceCode(String deviceCode);
 

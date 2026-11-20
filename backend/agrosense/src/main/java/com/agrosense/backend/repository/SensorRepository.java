@@ -10,6 +10,10 @@ import java.util.Optional;
 
 public interface SensorRepository extends JpaRepository<Sensor, Integer> {
 
+    /** The active sensors of the user's active crops, for the assistant's «de dónde sale cada dato». */
+    @EntityGraph(attributePaths = {"crop"})
+    List<Sensor> findByCropEstateUserEmailAndActiveTrueAndCropActiveTrueOrderByCropNameAscSensorTypeAsc(String email);
+
     @EntityGraph(attributePaths = {"crop", "crop.estate", "crop.estate.user"})
     Optional<Sensor> findBySensorCode(String sensorCode);
 
