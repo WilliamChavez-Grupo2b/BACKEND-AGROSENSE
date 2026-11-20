@@ -95,8 +95,8 @@ WHERE sensor_code = 'AS-007' AND latitude IS NULL;
 
 -- One reading per hour for the last 24 hours of every active sensor.
 
-INSERT INTO sensor_readings (id_sensor, reading_value, unit, recorded_at)
-SELECT s.id_sensor, v.reading_value, '%', CURRENT_TIMESTAMP - v.hours_ago * INTERVAL '1' HOUR
+INSERT INTO sensor_readings (id_sensor, reading_value, unit, recorded_at, source)
+SELECT s.id_sensor, v.reading_value, '%', CURRENT_TIMESTAMP - v.hours_ago * INTERVAL '1' HOUR, 'SEED'
 FROM sensors s
 CROSS JOIN (VALUES
         (23, 53.37), (22, 57.27), (21, 60.64), (20, 63.24), (19, 64.92), (18, 65.65),
@@ -107,8 +107,8 @@ CROSS JOIN (VALUES
 WHERE s.sensor_code = 'AS-001'
   AND NOT EXISTS (SELECT 1 FROM sensor_readings r WHERE r.id_sensor = s.id_sensor);
 
-INSERT INTO sensor_readings (id_sensor, reading_value, unit, recorded_at)
-SELECT s.id_sensor, v.reading_value, '°C', CURRENT_TIMESTAMP - v.hours_ago * INTERVAL '1' HOUR
+INSERT INTO sensor_readings (id_sensor, reading_value, unit, recorded_at, source)
+SELECT s.id_sensor, v.reading_value, '°C', CURRENT_TIMESTAMP - v.hours_ago * INTERVAL '1' HOUR, 'SEED'
 FROM sensors s
 CROSS JOIN (VALUES
         (23, 20.97), (22, 22.82), (21, 24.52), (20, 25.92), (19, 26.91), (18, 27.43),
@@ -119,8 +119,8 @@ CROSS JOIN (VALUES
 WHERE s.sensor_code = 'AS-002'
   AND NOT EXISTS (SELECT 1 FROM sensor_readings r WHERE r.id_sensor = s.id_sensor);
 
-INSERT INTO sensor_readings (id_sensor, reading_value, unit, recorded_at)
-SELECT s.id_sensor, v.reading_value, 'pH', CURRENT_TIMESTAMP - v.hours_ago * INTERVAL '1' HOUR
+INSERT INTO sensor_readings (id_sensor, reading_value, unit, recorded_at, source)
+SELECT s.id_sensor, v.reading_value, 'pH', CURRENT_TIMESTAMP - v.hours_ago * INTERVAL '1' HOUR, 'SEED'
 FROM sensors s
 CROSS JOIN (VALUES
         (23, 6.17), (22, 6.26), (21, 6.34), (20, 6.42), (19, 6.48), (18, 6.52),
@@ -131,8 +131,8 @@ CROSS JOIN (VALUES
 WHERE s.sensor_code = 'AS-003'
   AND NOT EXISTS (SELECT 1 FROM sensor_readings r WHERE r.id_sensor = s.id_sensor);
 
-INSERT INTO sensor_readings (id_sensor, reading_value, unit, recorded_at)
-SELECT s.id_sensor, v.reading_value, '%', CURRENT_TIMESTAMP - v.hours_ago * INTERVAL '1' HOUR
+INSERT INTO sensor_readings (id_sensor, reading_value, unit, recorded_at, source)
+SELECT s.id_sensor, v.reading_value, '%', CURRENT_TIMESTAMP - v.hours_ago * INTERVAL '1' HOUR, 'SEED'
 FROM sensors s
 CROSS JOIN (VALUES
         (23, 65.04), (22, 67.25), (21, 69.49), (20, 71.61), (19, 73.42), (18, 74.77),
@@ -143,8 +143,8 @@ CROSS JOIN (VALUES
 WHERE s.sensor_code = 'AS-004'
   AND NOT EXISTS (SELECT 1 FROM sensor_readings r WHERE r.id_sensor = s.id_sensor);
 
-INSERT INTO sensor_readings (id_sensor, reading_value, unit, recorded_at)
-SELECT s.id_sensor, v.reading_value, 'dS/m', CURRENT_TIMESTAMP - v.hours_ago * INTERVAL '1' HOUR
+INSERT INTO sensor_readings (id_sensor, reading_value, unit, recorded_at, source)
+SELECT s.id_sensor, v.reading_value, 'dS/m', CURRENT_TIMESTAMP - v.hours_ago * INTERVAL '1' HOUR, 'SEED'
 FROM sensors s
 CROSS JOIN (VALUES
         (23, 1.40), (22, 1.44), (21, 1.48), (20, 1.52), (19, 1.55), (18, 1.57),
@@ -156,8 +156,8 @@ WHERE s.sensor_code = 'AS-005'
   AND NOT EXISTS (SELECT 1 FROM sensor_readings r WHERE r.id_sensor = s.id_sensor);
 
 -- The air's humidity beside AS-002, highest at night when the air is coolest.
-INSERT INTO sensor_readings (id_sensor, reading_value, unit, recorded_at)
-SELECT s.id_sensor, v.reading_value, '%', CURRENT_TIMESTAMP - v.hours_ago * INTERVAL '1' HOUR
+INSERT INTO sensor_readings (id_sensor, reading_value, unit, recorded_at, source)
+SELECT s.id_sensor, v.reading_value, '%', CURRENT_TIMESTAMP - v.hours_ago * INTERVAL '1' HOUR, 'SEED'
 FROM sensors s
 CROSS JOIN (VALUES
         (23, 80.25), (22, 76.92), (21, 73.86), (20, 71.34), (19, 69.56), (18, 68.63),
