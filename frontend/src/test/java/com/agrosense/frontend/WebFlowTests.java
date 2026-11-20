@@ -194,6 +194,20 @@ class WebFlowTests {
         mvc.perform(get("/api/ui/sensors/latest")).andExpect(status().is3xxRedirection());
     }
 
+    @Test
+    void theBellAndEachSensorPageStayLiveWithoutReloading() throws Exception {
+        String home = page("/");
+        assertThat(home).contains("data-count-url=\"/api/ui/alerts/open-count\"", "data-alert-count");
+        String count = mvc.perform(get("/api/ui/alerts/open-count").with(user(demoUser)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.count").isNumber())
+                .andReturn().getResponse().getContentAsString();
+        assertThat(count).matches("\\{\"count\":\\d+}");
+
+        Sensor soil = sensorRepository.findBySensorCodeIgnoreCase("AS-001").orElseThrow();
+        assertThat(page("/sensores/" + soil.getIdSensor())).contains("data-sensors-live",
+                "data-latest-url=\"/api/ui/sensors/latest\"", "/js/sensors-live.js", "data-live-value");
+    }
+
     private String page(String path) throws Exception {
         return mvc.perform(get(path).with(user(demoUser)))
                 .andExpect(status().isOk())

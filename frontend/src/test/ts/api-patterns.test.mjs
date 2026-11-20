@@ -359,3 +359,13 @@ describe('sensorsLive', async () => {
     assert.equal(newerReadings([reading('AS-1', '2026-11-19T20:29:00')], seen).length, 1);
   });
 });
+
+describe('alertCount', async () => {
+  const { alertCountLabel } = await import('../../main/resources/static/js/alert-count.js');
+
+  it('reads the open alerts the way the bell says them', () => {
+    assert.equal(alertCountLabel(0), 'Sin alertas pendientes');
+    assert.equal(alertCountLabel(1), '1 alerta sin atender');
+    assert.equal(alertCountLabel(4), '4 alertas sin atender');
+  });
+});

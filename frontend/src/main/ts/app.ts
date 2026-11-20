@@ -1,3 +1,4 @@
+import { startAlertCount } from './alert-count.js';
 import { initConnectionStatus, onBackendState } from './connection.js';
 import { all, el, find, icon } from './core/dom.js';
 import { initFeedback } from './feedback.js';
@@ -182,6 +183,7 @@ const INTRO_MAX_MS = 1300;
 initBrandIntro();
 initThemeToggles();
 initSidebar();
+startAlertCount();
 initClock();
 initConfirmForms();
 initTableTools();

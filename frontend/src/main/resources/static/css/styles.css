@@ -286,9 +286,20 @@ code {
   animation-name: fade-in;
 }
 
-[data-motion='fade-up'],
-[data-motion-stagger] > :not(dialog) {
+[data-motion='fade-up'] {
   animation-name: fade-up;
+}
+
+/* A page's blocks start already readable and settle into place: the page is never blank while it enters. */
+@keyframes settle-in {
+  from {
+    opacity: 0.35;
+    transform: translateY(var(--distance-sm));
+  }
+}
+
+[data-motion-stagger] > :not(dialog) {
+  animation-name: settle-in;
 }
 
 [data-motion='scale-in'] {
@@ -1635,6 +1646,12 @@ code {
   overflow-wrap: anywhere;
 }
 
+/* A device code («ESP32-PLANTICAS») is one name: it never breaks at its hyphen. */
+.definition-list dd.device-code {
+  white-space: nowrap;
+  overflow-wrap: normal;
+}
+
 /* A long state wraps between words inside its card instead of running past it. */
 .definition-list dd .status-pill {
   max-width: 100%;
@@ -2514,14 +2531,21 @@ code {
   }
 }
 
+/* Notices stand just above the assistant's round button (56 px), never on top of it. */
 .toast-region {
   position: fixed;
   right: var(--space-5);
-  bottom: var(--space-5);
+  bottom: calc(var(--space-4) + 56px + var(--space-3));
   z-index: var(--z-toast);
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
+}
+
+@media (max-width: 1023px) {
+  .toast-region {
+    bottom: calc(var(--space-3) + 72px + env(safe-area-inset-bottom, 0px) + 56px + var(--space-3));
+  }
 }
 
 .toast {
@@ -4915,7 +4939,7 @@ kbd {
 
   .toast-region {
     right: var(--space-3);
-    bottom: calc(72px + env(safe-area-inset-bottom));
+    bottom: calc(var(--space-3) + 72px + env(safe-area-inset-bottom, 0px) + 56px + var(--space-3));
     left: var(--space-3);
   }
 

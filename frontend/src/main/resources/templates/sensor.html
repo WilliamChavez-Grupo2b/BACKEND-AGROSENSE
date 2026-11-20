@@ -1,8 +1,9 @@
 <!DOCTYPE html>
 <html lang="es" xmlns:th="http://www.thymeleaf.org"
-      th:replace="~{fragments/layout :: layout(${#messages.msg('sensorType.' + sensor.type) + ' · ' + sensor.cropName}, ~{::main}, null)}">
+      th:replace="~{fragments/layout :: layout(${#messages.msg('sensorType.' + sensor.type) + ' · ' + sensor.cropName}, ~{::main}, 'sensors-live')}">
 <body>
-<main id="main" class="app-content" tabindex="-1" data-motion-stagger th:with="status=${sensor.status()}">
+<main id="main" class="app-content" tabindex="-1" data-motion-stagger th:with="status=${sensor.status()}"
+      data-sensors-live th:attr="data-latest-url=@{/api/ui/sensors/latest}">
     <nav class="breadcrumbs" aria-label="Ruta">
         <a class="link" th:href="@{/sensores}">Sensores</a>
         <i class="bi bi-chevron-right" aria-hidden="true"></i>

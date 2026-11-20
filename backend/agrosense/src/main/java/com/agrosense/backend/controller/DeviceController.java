@@ -52,6 +52,7 @@ public class DeviceController {
     public ResponseEntity<MonitoringResponse> monitoring() {
         return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(new MonitoringResponse(esp32.status(),
                 wateringRule.rule().orElse(null),
-                fieldWatch.history().stream().map(MonitoringResponse.WatchRun::of).toList()));
+                fieldWatch.history().stream().map(MonitoringResponse.WatchRun::of).toList(),
+                fieldWatch.nextRuns().stream().map(MonitoringResponse.NextWatch::of).toList()));
     }
 }
