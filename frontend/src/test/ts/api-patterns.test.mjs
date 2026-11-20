@@ -347,3 +347,15 @@ describe('esp32Humidity', async () => {
     assert.equal(shortMeasure('Humedad relativa'), 'Aire');
   });
 });
+
+describe('sensorsLive', async () => {
+  const { newerReadings } = await import('../../main/resources/static/js/device-status.js');
+  const reading = (sensorCode, recordedAt) => ({ sensorCode, value: 1, unit: '%', recordedAt });
+
+  it('paints only what is newer than what each sensor already shows', () => {
+    const seen = new Map();
+    assert.equal(newerReadings([reading('AS-1', '2026-11-19T20:28:00'), reading('AS-2', null)], seen).length, 1);
+    assert.deepEqual(newerReadings([reading('AS-1', '2026-11-19T20:28:00')], seen), []);
+    assert.equal(newerReadings([reading('AS-1', '2026-11-19T20:29:00')], seen).length, 1);
+  });
+});

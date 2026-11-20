@@ -171,6 +171,29 @@ class WebFlowTests {
         }
     }
 
+    @Test
+    void theHomePageAsksForTheNewestReadingOfEachActivatedSensorSoTheEsp32ShowsLive() throws Exception {
+        assertThat(page("/")).contains("data-sensors-live", "data-latest-url=\"/api/ui/sensors/latest\"",
+                "/js/dashboard.js");
+        mvc.perform(get("/api/ui/sensors/latest").with(user(demoUser)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[?(@.sensorCode == 'AS-002')].value").isNotEmpty())
+                .andExpect(jsonPath("$[?(@.sensorCode == 'AS-002')].recordedAt").isNotEmpty());
+
+        Sensor temperature = sensorRepository.findBySensorCodeIgnoreCase("AS-002").orElseThrow();
+        temperature.setActive(false);
+        sensorRepository.saveAndFlush(temperature);
+        try {
+            mvc.perform(get("/api/ui/sensors/latest").with(user(demoUser)))
+                    .andExpect(jsonPath("$[?(@.sensorCode == 'AS-002')]").isEmpty())
+                    .andExpect(jsonPath("$[?(@.sensorCode == 'AS-001')]").isNotEmpty());
+        } finally {
+            temperature.setActive(true);
+            sensorRepository.saveAndFlush(temperature);
+        }
+        mvc.perform(get("/api/ui/sensors/latest")).andExpect(status().is3xxRedirection());
+    }
+
     private String page(String path) throws Exception {
         return mvc.perform(get(path).with(user(demoUser)))
                 .andExpect(status().isOk())

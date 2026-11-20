@@ -6,6 +6,7 @@ import { confirmAction, showToast } from './app.js';
 import { all, el, find, prefersReducedMotion, setButtonBusy } from './core/dom.js';
 import { createBaseLayers, cropChip, estateGround, hasValidCoordinates, initMapLayers } from './map-shapes.js';
 import { THEME_EVENT } from './theme.js';
+import './sensors-live.js';
 import type { DailyWater, EstateMarker, ReadingSeries } from './types/api.js';
 import type { ThresholdLine } from './types/globals.js';
 

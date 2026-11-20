@@ -5,6 +5,7 @@ import { confirmAction, showToast } from './app.js';
 import { all, el, find, prefersReducedMotion, setButtonBusy } from './core/dom.js';
 import { createBaseLayers, cropChip, estateGround, hasValidCoordinates, initMapLayers } from './map-shapes.js';
 import { THEME_EVENT } from './theme.js';
+import './sensors-live.js';
 const styles = getComputedStyle(document.documentElement);
 const token = (name) => styles.getPropertyValue(name).trim();
 if (typeof Chart !== 'undefined')

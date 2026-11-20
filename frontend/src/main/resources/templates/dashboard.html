@@ -262,7 +262,7 @@
         </div>
 
         <div class="dash-side">
-            <section class="card" aria-labelledby="liveTitle">
+            <section class="card" aria-labelledby="liveTitle" data-sensors-live th:attr="data-latest-url=@{/api/ui/sensors/latest}">
                 <div class="card-header">
                     <h2 id="liveTitle">Lecturas por sensor</h2>
                     <span class="live-status" data-live-indicator data-state="live" hidden>

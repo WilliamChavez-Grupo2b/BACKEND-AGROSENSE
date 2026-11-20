@@ -1,5 +1,36 @@
 # Plan de la demo
 
+## Ver los sensores en tiempo real (resumen)
+
+1. Conecta el ESP32 al PC por el cable USB (o une el PC a la red `PLANTICAS`) y arranca todo:
+
+   ```powershell
+   powershell -ExecutionPolicy Bypass -File tools\esp32\run-demo.ps1 -Usb -BaseLocal
+   ```
+
+   `-Usb` lee la placa por el cable (COM3 o el primer adaptador CH340/CP210x); sin `-Usb` la lee por Wi-Fi. `-BaseLocal`
+   usa una base H2 en este PC y no necesita internet. El resumen final dice «Receptor encendido; conectado: sí».
+2. Abre `http://localhost:8080` e inicia sesión con `demo@agrosense.co` y la `DEMO_PASSWORD` de tu `.env.local`.
+3. La placa envía un bloque por segundo y el backend guarda **una lectura por minuto** (el promedio de esos 60 bloques).
+   La primera aparece al minuto de arrancar. Dónde verlas:
+
+   | Página | Qué se ve | Se actualiza sola |
+   |---|---|---|
+   | **Monitoreo** | Estado de la conexión, bloques recibidos y descartados, última lectura guardada, regla de riego | Cada 15 s |
+   | **Inicio** › Lecturas por sensor | El último valor de cada sensor activado | Cada 30 s |
+   | **Cultivos** › Café | Lecturas de suelo, temperatura y aire, e indicador «ESP32 conectado» | Cada 30 s |
+   | **Sensores** › Humedad del ESP32 | Lista y gráfica del día con cada lectura | Cada 30 s |
+   | **Sensores** › un sensor | Su estado y su última lectura | Al recargar la página |
+
+4. Para comprobar que es en vivo: toca el sensor de suelo o pon la mano cerca del DHT11 y espera el minuto siguiente.
+   En **Monitoreo** suben los bloques recibidos cada 15 segundos aunque todavía no cambie la lectura guardada.
+5. Pregúntale al asistente (botón del chat) «¿de dónde salen los datos?» o «¿dónde se guardan?»: responde con cada
+   sensor, su cultivo, su dispositivo, la hora de la última lectura y la tabla de la base donde queda.
+6. Para detener todo: `tools\esp32\stop-demo.ps1`.
+
+Si la humedad del suelo marca 0 % fijo, la sonda está fuera de la tierra o su cable al GPIO34 está suelto: el firmware
+da 0 % cuando el valor crudo llega a 2900 o más (`ADC_SECO`, seco o al aire).
+
 ## Correr con el ESP32 real
 
 Un solo comando arranca el backend y el frontend en este PC Windows, sin Docker, contra una **branch de desarrollo de

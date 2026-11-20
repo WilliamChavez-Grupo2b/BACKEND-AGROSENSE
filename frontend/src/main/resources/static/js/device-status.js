@@ -30,3 +30,16 @@ export function newest(times) {
     }
     return latest;
 }
+/** Only what is newer than what the page shows, so a reading is not flashed as new on every poll. */
+export function newerReadings(readings, seen) {
+    const fresh = [];
+    for (const reading of readings) {
+        const when = reading.recordedAt ? new Date(reading.recordedAt).getTime() : Number.NaN;
+        const shown = seen.get(reading.sensorCode);
+        if (Number.isNaN(when) || (shown !== undefined && when <= shown))
+            continue;
+        seen.set(reading.sensorCode, when);
+        fresh.push(reading);
+    }
+    return fresh;
+}

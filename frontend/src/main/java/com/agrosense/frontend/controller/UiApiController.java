@@ -12,6 +12,8 @@ import com.agrosense.frontend.dto.Views.HumidityDay;
 import com.agrosense.frontend.dto.Views.HumidityFeed;
 import com.agrosense.frontend.dto.Views.HumidityRow;
 import com.agrosense.frontend.dto.Views.IrrigationView;
+import com.agrosense.frontend.dto.Views.LatestReading;
+import com.agrosense.frontend.dto.Views.SensorView;
 import com.agrosense.frontend.dto.Views.ReadingSeries;
 import com.agrosense.frontend.service.CropService;
 import com.agrosense.frontend.service.DashboardService;
@@ -97,6 +99,19 @@ public class UiApiController {
     @GetMapping("/crops/{cropId}/latest")
     public CropLatest latest(@PathVariable Integer cropId, Principal principal) {
         return cropService.findLatest(principal.getName(), cropId);
+    }
+
+    /**
+     * Polled by the home page (sensors-live.ts): the newest reading of each of the user's activated sensors. Readings
+     * the backend reads from the ESP32 over TCP or USB never pass through the event service, so this keeps it live.
+     */
+    @GetMapping("/sensors/latest")
+    public List<LatestReading> latestBySensor(Principal principal) {
+        return sensorService.findSensors(principal.getName()).stream()
+                .filter(SensorView::showsValue)
+                .map(sensor -> new LatestReading(sensor.code(), sensor.lastValue(), sensor.unit(),
+                        sensor.lastReadingAt()))
+                .toList();
     }
 
     @GetMapping("/backend-status")
